@@ -1,0 +1,225 @@
+# H-Compare
+
+A fast, native folder / text / CSV comparison tool written in Rust. It is built for the
+"open two folders and find what changed" workflow, with a Beyond Compare–style layout:
+
+- recursive folder tree with same / different / left-only / right-only statuses
+- side-by-side text diff with line and character-level highlights, plus merged view
+- table-aware CSV diff with cell-level changes, merged or side-by-side layouts
+- PDF text diff (Poppler fast path with a bundled pure-Rust fallback)
+- dark and light themes, search, change navigation, copy/sync actions and HTML/CSV exports
+
+## Features
+
+### Appearance
+
+- Dark and light themes, switchable from the top bar or **Options**.
+- The choice is persisted in the settings file.
+- Intent-based buttons: filled **primary** actions, softly outlined **secondary** actions,
+  quiet **ghost** actions and muted red **danger** actions for destructive operations.
+- Right-click context menus throughout the tree and comparison tables.
+
+### Folder comparison
+
+- Recursively scans both roots in parallel and compares files byte-for-byte.
+- Status-aware tree: `=` same, `~` different, `-` left only, `+` right only, `!` type mismatch/error.
+- Filter by status, filter by name, expand/collapse all, and jump between differences.
+- Collapse the whole tree panel with the `«` button or `Ctrl+B`; a slim FILES strip restores it.
+- Recent comparisons are available from the top-bar **Recent** menu and the welcome screen.
+- Optional skip list for common build directories (`node_modules`, `target`, `dist`, `.git`, …).
+- Binary files are detected and reported with metadata and the first differing byte.
+- File copy (A → B / B → A), sync all differences with a confirmation dialog, reveal in
+  Explorer, open with the default application, and delete with confirmation.
+- Scanning and file loading run on worker threads, so the UI stays responsive.
+
+### Text comparison
+
+- Side-by-side line alignment using Myers diff.
+- Two layouts:
+  - **Side by side** shows both files with synchronized vertical scrolling.
+  - **Merged** shows one unified stream: equal lines once, changed lines stacked as
+    left then right, and added/removed lines with a single marker.
+- The options grid can be collapsed with the **▲ / ▼** arrow at the right end of the
+  header; change navigation stays visible while collapsed, and the collapsed state is
+  remembered.
+- Intra-line character highlights for changed lines.
+- Handles CRLF/LF, UTF-8 BOM, and UTF-16 LE/BE BOM.
+- Options: ignore case, ignore whitespace, trim trailing whitespace.
+- Search with case sensitivity, match count, and next/previous navigation.
+- F7 / Shift+F7 change navigation steps through each **intra-line change group** before
+  moving to the next changed line, focusing and scrolling the group into view. The
+  counter shows the current group and the total number of change groups.
+- Side-by-side mode shares vertical and horizontal scrolling between both panes.
+- Unified diff and HTML report export.
+- System CJK font fallback (when a font such as Yu Gothic or Microsoft YaHei exists) so
+  Japanese / Chinese / Korean text displays correctly.
+
+### PDF comparison
+
+- PDFs are compared by their **text layer**, using the same text diff view.
+- Fast path: Poppler `pdftotext` is used when it is on `PATH` (recommended for very large
+  PDFs). Otherwise the bundled pure-Rust `pdf-extract` parser is used, so no external
+  installation is required.
+- Extraction runs on the file-loading worker thread, keeping the UI responsive.
+- Scanned/image-only PDFs have no text layer and cannot be compared as text; the view
+  reports that no text was extracted.
+- Both **Side by side** and **Merged** layouts are available for PDF text.
+
+### CSV / TSV comparison
+
+- RFC 4180-style parsing, including quoted delimiters and quoted newlines.
+- Delimiter auto-detection (comma, semicolon, tab, pipe) with manual override.
+- Header-row detection; optional empty-row skipping and cell whitespace trimming.
+- Row alignment:
+  - **Auto** uses the first visible column as a key when it is unique in both files
+    and the key sets overlap enough; otherwise it falls back to row order.
+  - When key alignment would split a few rows into added + removed pairs but the
+    files have the same row count, Auto prefers row order so the real cell changes
+    are reported and counted.
+  - **Row order** aligns by position.
+  - Any column can be selected explicitly as a key.
+- Cell-level highlighting with character-level highlights in side-by-side mode.
+- Two layouts:
+  - **Merged** shows `left` and `right` values stacked in each changed cell.
+  - **Side by side** gives both full tables with a central change gutter.
+- Side-by-side mode keeps the splitter fixed at the centre of the viewport; both panes
+  share vertical and horizontal scrolling so they stay aligned, with one shared
+  horizontal scrollbar under the panes.
+- The chosen layout and differences-only state are retained across rescans, reloads
+  and column edits.
+- Differences-only filter, search across cells, per-row deltas, and stats.
+- F7 / Shift+F7 change navigation steps through each differing cell in a row before
+  moving to the next changed row, focusing and scrolling the cell into view. The
+  counter shows the current changed-cell position and the total number of cells.
+- **Hide any column** from the table and comparison with one context-menu action.
+- The **Hidden columns (N)** toolbar menu restores individual columns or all of them.
+- Hidden columns do not contribute to row alignment, cell differences, stats or exports.
+- Hidden-column choices are remembered per open file for the current session.
+- Right-click a column header or cell for hide/key/copy/delete actions, and right-click a row
+  gutter to copy the left, right, or both rows as TSV.
+- Right-click can also **delete the column from the left or right CSV file**, or from
+  **both files at once**. This is confirmation-gated and writes a timestamped
+  `.hcompare.bak` backup beside each rewritten file. Backup files are skipped by folder
+  scans so they do not pollute the comparison.
+- **Undo delete** (or `Ctrl+Z`) restores the last deleted column from its backup.
+- **Restore deleted columns** lists the `.hcompare.bak` backups beside the open CSVs so any
+  earlier state can be restored deliberately.
+- Export the differences as CSV or the whole comparison as a standalone HTML report.
+
+### Headless mode
+
+Useful for scripts and CI:
+
+```text
+hcompare --report LEFT RIGHT
+```
+
+Exit code `1` means differences were found, `0` means identical, `2` means the comparison
+could not run. `--all` includes build folders that are skipped by default.
+
+## Build
+
+Requirements:
+
+- Rust 1.85 or newer.
+- On Windows, the MSVC toolchain plus Visual Studio Build Tools and a Windows SDK.
+  (`rustup default stable-msvc` is the usual setup.)
+
+```powershell
+cd tools/h-compare
+cargo test
+cargo build --release
+```
+
+The executable is `target/release/hcompare.exe` (or `target/release/hcompare`).
+
+Run during development:
+
+```powershell
+cargo run -- "C:\path\to\left" "C:\path\to\right"
+cargo run -- "C:\path\to\left" "C:\path\to\right" --open=path/to/file.csv
+```
+
+CLI summary:
+
+```text
+Usage:
+  hcompare [LEFT] [RIGHT]        Open the desktop comparison
+  hcompare --report LEFT RIGHT   Compare headlessly and print a report
+
+Options:
+  -r, --report   Headless report (exit code 1 when differences exist)
+      --all      Include common build folders in a report
+      --open P   Open relative path P after the initial scan
+      --theme T  Start with `dark` or `light` theme
+  -h, --help     Show this help
+  -V, --version  Show the version and build stamp
+```
+
+`--version` prints the app version, build date and short git hash, for example
+`hcompare 0.2.0 (build 2026-11-11 603553f)`. The About window shows the same build
+stamp. This is the quickest way to confirm which executable is running on a machine.
+
+## Keyboard shortcuts
+
+| Key | Action |
+| --- | --- |
+| `F5` | Rescan both folders |
+| `F7` / `Shift+F7` | Next / previous change (file, text hunk or CSV row) |
+| `Ctrl+F` | Find in the current text/CSV comparison |
+| `Ctrl+B` | Collapse or expand the folder tree |
+| `Enter` / `Shift+Enter` | Next / previous search match while searching |
+| `Enter` | Compare the two folders when the search bar is closed and both paths are set |
+| `Ctrl+C` | Copy the selected line, cell or row |
+| `Ctrl+Z` | Undo the last deleted CSV column |
+| `Escape` | Close search or dialog |
+
+## Mouse / right-click
+
+- **Folder tree**: open, copy A → B / B → A, reveal, delete, copy paths.
+- **CSV header or cell**: copy values, hide the column, use the column as the alignment key,
+  copy the column name/number, or delete the column from the left file, the right file, or
+  both files.
+- The **Hidden columns (N)** toolbar menu brings hidden columns back individually or all at once.
+- **CSV row gutter**: copy the left row, right row, or both rows as TSV.
+- **Text diff line**: copy the line.
+
+## Configuration
+
+Settings are stored in:
+
+```text
+%APPDATA%\h-compare\settings.json
+```
+
+They include the last folders, text comparison options, CSV options, theme, and the
+skip-build-folders preference. Passwords and credentials are never stored.
+
+## Architecture
+
+```text
+src/
+  main.rs        CLI parsing, window setup and the headless report
+  app.rs         application state, background jobs, layout and actions
+  model.rs       statuses, counts, comparison tree and formatting helpers
+  folder.rs      recursive scan, byte comparison and tree construction
+  textdiff.rs    line alignment, intra-line spans, encoding and search helpers
+  csvdiff.rs     CSV parsing, key/row alignment and cell diffs
+  load.rs        worker-thread file loading and binary detection
+  report.rs      HTML and CSV report generation
+  settings.rs    persisted settings
+  ui/            theme, folder tree, text view, CSV view and shared widgets
+```
+
+## Limits
+
+This is a focused implementation, not a byte-for-byte clone of Beyond Compare:
+
+- Text/CSV diffs are limited to 64 MB per file. Larger binary files show metadata only.
+- Binary comparison reports metadata and the first differing byte; it does not show a hex view.
+- Folder sync copies files, not directories, and is intentionally confirmation-gated.
+- Deleting a CSV column rewrites that file and normalizes CSV quoting; a timestamped
+  `.hcompare.bak` backup is created first.
+- Images, archives, three-way merge, syntax highlighting and plugin support are not implemented.
+- CSV key alignment uses unique first-column values by default; duplicate-key files can be
+  aligned by row order or an explicit key column.
