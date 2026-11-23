@@ -1,0 +1,100 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build (${{ matrix.artifact }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: windows-x64
+            bundles: nsis,msi
+          - os: ubuntu-22.04
+            artifact: linux-x64
+            bundles: appimage,deb
+          - os: macos-latest
+            artifact: macos
+            bundles: dmg
+    runs-on: ${{ matrix.os }}
+    env:
+      SIGNED: unknown
+      WIN_CERT_B64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+      WIN_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve build version from the tag
+        run: node -e "const v=(process.env.GITHUB_REF_NAME||'dev').replace(/^v/,'');require('fs').appendFileSync(process.env.GITHUB_ENV,'HREMOTE_BUILD_VERSION='+v+'\n')"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libgtk-3-dev libayatana-appindicator3-dev \
+            libxdo-dev pkg-config libasound2-dev
+
+      - run: npm ci
+
+      - name: Build bundles
+        run: npm run tauri:build -- --bundles ${{ matrix.bundles }}
+
+      - name: Sign Windows artifacts
+        if: runner.os == 'Windows' && env.WIN_CERT_B64 != ''
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "cert.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WIN_CERT_B64))
+          $files = Get-ChildItem "target/release" -Recurse -File |
+            Where-Object { $_.Extension -in ".exe", ".msi" }
+          foreach ($file in $files) {
+            & signtool sign /f $pfx /p $env:WIN_CERT_PASSWORD /fd SHA256 `
+              /tr "http://timestamp.digicert.com" /td SHA256 $file.FullName
+            if ($LASTEXITCODE -ne 0) { throw "signtool failed for $($file.Name)" }
+          }
+          "SIGNED=yes" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Stage artifacts and write BUILD.txt
+        run: >
+          node scripts/stage-bundles.mjs
+          --out dist/${{ matrix.artifact }}
+          --tag ${{ github.ref_name }}
+          --signed ${{ env.SIGNED }}
+
+      - name: Generate update manifest
+        if: runner.os == 'Windows' && vars.UPDATE_DOWNLOAD_BASE_URL != ''
+        run: >
+          node scripts/update-manifest.mjs
+          --url ${{ vars.UPDATE_DOWNLOAD_BASE_URL }}/h-remote-${{ github.ref_name }}.exe
+          --notes "Release ${{ github.ref_name }}"
+          --minimum-version ${{ vars.UPDATE_MINIMUM_VERSION || '0.0.1' }}
+          --out dist/${{ matrix.artifact }}/latest.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: h-remote-${{ matrix.artifact }}-${{ github.ref_name }}
+          path: dist/${{ matrix.artifact }}
+          retention-days: 30
+          if-no-files-found: error

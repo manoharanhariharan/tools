@@ -1,0 +1,20 @@
+[package]
+name = "hr-observability"
+description = "Logging, startup tracing and crash report generation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+hr-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender = "0.2"
+time = { version = "0.3", features = ["formatting", "macros", "local-offset"] }
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,286 @@
+# H-Remote — English (en-US)
+# Fluent syntax: https://projectfluent.org/fluent/guide/
+# Keys are shared by the Rust shell and the Svelte UI.
+
+app-name = H-Remote
+app-tagline = Remote sessions, organised.
+app-untitled = Untitled
+
+common-ok = OK
+common-cancel = Cancel
+common-save = Save
+common-close = Close
+common-back = Back
+common-next = Next
+common-finish = Finish
+common-skip = Skip
+common-retry = Retry
+common-yes = Yes
+common-no = No
+common-browse = Browse…
+common-copy = Copy
+common-copied = Copied
+common-remove = Remove
+common-edit = Edit
+common-delete = Delete
+common-add = Add
+common-search = Search
+common-loading = Loading…
+common-error = Error
+common-warning = Warning
+common-info = Info
+common-success = Success
+common-version = Version
+common-unknown = Unknown
+common-none = None
+common-apply = Apply
+common-reset = Reset
+common-open = Open
+common-refresh = Refresh
+common-quit = Quit
+common-minimize = Minimize
+common-maximize = Maximize
+common-restore = Restore
+common-exit = Exit
+common-settings = Settings
+common-about = About
+common-language = Language
+common-theme = Theme
+common-enabled = Enabled
+common-disabled = Disabled
+common-systemDefault = System default
+common-readOnly = Read-only
+common-optional = Optional
+common-required = Required
+common-seconds = { $count } s
+
+nav-servers = Servers
+nav-settings = Settings
+nav-about = About
+
+titlebar-minimize = Minimize window
+titlebar-maximize = Maximize window
+titlebar-restore = Restore window
+titlebar-close = Close window
+
+busy-working = Working…
+
+dialog-message-title = H-Remote
+dialog-input-title = Enter a value
+dialog-password-title = Enter password
+dialog-confirm-title = Please confirm
+
+error-title = Something went wrong
+error-unexpected = An unexpected error occurred.
+error-summary = Summary
+error-details = Technical details
+error-environment = Environment
+error-copy = Copy report
+error-copied = Report copied
+error-save = Save report
+error-saved = Report saved to { $path }
+error-openLogs = Open log folder
+error-reportIssue = Report an issue
+error-dismiss = Dismiss
+error-crashReports = Crash reports
+error-writeFailed = Could not write the error report: { $message }
+
+guidance-title = Welcome to H-Remote
+guidance-subtitle = A few choices before we begin.
+guidance-stepOf = Step { $current } of { $total }
+guidance-welcome-title = Your sessions, one place
+guidance-welcome-body = H-Remote keeps remote desktops, terminals, file transfers and local tools together — searchable and launchable from a single window.
+guidance-profile-title = Where should your profile live?
+guidance-profile-body = Portable keeps everything beside the executable. AppData separates configuration from the program, which is safer for shared or read-only install locations.
+guidance-profile-portable = Portable profile
+guidance-profile-portableHelp = Configuration, logs and the database live in the application folder.
+guidance-profile-appdata = AppData profile
+guidance-profile-appdataHelp = Configuration lives in your user profile and is preserved across upgrades.
+guidance-profile-locked = This installation requires the { $mode } profile.
+guidance-language-title = Choose your language
+guidance-language-body = You can change this at any time in Settings.
+guidance-theme-title = Choose a theme
+guidance-theme-body = Pick a preset now; fine-tune colours and fonts later.
+guidance-startup-title = Start with your computer
+guidance-startup-body = Launch H-Remote when you sign in. It can start minimised to the tray.
+guidance-startup-enable = Run at startup
+guidance-startup-minimized = Start minimised
+guidance-shortcut-title = Desktop shortcut
+guidance-shortcut-body = Add a shortcut so H-Remote is one click away.
+guidance-shortcut-create = Create a desktop shortcut
+guidance-confirm-title = Closing sessions
+guidance-confirm-body = Ask before closing a session that is still connected?
+guidance-migrate-title = Existing profile found
+guidance-migrate-body = A PRemoteM installation was detected at { $path }. Import its language, theme and window settings now; servers can be imported after the catalog is available.
+guidance-migrate-accept = Import settings
+guidance-migrate-decline = Not now
+guidance-finish-title = Ready
+guidance-finish-body = H-Remote is configured. Open Settings at any time to change these choices.
+guidance-openSettings = Open settings
+
+settings-title = Settings
+settings-general = General
+settings-appearance = Appearance
+settings-launcher = Launcher
+settings-runners = Runners
+settings-sources = Data Sources
+settings-credentials = Credentials
+settings-data = Data
+settings-about = About
+settings-saved = Settings saved
+settings-saveFailed = Could not save settings: { $message }
+settings-resetWindow = Reset main window location
+settings-windowReset = Window position reset
+settings-openLogFolder = Open log folder
+settings-languageChanged = Language changed
+
+general-language = Display language
+general-startWithOs = Run at system startup
+general-startWithOsHelp = Uses the per-user startup mechanism of your operating system.
+general-closeAction = When the close button is clicked
+general-closeAction-exit = Exit H-Remote
+general-closeAction-tray = Minimise to tray
+general-confirmCloseSession = Confirm before closing a connected session
+general-sessionIcon = Show the session icon in the window title
+general-tabHeader = Tab header buttons
+general-tabIcon = Show icon
+general-tabClose = Show close button
+general-tabReconnect = Show reconnect button
+general-tabCloseLeft = Put the close button on the left
+general-recentInTray = Show recently used sessions in the tray menu
+general-noteInList = Show notes in the server list
+general-logLevel = Log level
+general-copyPort = Copy the port together with the address
+general-focusLocalOnLeave = Move focus to the local desktop when the pointer leaves a remote desktop
+general-noUpdateCheck = Do not check for updates
+general-startMinimized = Start minimised to the tray
+general-launcher = Search hotkey
+general-unsavedChanges = You have unsaved changes.
+
+launcher-title = Launcher
+launcher-enabled = Enable the quick launcher
+launcher-hotkey = Global hotkey
+launcher-hotkeyHelp = Use Ctrl, Shift, Alt or Super plus a key, for example Alt+M.
+launcher-hotkeyInvalid = '{ $hotkey }' is not a valid hotkey.
+launcher-hotkeyConflict = '{ $hotkey }' is already registered by another application.
+launcher-hotkeySaved = Hotkey updated
+launcher-showNote = Show notes in the launcher
+launcher-showCredentials = Show credentials in the launcher
+launcher-saveInfo = Offer to save quick-connect details
+launcher-matchCredential = Match saved credentials for quick connections
+launcher-recentLimit = Recent sessions shown in the tray
+launcher-position = Launcher position
+launcher-position-remember = Remember last position
+launcher-position-center = Always centre
+
+appearance-preset = Theme preset
+appearance-custom = Custom colours
+appearance-customHelp = Colours use #RRGGBB or #AARRGGBB.
+appearance-fontFamily = Font family
+appearance-fontSize = Font size
+appearance-preview = Preview
+appearance-invalidColor = '{ $color }' is not a valid colour.
+appearance-presetApplied = Theme applied
+appearance-primaryMid = Primary (mid)
+appearance-primaryLight = Primary (light)
+appearance-primaryDark = Primary (dark)
+appearance-primaryText = Primary text
+appearance-accentMid = Accent (mid)
+appearance-accentLight = Accent (light)
+appearance-accentDark = Accent (dark)
+appearance-accentText = Accent text
+appearance-background = Background
+appearance-backgroundText = Background text
+
+data-title = Data
+data-localDatabase = Local SQLite database
+data-databasePath = Database path
+data-checkPeriod = Status check period
+data-reconnectPeriod = Reconnect period
+data-sources = Additional data sources
+data-sourcesHelp = MySQL and PostgreSQL sources are managed in this section from Phase 8 onward.
+data-notConnectedYet = Not connected yet
+data-noSources = No additional data sources configured.
+data-readOnlyHelp = This source is read-only. Editing actions are hidden.
+data-periodRange = 0–{ $max } seconds; 0 disables the check.
+
+tray-tooltip = H-Remote
+tray-show = Show H-Remote
+tray-hide = Hide H-Remote
+tray-recent = Recently used
+tray-noRecent = No recent sessions
+tray-showRecent = Show recently used sessions
+tray-resetWindow = Reset main window location
+tray-feedback = Send feedback
+tray-about = About H-Remote
+tray-exit = Exit
+tray-openLogs = Open log folder
+
+profile-lockedByMarker = Profile mode locked by a marker file.
+profile-notWritable = { $path } is not writable: { $message }
+profile-portable = Portable
+profile-appdata = AppData
+
+firstRun-detected = Existing PRemoteM profile detected
+firstRun-migrateSettings = Import language, theme and window settings
+firstRun-migrateServersLater = Server import is available once the catalog storage is enabled.
+firstRun-migrated = Settings imported from PRemoteM
+firstRun-migrationUnavailable = No compatible PRemoteM settings were found.
+
+about-description = H-Remote is a cross-platform remote session manager built with Rust and Tauri.
+about-version = Version
+about-platform = Platform
+about-logs = Logs
+about-configuration = Configuration
+about-database = Database
+about-profile = Profile
+about-license = License
+about-build = Build
+
+capability-windowsHello = Windows Hello
+capability-osKeyring = Operating-system keyring
+capability-registryAutostart = Registry autostart
+capability-lnkShortcuts = .lnk desktop shortcuts
+capability-hwndEmbedding = Native window embedding
+capability-workingSetTrim = Working-set trimming
+capability-available = Available
+capability-unavailable = Not available on this platform
+capability-fallback = Portable fallback in use
+
+logs-level-off = Disabled
+logs-level-error = Error
+logs-level-warn = Warning
+logs-level-info = Info
+logs-level-debug = Debug
+logs-level-trace = Verbose
+
+settings-section-general = General
+settings-section-appearance = Appearance
+settings-section-launcher = Launcher
+settings-section-data = Data
+settings-section-about = About
+settings-section-help = Help
+
+catalog-title = Servers
+catalog-empty = No servers yet
+catalog-emptyHint = The server catalog is enabled in Phase 1. This shell already persists settings, themes and layout.
+catalog-searchPlaceholder = Search servers, tags, addresses…
+catalog-add = Add server
+catalog-import = Import
+catalog-export = Export
+
+crash-title = Crash report
+crash-saved = Crash report saved to { $path }
+crash-noReports = No crash reports found.
+
+validation-required = This field is required.
+validation-tooLong = Use at most { $max } characters.
+validation-invalid = This value is not valid.
+
+data-schema = Schema v{ $version }
+data-encryptionVerified = Encryption verified
+data-encryptionNotVerified = Encryption not verified
+data-serverCount = { $count } servers
+data-credentialCount = { $count } credentials
+data-protocols = Registered protocols
+data-noProtocols = No protocol implementations are registered.

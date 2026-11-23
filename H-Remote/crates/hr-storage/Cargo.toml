@@ -1,0 +1,20 @@
+[package]
+name = "hr-storage"
+description = "Versioned SQLite persistence, encryption at rest and catalog caches"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+hr-core.workspace = true
+hr-domain.workspace = true
+hr-crypto.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "mysql", "postgres"] }
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

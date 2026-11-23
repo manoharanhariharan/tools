@@ -1,0 +1,31 @@
+[package]
+name = "hr-crypto"
+description = "Secret storage: OS keyring, passphrase vault and AES-256-GCM encryption"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+hr-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+aes-gcm = "0.10"
+argon2 = "0.5"
+base64 = "0.22"
+getrandom = "0.3"
+subtle = "2"
+zeroize = { version = "1", features = ["derive"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service"] }
+
+[dev-dependencies]
+tempfile.workspace = true

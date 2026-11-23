@@ -1,0 +1,65 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/hr-core",
+    "crates/hr-domain",
+    "crates/hr-files",
+    "crates/hr-config",
+    "crates/hr-crypto",
+    "crates/hr-i18n",
+    "crates/hr-theme",
+    "crates/hr-observability",
+    "crates/hr-platform",
+    "crates/hr-session",
+    "crates/hr-storage",
+    "src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://example.invalid/h-remote"
+authors = ["H-Remote contributors"]
+
+[patch.crates-io]
+# Upstream's default feature builds bundled libopus through CMake, which is not
+# available in every build environment. The vendored copy defaults to PCM-only
+# audio so `ironrdp-client/sound` can be enabled deterministically.
+ironrdp-rdpsnd-native = { path = "vendor/ironrdp-rdpsnd-native" }
+
+[workspace.dependencies]
+hr-core = { path = "crates/hr-core" }
+hr-domain = { path = "crates/hr-domain" }
+hr-files = { path = "crates/hr-files" }
+hr-config = { path = "crates/hr-config" }
+hr-crypto = { path = "crates/hr-crypto" }
+hr-i18n = { path = "crates/hr-i18n" }
+hr-theme = { path = "crates/hr-theme" }
+hr-observability = { path = "crates/hr-observability" }
+hr-platform = { path = "crates/hr-platform" }
+hr-session = { path = "crates/hr-session" }
+hr-storage = { path = "crates/hr-storage" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+tempfile = "3"
+ulid = { version = "1", features = ["serde"] }
+inventory = "0.3"
+base64 = "0.22"
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+panic = "abort"
+
+[profile.dev]
+# Keep debug info for backtraces used by crash reports.
+debug = 1

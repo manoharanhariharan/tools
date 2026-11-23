@@ -1,0 +1,47 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# Node
+node_modules/
+/ui/dist/
+/ui/.vite/
+/ui/coverage/
+/ui/test-results/
+/ui/playwright-report/
+/test-results/
+/playwright-report/
+*.tsbuildinfo
+
+# Tauri
+/src-tauri/target/
+/src-tauri/gen/
+
+# Runtime data (never commit profile data or secrets)
+/.locality/
+/.logs/
+/.icons/
+/Protocols/
+hremote.json
+hremote.dataSources.json
+hremote.db
+hremote.db-*
+FORCE_INTO_PORTABLE_MODE
+FORCE_INTO_APPDATA_MODE
+
+# Local tooling
+/release/
+/release-build.log
+/1-remote-export.json
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.log
+
+# Release artifacts
+/release/
+/release-build.log

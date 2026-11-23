@@ -1,0 +1,14 @@
+[package]
+name = "hr-core"
+description = "Core types, errors, IDs and the protocol registry for H-Remote"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ulid.workspace = true
+inventory.workspace = true

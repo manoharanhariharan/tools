@@ -1,0 +1,45 @@
+[package]
+name = "hremote"
+description = "H-Remote desktop shell (Tauri 2)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+default-run = "hremote"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+hr-core.workspace = true
+hr-config.workspace = true
+hr-crypto.workspace = true
+hr-domain.workspace = true
+hr-files.workspace = true
+hr-i18n.workspace = true
+hr-observability.workspace = true
+hr-platform.workspace = true
+hr-session.workspace = true
+hr-storage.workspace = true
+hr-theme.workspace = true
+
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-global-shortcut = "2"
+
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+rfd = "0.15"
+open = "5"
+dirs = "6"
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+rustls.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

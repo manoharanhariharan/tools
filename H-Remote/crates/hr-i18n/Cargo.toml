@@ -1,0 +1,15 @@
+[package]
+name = "hr-i18n"
+description = "Fluent-based localisation shared by the Rust shell and the Svelte UI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+hr-core.workspace = true
+fluent-bundle = "0.16"
+unic-langid = "0.9"
+sys-locale = "0.3"
+serde.workspace = true
+tracing.workspace = true

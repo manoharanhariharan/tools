@@ -1,0 +1,44 @@
+{
+  "name": "h-remote",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "H-Remote - cross-platform remote desktop manager",
+  "scripts": {
+    "dev": "vite --config ui/vite.config.ts",
+    "build:ui": "vite build --config ui/vite.config.ts",
+    "preview": "vite preview --config ui/vite.config.ts",
+    "check": "svelte-check --tsconfig ./ui/tsconfig.json",
+    "test": "vitest run --config ui/vitest.config.ts",
+    "test:watch": "vitest --config ui/vitest.config.ts",
+    "test:e2e": "playwright test --config ui/playwright.config.ts",
+    "check:i18n": "node scripts/check-i18n-keys.mjs",
+    "check:traceability": "node scripts/check-traceability.mjs",
+    "verify": "npm run check && npm test && npm run check:i18n && npm run check:traceability && npm run build:ui",
+    "format": "prettier --write \"ui/**/*.{ts,svelte,css,json,md}\" \"*.{json,md}\"",
+    "format:check": "prettier --check \"ui/**/*.{ts,svelte,css,json,md}\" \"*.{json,md}\"",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@fluent/bundle": "^0.19.1",
+    "@tauri-apps/api": "^2.12.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@testing-library/jest-dom": "^8.0.0",
+    "@testing-library/svelte": "^5.4.2",
+    "@tauri-apps/cli": "^2.12.6",
+    "@types/node": "^24.10.1",
+    "jsdom": "^31.0.1",
+    "prettier": "^3.6.2",
+    "prettier-plugin-svelte": "^4.2.0",
+    "svelte": "^5.59.1",
+    "svelte-check": "^4.7.8",
+    "typescript": "^5.9.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}

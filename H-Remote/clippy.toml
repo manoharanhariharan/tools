@@ -1,0 +1,7 @@
+# Deny constructs that hide ownership/lifecycle bugs.
+disallowed-methods = [
+  { path = "std::mem::forget", reason = "leaks resources; use RAII or explicit cleanup" },
+  { path = "std::process::Command::spawn", reason = "use hr-platform process helpers that reap children" },
+]
+
+too-many-arguments-threshold = 8
