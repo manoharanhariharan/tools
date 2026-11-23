@@ -17,6 +17,26 @@ use daybook::{AppState, build_router};
 
 pub const TEST_PASSWORD: &str = "test-password-123";
 
+/// Seeded earning types from migration 0003.
+pub const SALES_TYPE: &str = "00000000-0000-4000-8000-000000000101";
+pub const SERVICE_TYPE: &str = "00000000-0000-4000-8000-000000000102";
+pub const TIPS_TYPE: &str = "00000000-0000-4000-8000-000000000103";
+
+/// Build a `lines` array for an entry request.
+pub fn lines(rows: &[(&str, &str, i64)]) -> Value {
+    Value::Array(
+        rows.iter()
+            .map(|(type_id, description, amount_minor)| {
+                serde_json::json!({
+                    "type_id": type_id,
+                    "description": description,
+                    "amount_minor": amount_minor,
+                })
+            })
+            .collect(),
+    )
+}
+
 pub struct TestServer {
     pub app: Router,
     pub state: AppState,
@@ -168,7 +188,12 @@ impl TestServer {
                 None,
             )
             .await;
-        assert_eq!(response.status, StatusCode::OK, "login failed: {}", response.text());
+        assert_eq!(
+            response.status,
+            StatusCode::OK,
+            "login failed: {}",
+            response.text()
+        );
         response
             .headers
             .get(header::SET_COOKIE)
@@ -178,18 +203,17 @@ impl TestServer {
             .expect("session cookie")
     }
 
-    /// Log in and create an employee, returning `(cookie, employee_json)`.
-    pub async fn employee(&self, name: &str, basis: &str, rate_minor: i64) -> (String, Value) {
+    pub async fn employee(&self, name: &str) -> (String, Value) {
+        self.employee_with_code(name, None).await
+    }
+
+    pub async fn employee_with_code(&self, name: &str, code: Option<&str>) -> (String, Value) {
         let cookie = self.login().await;
         let response = self
             .call(
                 Method::POST,
                 "/api/employees",
-                Some(serde_json::json!({
-                    "name": name,
-                    "pay_basis": basis,
-                    "rate_minor": rate_minor,
-                })),
+                Some(serde_json::json!({ "name": name, "code": code })),
                 Some(&cookie),
             )
             .await;

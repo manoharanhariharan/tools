@@ -3,9 +3,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use rand::RngCore;
-use sqlx::sqlite::{
-    SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous,
-};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use sqlx::{Sqlite, SqlitePool, Transaction};
 
 use crate::auth;
@@ -94,7 +92,9 @@ pub async fn set_admin_password(pool: &SqlitePool, password: &str) -> anyhow::Re
     .bind(hash)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("DELETE FROM sessions").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM sessions")
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     Ok(())
 }

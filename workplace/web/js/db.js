@@ -2,11 +2,12 @@
 // awaited so no transaction or connection is left dangling.
 
 const DB_NAME = 'daybook';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export const STORES = {
   employees: 'employees',
   entries: 'entries',
+  types: 'types',
   outbox: 'outbox',
   conflicts: 'conflicts',
   meta: 'meta',
@@ -26,6 +27,9 @@ export function openDatabase() {
       if (!db.objectStoreNames.contains(STORES.entries)) {
         const store = db.createObjectStore(STORES.entries, { keyPath: 'id' });
         store.createIndex('by_date', 'work_date', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORES.types)) {
+        db.createObjectStore(STORES.types, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(STORES.outbox)) {
         db.createObjectStore(STORES.outbox, { keyPath: 'key' });

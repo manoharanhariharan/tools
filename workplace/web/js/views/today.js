@@ -1,14 +1,9 @@
-// Daily entry screen: one row per employee for the selected date.
+// Daily earnings screen: one row per employee, showing the business they
+// generated and the final money for the selected date.
 
 import { h, emptyState } from '../dom.js';
-import {
-  addDays,
-  displayDate,
-  formatHours,
-  formatPaise,
-  isoToday,
-} from '../format.js';
-import { basisLabel, rateLabel } from '../pay.js';
+import { addDays, displayDate, formatPaise, isoToday } from '../format.js';
+import { openEmployeeDialog } from './employee-dialog.js';
 import { openEntryDialog } from './entry-dialog.js';
 
 function initials(name) {
@@ -51,7 +46,8 @@ export function renderToday(root, ctx) {
       if (action === 'prev-day') setDate(addDays(date, -1));
       else if (action === 'next-day') setDate(addDays(date, 1));
       else if (action === 'today') setDate(isoToday());
-      else if (action === 'add-employee') ctx.navigate('/employees');
+      else if (action === 'add-employee') openEmployeeDialog(ctx, {});
+      else if (action === 'manage-employees') ctx.navigate('/employees');
       else if (action === 'open-entry') {
         const employee = ctx.findEmployee(control.dataset.employeeId);
         if (!employee) return;
@@ -92,7 +88,7 @@ export function renderToday(root, ctx) {
       .filter((employee) => employee.active || entryByEmployee.has(employee.id))
       .sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
 
-    // Entries belonging to archived employees must still show (and still count).
+    // Day sheets belonging to archived employees must still show and count.
     const archivedIds = new Set(
       dayEntries
         .map((entry) => entry.employee_id)
@@ -103,13 +99,13 @@ export function renderToday(root, ctx) {
       rows.push({
         id,
         name: employee?.name ?? 'Former employee',
-        pay_basis: employee?.pay_basis ?? 'day_rate',
-        rate_minor: employee?.rate_minor ?? 0,
+        code: employee?.code ?? null,
         active: false,
         archived: true,
       });
     }
 
+    const business = dayEntries.reduce((sum, entry) => sum + (entry.business_minor ?? 0), 0);
     const net = dayEntries.reduce((sum, entry) => sum + (entry.net_minor ?? 0), 0);
     const pendingToday = dayEntries.filter((entry) => ctx.isPending('entry', entry.id)).length;
 
@@ -151,20 +147,20 @@ export function renderToday(root, ctx) {
       h(
         'div',
         { class: 'stat' },
-        h('span', { class: 'stat-label' }, 'Net for the day'),
-        h('strong', { class: 'stat-value' }, formatPaise(net)),
-        h('span', { class: 'stat-hint' }, `${dayEntries.length} entr${dayEntries.length === 1 ? 'y' : 'ies'}`),
+        h('span', { class: 'stat-label' }, 'Business for the day'),
+        h('strong', { class: 'stat-value' }, formatPaise(business)),
+        h(
+          'span',
+          { class: 'stat-hint' },
+          `${dayEntries.length} day sheet${dayEntries.length === 1 ? '' : 's'}`,
+        ),
       ),
       h(
         'div',
         { class: 'stat' },
-        h('span', { class: 'stat-label' }, 'Overtime'),
-        h(
-          'strong',
-          { class: 'stat-value stat-small' },
-          `${formatHours(dayEntries.reduce((sum, entry) => sum + entry.overtime_minutes, 0))} h`,
-        ),
-        h('span', { class: 'stat-hint' }, 'across all entries'),
+        h('span', { class: 'stat-label' }, 'Final money'),
+        h('strong', { class: 'stat-value' }, formatPaise(net)),
+        h('span', { class: 'stat-hint' }, 'after bonus, advance and deduction'),
       ),
       h(
         'div',
@@ -180,7 +176,7 @@ export function renderToday(root, ctx) {
     );
 
     const banner = !state.online
-      ? h('div', { class: 'banner banner-warn' }, 'You are offline. Entries are saved on this device and will sync when connected.')
+      ? h('div', { class: 'banner banner-warn' }, 'You are offline. Day sheets are saved on this device and will sync when connected.')
       : state.syncError
         ? h('div', { class: 'banner banner-error' }, `Sync problem: ${state.syncError}`)
         : null;
@@ -189,7 +185,7 @@ export function renderToday(root, ctx) {
     if (!state.employees.length) {
       list = emptyState(
         'No employees yet',
-        'Add your first employee to start recording daily earnings.',
+        'Add your first employee, then record the business they generate each day.',
         h(
           'button',
           { class: 'btn btn-primary', type: 'button', 'data-action': 'add-employee' },
@@ -199,10 +195,10 @@ export function renderToday(root, ctx) {
     } else if (!rows.length) {
       list = emptyState(
         'No active employees',
-        'Activate an employee or add a new one to record entries.',
+        'Activate an employee or add a new one to record earnings.',
         h(
           'button',
-          { class: 'btn btn-primary', type: 'button', 'data-action': 'add-employee' },
+          { class: 'btn btn-primary', type: 'button', 'data-action': 'manage-employees' },
           'Manage employees',
         ),
       );
@@ -212,15 +208,20 @@ export function renderToday(root, ctx) {
         { class: 'entry-list' },
         rows.map((employee) => {
           const entry = entryByEmployee.get(employee.id);
+          const lineCount = entry?.lines?.length ?? 0;
           const side = entry
             ? h(
                 'span',
                 { class: 'row-side' },
                 h('strong', {}, formatPaise(entry.net_minor)),
-                h('span', { class: 'row-sub' }, `${formatHours(entry.regular_minutes)} reg · ${formatHours(entry.overtime_minutes)} OT`),
+                h(
+                  'span',
+                  { class: 'row-sub' },
+                  `${formatPaise(entry.business_minor)} business · ${lineCount} type${lineCount === 1 ? '' : 's'}`,
+                ),
                 h('span', { class: 'badge-row' }, statusTags(ctx, entry)),
               )
-            : h('span', { class: 'row-side row-add' }, 'Add entry');
+            : h('span', { class: 'row-side row-add' }, 'Add business');
 
           const inner = [
             h('span', { class: 'avatar', 'aria-hidden': 'true' }, initials(employee.name)),
@@ -231,7 +232,7 @@ export function renderToday(root, ctx) {
               h(
                 'span',
                 { class: 'row-meta' },
-                `${basisLabel(employee.pay_basis)} · ${rateLabel(employee)}${employee.archived ? ' · archived' : ''}`,
+                `${employee.code ? `Code ${employee.code}` : 'No code'}${employee.archived ? ' · archived' : ''}`,
               ),
             ),
             side,
@@ -254,12 +255,12 @@ export function renderToday(root, ctx) {
       );
       if (!dayEntries.length) {
         list.append(
-          h('p', { class: 'list-hint' }, 'No entries for this date yet. Tap an employee to add one.'),
+          h('p', { class: 'list-hint' }, 'No day sheets for this date yet. Tap an employee to add the business they generated.'),
         );
       }
     }
 
-    container.replaceChildren(head, banner, stats, list);
+    container.replaceChildren(...[head, banner, stats, list].filter(Boolean));
   }
 
   paint();

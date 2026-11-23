@@ -51,7 +51,9 @@ pub struct LoginLimiter {
 impl std::fmt::Debug for LoginLimiter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let len = self.inner.lock().map(|m| m.len()).unwrap_or(0);
-        f.debug_struct("LoginLimiter").field("tracked", &len).finish()
+        f.debug_struct("LoginLimiter")
+            .field("tracked", &len)
+            .finish()
     }
 }
 
@@ -137,10 +139,14 @@ impl LoginLimiter {
 
 pub fn validate_password_policy(password: &str) -> Result<(), String> {
     if password.chars().count() < MIN_PASSWORD_LEN {
-        return Err(format!("password must be at least {MIN_PASSWORD_LEN} characters"));
+        return Err(format!(
+            "password must be at least {MIN_PASSWORD_LEN} characters"
+        ));
     }
     if password.chars().count() > MAX_PASSWORD_LEN {
-        return Err(format!("password must be at most {MAX_PASSWORD_LEN} characters"));
+        return Err(format!(
+            "password must be at most {MAX_PASSWORD_LEN} characters"
+        ));
     }
     if password.chars().all(|c| c.is_whitespace()) {
         return Err("password may not be blank".to_string());
@@ -183,10 +189,7 @@ pub fn hash_token(token: &str) -> String {
 
 /// Create a session and return `(raw_token, expires_at_ms)`. Only the hash is
 /// persisted, so a database leak does not hand out live sessions.
-pub async fn create_session(
-    pool: &SqlitePool,
-    ttl: Duration,
-) -> AppResult<(String, i64)> {
+pub async fn create_session(pool: &SqlitePool, ttl: Duration) -> AppResult<(String, i64)> {
     let token = generate_token();
     let hash = hash_token(&token);
     let now = now_millis();
@@ -245,9 +248,8 @@ pub fn cookie_token(headers: &HeaderMap) -> Option<String> {
 }
 
 pub fn session_cookie(token: &str, ttl_secs: i64, secure: bool) -> HeaderValue {
-    let mut value = format!(
-        "{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={ttl_secs}"
-    );
+    let mut value =
+        format!("{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={ttl_secs}");
     if secure {
         value.push_str("; Secure");
     }
@@ -255,8 +257,7 @@ pub fn session_cookie(token: &str, ttl_secs: i64, secure: bool) -> HeaderValue {
 }
 
 pub fn cleared_session_cookie(secure: bool) -> HeaderValue {
-    let mut value =
-        format!("{SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+    let mut value = format!("{SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
     if secure {
         value.push_str("; Secure");
     }
@@ -285,7 +286,8 @@ fn prune_map(map: &mut HashMap<IpAddr, Tracked>, now: Instant, window: Duration)
     }
 }
 
-fn is_public(path: &str) -> bool {    !path.starts_with("/api/")
+fn is_public(path: &str) -> bool {
+    !path.starts_with("/api/")
         || matches!(
             path,
             "/api/health" | "/api/auth/login" | "/api/auth/logout" | "/api/auth/me"
@@ -366,11 +368,8 @@ mod tests {
 
     #[test]
     fn limiter_blocks_after_repeated_failures_and_resets_on_success() {
-        let limiter = LoginLimiter::with_limits(
-            3,
-            Duration::from_secs(60),
-            Duration::from_secs(60),
-        );
+        let limiter =
+            LoginLimiter::with_limits(3, Duration::from_secs(60), Duration::from_secs(60));
         assert!(limiter.is_allowed(ip(1)));
         assert!(limiter.is_allowed(ip(2)));
 
@@ -389,11 +388,8 @@ mod tests {
 
     #[test]
     fn limiter_entries_expire() {
-        let limiter = LoginLimiter::with_limits(
-            1,
-            Duration::from_millis(30),
-            Duration::from_millis(30),
-        );
+        let limiter =
+            LoginLimiter::with_limits(1, Duration::from_millis(30), Duration::from_millis(30));
         limiter.record_failure(ip(9));
         assert!(!limiter.is_allowed(ip(9)));
         std::thread::sleep(Duration::from_millis(50));
@@ -402,11 +398,8 @@ mod tests {
 
     #[test]
     fn limiter_map_is_bounded() {
-        let limiter = LoginLimiter::with_limits(
-            1,
-            Duration::from_secs(60),
-            Duration::from_secs(60),
-        );
+        let limiter =
+            LoginLimiter::with_limits(1, Duration::from_secs(60), Duration::from_secs(60));
         for i in 0..(MAX_TRACKED_IPS as u32 + 32) {
             let octets = i.to_be_bytes();
             limiter.record_failure(IpAddr::from([10, octets[1], octets[2], octets[3]]));

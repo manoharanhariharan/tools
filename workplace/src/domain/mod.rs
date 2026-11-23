@@ -5,7 +5,7 @@
 
 pub mod date;
 pub mod money;
-pub mod pay;
+pub mod totals;
 
 use time::OffsetDateTime;
 

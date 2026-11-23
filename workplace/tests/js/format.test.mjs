@@ -4,16 +4,14 @@ import assert from 'node:assert/strict';
 import {
   addDays,
   currentMonth,
+  daysInRange,
   displayDate,
   formatDecimal,
-  formatHours,
   formatPaise,
   formatTimestamp,
-  fractionLabel,
   groupIndian,
   isoToday,
   monthBounds,
-  parseHoursToMinutes,
   parsePaise,
 } from '../../web/js/format.js';
 
@@ -55,25 +53,6 @@ test('parsePaise accepts human input and rejects junk', () => {
   assert.equal(parsePaise(null), null);
 });
 
-test('hours conversion matches server rounding', () => {
-  assert.equal(formatHours(0), '0.00');
-  assert.equal(formatHours(30), '0.50');
-  assert.equal(formatHours(450), '7.50');
-  assert.equal(formatHours(445), '7.42');
-  assert.equal(parseHoursToMinutes('7.5'), 450);
-  assert.equal(parseHoursToMinutes('7.25'), 435);
-  assert.equal(parseHoursToMinutes('0'), 0);
-  assert.equal(parseHoursToMinutes('25'), null);
-  assert.equal(parseHoursToMinutes('7.999'), null);
-  assert.equal(parseHoursToMinutes('abc'), null);
-});
-
-test('day fractions display as decimals', () => {
-  assert.equal(fractionLabel(5000), '0.50');
-  assert.equal(fractionLabel(10000), '1.00');
-  assert.equal(fractionLabel(15000), '1.50');
-});
-
 test('dates are civil ISO strings with dh-mm-yyyy display', () => {
   assert.equal(displayDate('2026-11-23'), '23-11-2026');
   assert.equal(displayDate('bad'), 'bad');
@@ -100,4 +79,14 @@ test('timestamps render in IST', () => {
   // 1700000000000 ms = 2023-11-14T22:13:20Z = 2023-11-15 03:43 IST
   assert.equal(formatTimestamp(1700000000000), '15-11-2023 03:43');
   assert.equal(formatTimestamp(Number.NaN), '—');
+});
+
+test('inclusive range day counts validate report filters', () => {
+  assert.equal(daysInRange('2026-11-01', '2026-11-01'), 1);
+  assert.equal(daysInRange('2026-11-01', '2026-11-30'), 30);
+  assert.equal(daysInRange('2028-02-01', '2028-02-29'), 29);
+  assert.equal(daysInRange('2026-11-30', '2026-11-01'), null);
+  assert.equal(daysInRange('2026-13-01', '2026-12-31'), null);
+  assert.equal(daysInRange('bad', '2026-12-31'), null);
+  assert.equal(daysInRange('2026-01-01', '2026-12-31'), 365);
 });

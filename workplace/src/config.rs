@@ -87,7 +87,9 @@ impl Config {
     /// Authentication password supplied at bootstrap. Only used when no
     /// password hash exists yet.
     pub fn bootstrap_password() -> Option<String> {
-        env::var("DAYBOOK_ADMIN_PASSWORD").ok().filter(|p| !p.is_empty())
+        env::var("DAYBOOK_ADMIN_PASSWORD")
+            .ok()
+            .filter(|p| !p.is_empty())
     }
 }
 

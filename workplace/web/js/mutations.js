@@ -2,7 +2,7 @@
 // a sync change in the same transaction, so a crash cannot queue half a write.
 
 import * as db from './db.js';
-import { computeEntry } from './pay.js';
+import { computeTotals } from './totals.js';
 import { outboxKey } from './sync-logic.js';
 
 export function newId() {
@@ -18,10 +18,6 @@ function employeePayload(row) {
   return {
     name: row.name,
     code: row.code,
-    pay_basis: row.pay_basis,
-    rate_minor: row.rate_minor,
-    ot_multiplier_bp: row.ot_multiplier_bp,
-    standard_minutes_per_day: row.standard_minutes_per_day,
     note: row.note,
     active: row.active,
   };
@@ -31,11 +27,11 @@ function entryPayload(row) {
   return {
     employee_id: row.employee_id,
     work_date: row.work_date,
-    day_fraction_bp: row.day_fraction_bp,
-    regular_minutes: row.regular_minutes,
-    overtime_minutes: row.overtime_minutes,
-    ot_multiplier_bp: row.ot_multiplier_bp,
-    override_amount_minor: row.override_amount_minor,
+    lines: row.lines.map((line) => ({
+      type_id: line.type_id,
+      description: line.description,
+      amount_minor: line.amount_minor,
+    })),
     bonus_minor: row.bonus_minor,
     advance_minor: row.advance_minor,
     deduction_minor: row.deduction_minor,
@@ -59,10 +55,6 @@ export async function saveEmployee(input, { existing = null, conflict = null } =
     id,
     name: input.name,
     code: input.code || null,
-    pay_basis: input.pay_basis,
-    rate_minor: input.rate_minor,
-    ot_multiplier_bp: input.ot_multiplier_bp,
-    standard_minutes_per_day: input.standard_minutes_per_day,
     note: input.note ?? '',
     active: input.active !== false,
     created_at: existing?.created_at ?? now,
@@ -94,11 +86,27 @@ export async function saveEmployee(input, { existing = null, conflict = null } =
   return row;
 }
 
+function localLines(lines) {
+  return lines
+    .filter((line) => (line.amount_minor ?? 0) > 0)
+    .map((line, position) => ({
+      id: line.id ?? newId(),
+      entry_id: line.entry_id ?? '',
+      type_id: line.type_id,
+      type_name: line.type_name,
+      description: line.description ?? '',
+      amount_minor: line.amount_minor,
+      position,
+      created_at: line.created_at ?? Date.now(),
+    }));
+}
+
 export async function saveEntry({
   employee,
   date,
   existing = null,
-  amounts,
+  lines,
+  adjustments = {},
   note = '',
   conflict = null,
 }) {
@@ -107,24 +115,20 @@ export async function saveEntry({
   const base = existing?.seq ?? 0;
   const force = Boolean(conflict);
   const serverSeq = conflict?.server?.seq ?? base;
-  const computed = computeEntry(employee, amounts);
+  const storedLines = localLines(lines).map((line) => ({ ...line, entry_id: id }));
+  const totals = computeTotals(storedLines, adjustments);
 
   const row = {
     id,
     employee_id: employee.id,
     work_date: date,
-    day_fraction_bp: computed.day_fraction_bp,
-    regular_minutes: computed.regular_minutes,
-    overtime_minutes: computed.overtime_minutes,
-    ot_multiplier_bp: computed.ot_multiplier_bp,
-    override_amount_minor: computed.override_amount_minor,
-    bonus_minor: computed.bonus_minor,
-    advance_minor: computed.advance_minor,
-    deduction_minor: computed.deduction_minor,
-    base_minor: computed.base_minor,
-    ot_minor: computed.ot_minor,
-    gross_minor: computed.gross_minor,
-    net_minor: computed.net_minor,
+    lines: storedLines,
+    bonus_minor: totals.bonus_minor,
+    advance_minor: totals.advance_minor,
+    deduction_minor: totals.deduction_minor,
+    business_minor: totals.business_minor,
+    gross_minor: totals.gross_minor,
+    net_minor: totals.net_minor,
     note,
     created_at: existing?.created_at ?? now,
     updated_at: now,

@@ -100,6 +100,25 @@ export function listEmployees(signal) {
   return request('/api/employees', { signal });
 }
 
+export function listEarningTypes(signal) {
+  return request('/api/earning-types', { signal });
+}
+
+export function createEarningType(body) {
+  return request('/api/earning-types', { method: 'POST', body });
+}
+
+export function updateEarningType(id, body) {
+  return request(`/api/earning-types/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body,
+  });
+}
+
+export function deleteEarningType(id) {
+  return request(`/api/earning-types/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
 export function listEntries({ from, to, employeeId } = {}, signal) {
   return request(`/api/entries?${query({ from, to, employee_id: employeeId })}`, { signal });
 }

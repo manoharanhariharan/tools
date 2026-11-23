@@ -60,12 +60,6 @@ pub fn group_indian_digits(digits: &str) -> String {
     format!("{},{}", parts.join(","), tail)
 }
 
-/// Minutes -> decimal hours with two places: `450` -> `"7.50"`.
-pub fn format_hours(minutes: i64) -> String {
-    let hundredths = round_div_half_up(minutes as i128 * 100, 60);
-    format!("{}.{:02}", hundredths / 100, hundredths % 100)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,13 +97,5 @@ mod tests {
         assert_eq!(format_inr(123456789), "₹12,34,567.89");
         assert_eq!(format_inr(-500), "₹-5.00");
         assert_eq!(format_grouped(123456789), "12,34,567.89");
-    }
-
-    #[test]
-    fn formats_hours() {
-        assert_eq!(format_hours(0), "0.00");
-        assert_eq!(format_hours(30), "0.50");
-        assert_eq!(format_hours(450), "7.50");
-        assert_eq!(format_hours(445), "7.42");
     }
 }

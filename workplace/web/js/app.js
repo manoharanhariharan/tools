@@ -19,6 +19,7 @@ const store = createStore({
   employees: [],
   allEmployees: [],
   entries: [],
+  types: [],
   outbox: [],
   conflicts: [],
   syncing: false,
@@ -40,6 +41,7 @@ const sync = createSyncEngine({
   store,
   refresh: () => refreshFromDb(),
   notify: (message, kind) => toast(message, kind),
+  onSynced: () => refreshTypes(),
 });
 
 const ctx = {
@@ -50,6 +52,7 @@ const ctx = {
     return store.get();
   },
   refresh: refreshFromDb,
+  refreshTypes,
   navigate,
   toast,
   findEmployee(id) {
@@ -72,9 +75,10 @@ const ctx = {
 /* ------------------------------------------------------------------ state */
 
 async function refreshFromDb() {
-  const [employees, entries, outbox, conflicts, lastSyncAt] = await Promise.all([
+  const [employees, entries, types, outbox, conflicts, lastSyncAt] = await Promise.all([
     db.getAll(db.STORES.employees),
     db.getAll(db.STORES.entries),
+    db.getAll(db.STORES.types),
     db.getAll(db.STORES.outbox),
     db.getAll(db.STORES.conflicts),
     db.getMeta('last_sync', null),
@@ -84,10 +88,38 @@ async function refreshFromDb() {
     employees: employees.filter((employee) => !employee.deleted_at),
     allEmployees: employees,
     entries: entries.filter((entry) => !entry.deleted_at),
+    types: types
+      .filter((type) => !type.deleted_at)
+      .sort(
+        (a, b) =>
+          (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+          a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }),
+      ),
     outbox,
     conflicts,
     lastSyncAt: lastSyncAt ?? store.get().lastSyncAt,
   });
+}
+
+/// Earning types are server configuration; refresh the offline cache when the
+/// device is online. Offline day-sheet entry keeps using the cached list.
+async function refreshTypes() {
+  if (!navigator.onLine) return;
+  try {
+    const types = await api.listEarningTypes();
+    await db.putMany(db.STORES.types, types);
+    store.set({
+      types: types
+        .filter((type) => !type.deleted_at)
+        .sort(
+          (a, b) =>
+            (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+            a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }),
+        ),
+    });
+  } catch (error) {
+    console.warn('earning type refresh failed', error);
+  }
 }
 
 /* ------------------------------------------------------------------- auth */
@@ -204,6 +236,10 @@ function updateShell(state) {
     statusChip.textContent = 'Sync issue';
     statusChip.className = 'status-chip status-error';
     statusChip.title = state.syncError;
+  } else if (state.conflicts.length) {
+    statusChip.textContent = `${state.conflicts.length} conflict${state.conflicts.length === 1 ? '' : 's'}`;
+    statusChip.className = 'status-chip status-error';
+    statusChip.title = 'Review in the Sync tab';
   } else if (state.outbox.length) {
     statusChip.textContent = `${state.outbox.length} pending`;
     statusChip.className = 'status-chip status-pending';
@@ -258,7 +294,7 @@ function mountView(path) {
   }
   viewCleanup = render(viewRoot, ctx) ?? null;
   currentPath = path;
-  window.scrollTo({ top: 0, behavior: 'instant' });
+  window.scrollTo(0, 0);
   viewRoot.focus({ preventScroll: true });
 }
 
@@ -269,6 +305,10 @@ function route() {
   }
   ensureShell();
   const path = normalizeHash();
+  if (!location.hash) {
+    // Keep the address bar shareable without adding a history entry.
+    history.replaceState(null, '', `#${path}`);
+  }
   store.set({ route: path });
   mountView(path);
 }
@@ -286,6 +326,7 @@ function showLogin() {
 
 async function enterApp() {
   ensureShell();
+  await refreshTypes();
   await refreshFromDb();
   sync.start();
   route();

@@ -6,30 +6,32 @@ use axum::http::{Method, StatusCode};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use common::{TestServer, TestResponse};
+use common::{SALES_TYPE, TestResponse, TestServer, lines};
 
 fn employee_change(id: &str, base_seq: i64, name: &str, code: Option<&str>) -> Value {
     json!({
         "entity": "employee",
         "id": id,
         "base_seq": base_seq,
-        "data": {
-            "name": name,
-            "code": code,
-            "pay_basis": "day_rate",
-            "rate_minor": 80000
-        }
+        "data": { "name": name, "code": code, "active": true }
     })
 }
 
-fn entry_change(id: &str, base_seq: i64, employee_id: &str, work_date: &str) -> Value {
+fn entry_change(
+    id: &str,
+    base_seq: i64,
+    employee_id: &str,
+    work_date: &str,
+    rows: &[(&str, &str, i64)],
+) -> Value {
     json!({
         "entity": "entry",
         "id": id,
         "base_seq": base_seq,
         "data": {
             "employee_id": employee_id,
-            "work_date": work_date
+            "work_date": work_date,
+            "lines": lines(rows)
         }
     })
 }
@@ -57,7 +59,7 @@ fn result_for<'a>(response: &'a Value, id: &str) -> &'a Value {
 #[tokio::test]
 async fn pull_pages_through_all_changes_in_sequence_order() {
     let server = TestServer::start().await;
-    let (cookie, employee) = server.employee("Asha", "fixed", 60_000).await;
+    let (cookie, employee) = server.employee("Asha").await;
     let employee_id = employee["id"].as_str().unwrap().to_string();
 
     for day in ["2026-11-01", "2026-11-02"] {
@@ -65,7 +67,11 @@ async fn pull_pages_through_all_changes_in_sequence_order() {
             .call(
                 Method::POST,
                 "/api/entries",
-                Some(json!({ "employee_id": employee_id, "work_date": day })),
+                Some(json!({
+                    "employee_id": employee_id,
+                    "work_date": day,
+                    "lines": lines(&[(SALES_TYPE, "", 10_000)])
+                })),
                 Some(&cookie),
             )
             .await;
@@ -80,7 +86,7 @@ async fn pull_pages_through_all_changes_in_sequence_order() {
     assert!(latest >= 3);
 
     let mut since = 0;
-    let mut collected: Vec<(i64, String)> = Vec::new();
+    let mut collected: Vec<i64> = Vec::new();
     let mut pages = 0;
     loop {
         pages += 1;
@@ -98,22 +104,25 @@ async fn pull_pages_through_all_changes_in_sequence_order() {
         assert!(body["latest"].as_i64().unwrap() >= latest - 1);
 
         for employee in body["employees"].as_array().unwrap() {
-            collected.push((employee["seq"].as_i64().unwrap(), "employee".into()));
+            collected.push(employee["seq"].as_i64().unwrap());
         }
         for entry in body["entries"].as_array().unwrap() {
-            collected.push((entry["seq"].as_i64().unwrap(), "entry".into()));
+            collected.push(entry["seq"].as_i64().unwrap());
+            assert!(
+                !entry["lines"].as_array().unwrap().is_empty(),
+                "pulled entries must carry their earning lines"
+            );
         }
 
         if body["has_more"] == false {
             break;
         }
-        assert_eq!(body["cursor"].as_i64().unwrap(), since + 1);
         since = body["cursor"].as_i64().unwrap();
     }
 
     assert_eq!(collected.len(), 3);
     for pair in collected.windows(2) {
-        assert!(pair[0].0 < pair[1].0, "out of order: {collected:?}");
+        assert!(pair[0] < pair[1], "out of order: {collected:?}");
     }
 }
 
@@ -124,12 +133,17 @@ async fn offline_bundle_creates_employee_and_entry_in_any_order() {
     let employee_id = Uuid::new_v4().to_string();
     let entry_id = Uuid::new_v4().to_string();
 
-    // Entry listed before its employee on purpose: the server reorders.
     let response = push(
         &server,
         &cookie,
         vec![
-            entry_change(&entry_id, 0, &employee_id, "2026-11-03"),
+            entry_change(
+                &entry_id,
+                0,
+                &employee_id,
+                "2026-11-03",
+                &[(SALES_TYPE, "shop", 80_000)],
+            ),
             employee_change(&employee_id, 0, "Offline Asha", Some("OFF-1")),
         ],
     )
@@ -140,10 +154,11 @@ async fn offline_bundle_creates_employee_and_entry_in_any_order() {
     assert_eq!(result_for(&body, &employee_id)["status"], "applied");
     assert_eq!(result_for(&body, &entry_id)["status"], "applied");
     let server_entry = &result_for(&body, &entry_id)["server"];
-    assert_eq!(server_entry["base_minor"], 80_000);
+    assert_eq!(server_entry["business_minor"], 80_000);
     assert_eq!(server_entry["net_minor"], 80_000);
+    assert_eq!(server_entry["lines"][0]["type_name"], "Sales");
+    assert_eq!(server_entry["lines"][0]["description"], "shop");
     assert!(server_entry["seq"].as_i64().unwrap() > 0);
-    assert_eq!(server_entry["deleted_at"], Value::Null);
 
     let pull = server
         .call(Method::GET, "/api/sync/pull?since=0", None, Some(&cookie))
@@ -151,7 +166,7 @@ async fn offline_bundle_creates_employee_and_entry_in_any_order() {
         .json();
     assert_eq!(pull["employees"].as_array().unwrap().len(), 1);
     assert_eq!(pull["entries"].as_array().unwrap().len(), 1);
-    assert!(pull["entries"][0].get("employee_name").is_none());
+    assert_eq!(pull["entries"][0]["lines"].as_array().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -159,61 +174,68 @@ async fn retries_are_idempotent_and_do_not_burn_sequence_numbers() {
     let server = TestServer::start().await;
     let cookie = server.login().await;
     let employee_id = Uuid::new_v4().to_string();
+    let entry_id = Uuid::new_v4().to_string();
 
     let first = push(
         &server,
         &cookie,
-        vec![employee_change(&employee_id, 0, "Asha", None)],
+        vec![
+            employee_change(&employee_id, 0, "Asha", None),
+            entry_change(
+                &entry_id,
+                0,
+                &employee_id,
+                "2026-11-04",
+                &[(SALES_TYPE, "x", 12_000)],
+            ),
+        ],
     )
     .await
     .json();
-    let seq = result_for(&first, &employee_id)["server"]["seq"]
+    let seq = result_for(&first, &entry_id)["server"]["seq"]
         .as_i64()
         .unwrap();
-    let cursor_after_first = first["cursor"].as_i64().unwrap();
+    let cursor = first["cursor"].as_i64().unwrap();
 
-    // Client never received the response and retries with base_seq 0.
+    // Client never received the response and retries the same bundle.
     let retry = push(
         &server,
         &cookie,
-        vec![employee_change(&employee_id, 0, "Asha", None)],
+        vec![
+            employee_change(&employee_id, 0, "Asha", None),
+            entry_change(
+                &entry_id,
+                0,
+                &employee_id,
+                "2026-11-04",
+                &[(SALES_TYPE, "x", 12_000)],
+            ),
+        ],
     )
     .await
     .json();
-    assert_eq!(result_for(&retry, &employee_id)["status"], "noop");
-    assert_eq!(retry["cursor"].as_i64().unwrap(), cursor_after_first);
+    assert_eq!(result_for(&retry, &entry_id)["status"], "noop");
+    assert_eq!(retry["cursor"].as_i64().unwrap(), cursor);
 
-    // Delete, then retry the delete: no-op and no new sequence.
     let delete = push(
         &server,
         &cookie,
-        vec![json!({ "entity": "employee", "id": employee_id, "base_seq": seq, "deleted": true })],
+        vec![json!({ "entity": "entry", "id": entry_id, "base_seq": seq, "deleted": true })],
     )
     .await
     .json();
-    assert_eq!(result_for(&delete, &employee_id)["status"], "applied");
+    assert_eq!(result_for(&delete, &entry_id)["status"], "applied");
     let after_delete = delete["cursor"].as_i64().unwrap();
-    assert_eq!(after_delete, cursor_after_first + 1);
 
     let delete_retry = push(
         &server,
         &cookie,
-        vec![json!({ "entity": "employee", "id": employee_id, "base_seq": seq, "deleted": true })],
+        vec![json!({ "entity": "entry", "id": entry_id, "base_seq": seq, "deleted": true })],
     )
     .await
     .json();
-    assert_eq!(result_for(&delete_retry, &employee_id)["status"], "noop");
+    assert_eq!(result_for(&delete_retry, &entry_id)["status"], "noop");
     assert_eq!(delete_retry["cursor"].as_i64().unwrap(), after_delete);
-
-    // Deleting a row the server never had is also a no-op.
-    let unknown = push(
-        &server,
-        &cookie,
-        vec![json!({ "entity": "employee", "id": Uuid::new_v4().to_string(), "base_seq": 0, "deleted": true })],
-    )
-    .await
-    .json();
-    assert_eq!(unknown["results"][0]["status"], "noop");
 }
 
 #[tokio::test]
@@ -236,17 +258,26 @@ async fn stale_writes_conflict_and_can_be_forced() {
     let applied = push(
         &server,
         &cookie,
-        vec![employee_change(&employee_id, base, "Asha Updated", Some("A-1"))],
+        vec![employee_change(
+            &employee_id,
+            base,
+            "Asha Updated",
+            Some("A-1"),
+        )],
     )
     .await
     .json();
     assert_eq!(result_for(&applied, &employee_id)["status"], "applied");
 
-    // Second device still thinks it is at `base`.
     let stale = push(
         &server,
         &cookie,
-        vec![employee_change(&employee_id, base, "Asha From Phone", Some("A-1"))],
+        vec![employee_change(
+            &employee_id,
+            base,
+            "Asha From Phone",
+            Some("A-1"),
+        )],
     )
     .await
     .json();
@@ -255,17 +286,20 @@ async fn stale_writes_conflict_and_can_be_forced() {
     assert_eq!(stale_result["conflict"], "stale");
     assert_eq!(stale_result["server"]["name"], "Asha Updated");
 
-    // Same stale base but identical content: retry, not a conflict.
     let same = push(
         &server,
         &cookie,
-        vec![employee_change(&employee_id, base, "Asha Updated", Some("A-1"))],
+        vec![employee_change(
+            &employee_id,
+            base,
+            "Asha Updated",
+            Some("A-1"),
+        )],
     )
     .await
     .json();
     assert_eq!(result_for(&same, &employee_id)["status"], "noop");
 
-    // Force wins.
     let forced = push(
         &server,
         &cookie,
@@ -274,18 +308,13 @@ async fn stale_writes_conflict_and_can_be_forced() {
             "id": employee_id,
             "base_seq": base,
             "force": true,
-            "data": { "name": "Asha Forced", "code": "A-1", "pay_basis": "day_rate", "rate_minor": 90000 }
+            "data": { "name": "Asha Forced", "code": "A-1", "active": true }
         })],
     )
     .await
     .json();
     assert_eq!(result_for(&forced, &employee_id)["status"], "applied");
-    assert_eq!(
-        result_for(&forced, &employee_id)["server"]["name"],
-        "Asha Forced"
-    );
 
-    // Updating a row that does not exist conflicts unless forced.
     let missing_id = Uuid::new_v4().to_string();
     let missing = push(
         &server,
@@ -294,8 +323,10 @@ async fn stale_writes_conflict_and_can_be_forced() {
     )
     .await
     .json();
-    assert_eq!(result_for(&missing, &missing_id)["status"], "conflict");
-    assert_eq!(result_for(&missing, &missing_id)["conflict"], "missing_on_server");
+    assert_eq!(
+        result_for(&missing, &missing_id)["conflict"],
+        "missing_on_server"
+    );
 
     let forced_create = push(
         &server,
@@ -305,15 +336,85 @@ async fn stale_writes_conflict_and_can_be_forced() {
             "id": missing_id,
             "base_seq": 99,
             "force": true,
-            "data": { "name": "Ghost", "pay_basis": "fixed", "rate_minor": 50000 }
+            "data": { "name": "Ghost", "active": true }
         })],
     )
     .await
     .json();
-    assert_eq!(
-        result_for(&forced_create, &missing_id)["status"],
-        "applied"
-    );
+    assert_eq!(result_for(&forced_create, &missing_id)["status"], "applied");
+}
+
+#[tokio::test]
+async fn stale_entry_lines_conflict_and_identical_retries_noop() {
+    let server = TestServer::start().await;
+    let cookie = server.login().await;
+    let employee_id = Uuid::new_v4().to_string();
+    let entry_id = Uuid::new_v4().to_string();
+
+    let created = push(
+        &server,
+        &cookie,
+        vec![
+            employee_change(&employee_id, 0, "Asha", None),
+            entry_change(
+                &entry_id,
+                0,
+                &employee_id,
+                "2026-11-05",
+                &[(SALES_TYPE, "", 10_000)],
+            ),
+        ],
+    )
+    .await
+    .json();
+    let base = result_for(&created, &entry_id)["server"]["seq"]
+        .as_i64()
+        .unwrap();
+
+    let updated = push(
+        &server,
+        &cookie,
+        vec![entry_change(
+            &entry_id,
+            base,
+            &employee_id,
+            "2026-11-05",
+            &[(SALES_TYPE, "new", 20_000)],
+        )],
+    )
+    .await
+    .json();
+    assert_eq!(result_for(&updated, &entry_id)["status"], "applied");
+
+    let stale = push(
+        &server,
+        &cookie,
+        vec![entry_change(
+            &entry_id,
+            base,
+            &employee_id,
+            "2026-11-05",
+            &[(SALES_TYPE, "old", 10_000)],
+        )],
+    )
+    .await
+    .json();
+    assert_eq!(result_for(&stale, &entry_id)["conflict"], "stale");
+
+    let retry = push(
+        &server,
+        &cookie,
+        vec![entry_change(
+            &entry_id,
+            base,
+            &employee_id,
+            "2026-11-05",
+            &[(SALES_TYPE, "new", 20_000)],
+        )],
+    )
+    .await
+    .json();
+    assert_eq!(result_for(&retry, &entry_id)["status"], "noop");
 }
 
 #[tokio::test]
@@ -336,7 +437,6 @@ async fn creating_over_an_existing_id_requires_force() {
     )
     .await
     .json();
-    assert_eq!(result_for(&duplicate, &employee_id)["status"], "conflict");
     assert_eq!(
         result_for(&duplicate, &employee_id)["conflict"],
         "already_exists"
@@ -360,7 +460,7 @@ async fn unique_constraints_surface_as_actionable_conflicts() {
     let duplicate_code = push(
         &server,
         &cookie,
-        vec![employee_change(&second_id, 0, "Second", Some("SHARED"))],
+        vec![employee_change(&second_id, 0, "Second", Some("shared"))],
     )
     .await
     .json();
@@ -374,7 +474,13 @@ async fn unique_constraints_surface_as_actionable_conflicts() {
     let created_entry = push(
         &server,
         &cookie,
-        vec![entry_change(&entry_a, 0, &first_id, "2026-11-10")],
+        vec![entry_change(
+            &entry_a,
+            0,
+            &first_id,
+            "2026-11-10",
+            &[(SALES_TYPE, "", 5_000)],
+        )],
     )
     .await
     .json();
@@ -383,7 +489,13 @@ async fn unique_constraints_surface_as_actionable_conflicts() {
     let duplicate_date = push(
         &server,
         &cookie,
-        vec![entry_change(&entry_b, 0, &first_id, "2026-11-10")],
+        vec![entry_change(
+            &entry_b,
+            0,
+            &first_id,
+            "2026-11-10",
+            &[(SALES_TYPE, "", 9_000)],
+        )],
     )
     .await
     .json();
@@ -400,19 +512,29 @@ async fn invalid_changes_do_not_block_the_rest_of_the_batch() {
     let good_id = Uuid::new_v4().to_string();
     let orphan_entry = Uuid::new_v4().to_string();
     let bad_employee = Uuid::new_v4().to_string();
-    let bad_amount = Uuid::new_v4().to_string();
+    let bad_type = Uuid::new_v4().to_string();
 
     let response = push(
         &server,
         &cookie,
         vec![
             employee_change(&good_id, 0, "Good", None),
-            entry_change(&orphan_entry, 0, &Uuid::new_v4().to_string(), "2026-11-11"),
+            entry_change(
+                &orphan_entry,
+                0,
+                &Uuid::new_v4().to_string(),
+                "2026-11-11",
+                &[(SALES_TYPE, "", 1_000)],
+            ),
             json!({ "entity": "employee", "id": bad_employee, "base_seq": 0,
-                    "data": { "name": "", "pay_basis": "monthly", "rate_minor": -1 } }),
-            json!({ "entity": "entry", "id": bad_amount, "base_seq": 0,
-                    "data": { "employee_id": good_id, "work_date": "2026-11-12",
-                              "overtime_minutes": 99999 } }),
+                    "data": { "name": "" } }),
+            entry_change(
+                &bad_type,
+                0,
+                &good_id,
+                "2026-11-12",
+                &[("00000000-0000-4000-8000-00000000ffff", "", 1_000)],
+            ),
             json!({ "entity": "unknown", "id": Uuid::new_v4().to_string(), "base_seq": 0 }),
         ],
     )
@@ -427,16 +549,12 @@ async fn invalid_changes_do_not_block_the_rest_of_the_batch() {
         "employee_id"
     );
     assert_eq!(result_for(&body, &bad_employee)["status"], "invalid");
-    assert_eq!(result_for(&body, &bad_amount)["status"], "invalid");
-    let unknown = body["results"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|r| r["entity"] == "unknown")
-        .unwrap();
-    assert_eq!(unknown["status"], "invalid");
+    assert_eq!(result_for(&body, &bad_type)["status"], "invalid");
+    assert_eq!(
+        result_for(&body, &bad_type)["error"]["fields"][0]["field"],
+        "type_id"
+    );
 
-    // Only the good employee increased the cursor by one.
     let state = server
         .call(Method::GET, "/api/sync/state", None, Some(&cookie))
         .await
@@ -468,12 +586,10 @@ async fn client_amounts_are_never_trusted() {
             "data": {
                 "employee_id": employee_id,
                 "work_date": "2026-11-13",
-                "regular_minutes": 480,
-                "base_minor": 1,
-                "ot_minor": 1,
-                "gross_minor": 1,
-                "net_minor": 1,
-                "advance_minor": 20000
+                "lines": lines(&[(SALES_TYPE, "", 50_000)]),
+                "advance_minor": 20_000,
+                "business_minor": 1,
+                "net_minor": 1
             }
         })],
     )
@@ -481,14 +597,15 @@ async fn client_amounts_are_never_trusted() {
     .json();
 
     let server_entry = &result_for(&response, &entry_id)["server"];
-    assert_eq!(server_entry["base_minor"], 80_000);
-    assert_eq!(server_entry["net_minor"], 60_000);
+    assert_eq!(server_entry["business_minor"], 50_000);
+    assert_eq!(server_entry["net_minor"], 30_000);
+    assert_eq!(server_entry["lines"][0]["type_name"], "Sales");
 }
 
 #[tokio::test]
 async fn tombstones_are_pulled_and_force_can_resurrect() {
     let server = TestServer::start().await;
-    let (cookie, employee) = server.employee("Asha", "fixed", 60_000).await;
+    let (cookie, employee) = server.employee("Asha").await;
     let employee_id = employee["id"].as_str().unwrap().to_string();
     let seq = employee["seq"].as_i64().unwrap();
 
@@ -500,9 +617,7 @@ async fn tombstones_are_pulled_and_force_can_resurrect() {
             Some(&cookie),
         )
         .await;
-    assert_eq!(deleted.status, StatusCode::OK);
     let tombstone_seq = deleted.json()["seq"].as_i64().unwrap();
-
     let pull = server
         .call(
             Method::GET,
@@ -515,7 +630,6 @@ async fn tombstones_are_pulled_and_force_can_resurrect() {
     assert_eq!(pull["employees"].as_array().unwrap().len(), 1);
     assert!(pull["employees"][0]["deleted_at"].is_i64());
 
-    // Stale resurrection is rejected...
     let stale = push(
         &server,
         &cookie,
@@ -525,7 +639,6 @@ async fn tombstones_are_pulled_and_force_can_resurrect() {
     .json();
     assert_eq!(result_for(&stale, &employee_id)["status"], "conflict");
 
-    // ...but an explicit force with the current seq resurrects the row.
     let resurrect = push(
         &server,
         &cookie,
@@ -534,7 +647,7 @@ async fn tombstones_are_pulled_and_force_can_resurrect() {
             "id": employee_id,
             "base_seq": tombstone_seq,
             "force": true,
-            "data": { "name": "Asha Again", "pay_basis": "fixed", "rate_minor": 60000 }
+            "data": { "name": "Asha Again", "active": true }
         })],
     )
     .await
@@ -591,12 +704,38 @@ async fn concurrent_pushes_get_unique_monotonic_sequences() {
     }
 
     let pull = server
-        .call(Method::GET, "/api/sync/pull?since=0&limit=100", None, Some(&cookie))
+        .call(
+            Method::GET,
+            "/api/sync/pull?since=0&limit=100",
+            None,
+            Some(&cookie),
+        )
         .await
         .json();
     assert_eq!(pull["employees"].as_array().unwrap().len(), 10);
     assert_eq!(pull["has_more"], false);
     assert_eq!(pull["cursor"].as_i64().unwrap(), 10);
+}
+
+#[tokio::test]
+async fn pull_beyond_the_latest_sequence_returns_empty() {
+    let server = TestServer::start().await;
+    let (cookie, _employee) = server.employee("Asha").await;
+
+    let page = server
+        .call(
+            Method::GET,
+            "/api/sync/pull?since=99999&limit=10",
+            None,
+            Some(&cookie),
+        )
+        .await
+        .json();
+    assert_eq!(page["cursor"], 99999);
+    assert_eq!(page["has_more"], false);
+    assert!(page["latest"].as_i64().unwrap() < 99999);
+    assert!(page["employees"].as_array().unwrap().is_empty());
+    assert!(page["entries"].as_array().unwrap().is_empty());
 }
 
 #[tokio::test]

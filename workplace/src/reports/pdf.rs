@@ -11,7 +11,7 @@ use printpdf::*;
 use ttf_parser::Face;
 
 use crate::domain::date;
-use crate::domain::money::{format_grouped, format_hours, format_inr};
+use crate::domain::money::{format_grouped, format_inr};
 use crate::reports::summary::{MoneyTotals, ReportData, ReportLayout};
 
 const ROW_HEIGHT_MM: f64 = 5.6;
@@ -48,7 +48,9 @@ impl PdfFont {
             candidates.push(PathBuf::from(r"C:\Windows\Fonts\segoeui.ttf"));
             candidates.push(PathBuf::from(r"C:\Windows\Fonts\arial.ttf"));
         } else if cfg!(target_os = "macos") {
-            candidates.push(PathBuf::from("/System/Library/Fonts/Supplemental/Arial.ttf"));
+            candidates.push(PathBuf::from(
+                "/System/Library/Fonts/Supplemental/Arial.ttf",
+            ));
         } else {
             candidates.push(PathBuf::from(
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -209,7 +211,9 @@ pub fn render(
         };
         let layer = doc.get_page(page).get_layer(layer_index);
 
-        let mut y = draw_header(&layer, data, &table, page_w, page_h, font, &font_ref, external);
+        let mut y = draw_header(
+            &layer, data, &table, page_w, page_h, font, &font_ref, external,
+        );
 
         let start = page_index * per_page;
         let end = (start + per_page).min(table.rows.len());
@@ -239,25 +243,18 @@ pub fn render(
         }
 
         if page_index == data_pages - 1 && totals_on_last_data_page {
-            draw_totals(
-                &layer,
-                &table,
-                y,
-                page_w,
-                font,
-                &font_ref,
-                external,
-            );
+            draw_totals(&layer, &table, y, page_w, font, &font_ref, external);
         }
         draw_footer(&layer, page_w, page_number, total_pages, &font_ref);
     }
 
     if !totals_on_last_data_page {
         page_number += 1;
-        let (page, layer_index) =
-            doc.add_page(Mm(page_w as f32), Mm(page_h as f32), "Report");
+        let (page, layer_index) = doc.add_page(Mm(page_w as f32), Mm(page_h as f32), "Report");
         let layer = doc.get_page(page).get_layer(layer_index);
-        let y = draw_header(&layer, data, &table, page_w, page_h, font, &font_ref, external);
+        let y = draw_header(
+            &layer, data, &table, page_w, page_h, font, &font_ref, external,
+        );
         draw_totals(&layer, &table, y, page_w, font, &font_ref, external);
         draw_footer(&layer, page_w, page_number, total_pages, &font_ref);
     }
@@ -286,13 +283,13 @@ fn money(font: Option<&PdfFont>, minor: i64) -> String {
     }
 }
 
-fn hours_pair(regular: i64, overtime: i64) -> String {
-    format!("{} / {}", format_hours(regular), format_hours(overtime))
-}
-
 fn build_table(data: &ReportData, layout: ReportLayout, font: Option<&PdfFont>) -> RenderedTable {
     let mut rows: Vec<Vec<String>> = Vec::new();
-    let totals: Vec<String>;
+    let totals = match layout {
+        ReportLayout::Entries => entries_totals_row(&data.totals, font),
+        ReportLayout::Daily => daily_totals_row(&data.totals, font),
+        ReportLayout::Employee => totals_row(&data.totals, font),
+    };
     let landscape;
     let columns;
 
@@ -300,25 +297,59 @@ fn build_table(data: &ReportData, layout: ReportLayout, font: Option<&PdfFont>) 
         ReportLayout::Employee => {
             landscape = false;
             columns = vec![
-                Column { header: "Employee", width_pct: 20.0, align: Align::Left },
-                Column { header: "Entries", width_pct: 6.0, align: Align::Right },
-                Column { header: "Hours reg/OT", width_pct: 9.0, align: Align::Right },
-                Column { header: "Base", width_pct: 11.0, align: Align::Right },
-                Column { header: "Overtime", width_pct: 8.0, align: Align::Right },
-                Column { header: "Bonus", width_pct: 8.0, align: Align::Right },
-                Column { header: "Gross", width_pct: 12.0, align: Align::Right },
-                Column { header: "Advance", width_pct: 9.0, align: Align::Right },
-                Column { header: "Deduction", width_pct: 9.0, align: Align::Right },
-                Column { header: "Net", width_pct: 8.0, align: Align::Right },
+                Column {
+                    header: "Employee",
+                    width_pct: 24.0,
+                    align: Align::Left,
+                },
+                Column {
+                    header: "Code",
+                    width_pct: 9.0,
+                    align: Align::Left,
+                },
+                Column {
+                    header: "Sheets",
+                    width_pct: 6.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Business",
+                    width_pct: 13.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Bonus",
+                    width_pct: 9.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Gross",
+                    width_pct: 12.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Advance",
+                    width_pct: 9.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Deduction",
+                    width_pct: 9.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Final",
+                    width_pct: 9.0,
+                    align: Align::Right,
+                },
             ];
             for employee in &data.employees {
                 let t = &employee.totals;
                 rows.push(vec![
                     employee.name.clone(),
+                    employee.code.clone().unwrap_or_else(|| "—".to_string()),
                     t.entries.to_string(),
-                    hours_pair(t.regular_minutes, t.overtime_minutes),
-                    money(font, t.base_minor),
-                    money(font, t.ot_minor),
+                    money(font, t.business_minor),
                     money(font, t.bonus_minor),
                     money(font, t.gross_minor),
                     money(font, t.advance_minor),
@@ -326,20 +357,50 @@ fn build_table(data: &ReportData, layout: ReportLayout, font: Option<&PdfFont>) 
                     money(font, t.net_minor),
                 ]);
             }
-            totals = totals_row(&data.totals, font, 0);
         }
-        ReportLayout::Daily => {            landscape = false;
+        ReportLayout::Daily => {
+            landscape = false;
             columns = vec![
-                Column { header: "Date", width_pct: 20.0, align: Align::Left },
-                Column { header: "Entries", width_pct: 6.0, align: Align::Right },
-                Column { header: "Hours reg/OT", width_pct: 9.0, align: Align::Right },
-                Column { header: "Base", width_pct: 11.0, align: Align::Right },
-                Column { header: "Overtime", width_pct: 8.0, align: Align::Right },
-                Column { header: "Bonus", width_pct: 8.0, align: Align::Right },
-                Column { header: "Gross", width_pct: 12.0, align: Align::Right },
-                Column { header: "Advance", width_pct: 9.0, align: Align::Right },
-                Column { header: "Deduction", width_pct: 9.0, align: Align::Right },
-                Column { header: "Net", width_pct: 8.0, align: Align::Right },
+                Column {
+                    header: "Date",
+                    width_pct: 20.0,
+                    align: Align::Left,
+                },
+                Column {
+                    header: "Sheets",
+                    width_pct: 7.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Business",
+                    width_pct: 15.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Bonus",
+                    width_pct: 10.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Gross",
+                    width_pct: 14.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Advance",
+                    width_pct: 11.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Deduction",
+                    width_pct: 11.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Final",
+                    width_pct: 12.0,
+                    align: Align::Right,
+                },
             ];
             for day in &data.days {
                 let t = &day.totals;
@@ -348,9 +409,7 @@ fn build_table(data: &ReportData, layout: ReportLayout, font: Option<&PdfFont>) 
                         .map(date::display)
                         .unwrap_or_else(|| day.work_date.clone()),
                     t.entries.to_string(),
-                    hours_pair(t.regular_minutes, t.overtime_minutes),
-                    money(font, t.base_minor),
-                    money(font, t.ot_minor),
+                    money(font, t.business_minor),
                     money(font, t.bonus_minor),
                     money(font, t.gross_minor),
                     money(font, t.advance_minor),
@@ -358,21 +417,50 @@ fn build_table(data: &ReportData, layout: ReportLayout, font: Option<&PdfFont>) 
                     money(font, t.net_minor),
                 ]);
             }
-            totals = totals_row(&data.totals, font, 0);
         }
         ReportLayout::Entries => {
             landscape = true;
             columns = vec![
-                Column { header: "Date", width_pct: 11.0, align: Align::Left },
-                Column { header: "Employee", width_pct: 17.0, align: Align::Left },
-                Column { header: "Hours reg/OT", width_pct: 9.0, align: Align::Right },
-                Column { header: "Base", width_pct: 10.0, align: Align::Right },
-                Column { header: "Overtime", width_pct: 8.0, align: Align::Right },
-                Column { header: "Bonus", width_pct: 8.0, align: Align::Right },
-                Column { header: "Gross", width_pct: 11.0, align: Align::Right },
-                Column { header: "Advance", width_pct: 8.0, align: Align::Right },
-                Column { header: "Deduction", width_pct: 8.0, align: Align::Right },
-                Column { header: "Net", width_pct: 10.0, align: Align::Right },
+                Column {
+                    header: "Date",
+                    width_pct: 11.0,
+                    align: Align::Left,
+                },
+                Column {
+                    header: "Employee",
+                    width_pct: 23.0,
+                    align: Align::Left,
+                },
+                Column {
+                    header: "Business",
+                    width_pct: 14.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Bonus",
+                    width_pct: 9.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Gross",
+                    width_pct: 12.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Advance",
+                    width_pct: 9.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Deduction",
+                    width_pct: 9.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Final",
+                    width_pct: 13.0,
+                    align: Align::Right,
+                },
             ];
             for line in &data.lines {
                 rows.push(vec![
@@ -380,9 +468,7 @@ fn build_table(data: &ReportData, layout: ReportLayout, font: Option<&PdfFont>) 
                         .map(date::display)
                         .unwrap_or_else(|| line.work_date.clone()),
                     line.employee_name.clone(),
-                    hours_pair(line.regular_minutes, line.overtime_minutes),
-                    money(font, line.base_minor),
-                    money(font, line.ot_minor),
+                    money(font, line.business_minor),
                     money(font, line.bonus_minor),
                     money(font, line.gross_minor),
                     money(font, line.advance_minor),
@@ -390,7 +476,6 @@ fn build_table(data: &ReportData, layout: ReportLayout, font: Option<&PdfFont>) 
                     money(font, line.net_minor),
                 ]);
             }
-            totals = totals_row(&data.totals, font, 1);
         }
     }
 
@@ -405,21 +490,46 @@ fn build_table(data: &ReportData, layout: ReportLayout, font: Option<&PdfFont>) 
     }
 }
 
-fn totals_row(totals: &MoneyTotals, font: Option<&PdfFont>, blank_after_label: usize) -> Vec<String> {
-    let mut row = vec!["TOTAL".to_string()];
-    for _ in 0..blank_after_label {
-        row.push(String::new());
-    }
-    row.push(totals.entries.to_string());
-    row.push(hours_pair(totals.regular_minutes, totals.overtime_minutes));
-    row.push(money(font, totals.base_minor));
-    row.push(money(font, totals.ot_minor));
-    row.push(money(font, totals.bonus_minor));
-    row.push(money(font, totals.gross_minor));
-    row.push(money(font, totals.advance_minor));
-    row.push(money(font, totals.deduction_minor));
-    row.push(money(font, totals.net_minor));
-    row
+fn totals_row(totals: &MoneyTotals, font: Option<&PdfFont>) -> Vec<String> {
+    vec![
+        "TOTAL".to_string(),
+        String::new(),
+        totals.entries.to_string(),
+        money(font, totals.business_minor),
+        money(font, totals.bonus_minor),
+        money(font, totals.gross_minor),
+        money(font, totals.advance_minor),
+        money(font, totals.deduction_minor),
+        money(font, totals.net_minor),
+    ]
+}
+
+fn daily_totals_row(totals: &MoneyTotals, font: Option<&PdfFont>) -> Vec<String> {
+    vec![
+        "TOTAL".to_string(),
+        totals.entries.to_string(),
+        money(font, totals.business_minor),
+        money(font, totals.bonus_minor),
+        money(font, totals.gross_minor),
+        money(font, totals.advance_minor),
+        money(font, totals.deduction_minor),
+        money(font, totals.net_minor),
+    ]
+}
+
+/// Detail layout columns are Date, Employee, Business, Bonus, Gross, Advance,
+/// Deduction, Final — no sheet count.
+fn entries_totals_row(totals: &MoneyTotals, font: Option<&PdfFont>) -> Vec<String> {
+    vec![
+        "TOTAL".to_string(),
+        String::new(),
+        money(font, totals.business_minor),
+        money(font, totals.bonus_minor),
+        money(font, totals.gross_minor),
+        money(font, totals.advance_minor),
+        money(font, totals.deduction_minor),
+        money(font, totals.net_minor),
+    ]
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -456,7 +566,7 @@ fn draw_header(
     );
     set_grey(layer, 0.35);
     layer.use_text(
-        &ascii_if_needed(&period, external),
+        ascii_if_needed(&period, external),
         8.5,
         Mm(nm(left)),
         Mm(nm(page_h - 21.5)),
@@ -464,15 +574,16 @@ fn draw_header(
     );
 
     let summary = format!(
-        "Gross {}   Advances {}   Deductions {}   Net payable {}",
-        money(font, data.totals.gross_minor),
+        "Business {}   Bonus {}   Advances {}   Deductions {}   Final money {}",
+        money(font, data.totals.business_minor),
+        money(font, data.totals.bonus_minor),
         money(font, data.totals.advance_minor),
         money(font, data.totals.deduction_minor),
         money(font, data.totals.net_minor)
     );
     set_black(layer);
     layer.use_text(
-        &ascii_if_needed(&summary, external),
+        ascii_if_needed(&summary, external),
         9.0,
         Mm(nm(left)),
         Mm(nm(page_h - 28.5)),
@@ -690,7 +801,7 @@ fn draw_text(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repo::entries::EntryRow;
+    use crate::repo::entries::{EntryLineRow, EntryRow};
 
     fn sample(lines: usize) -> ReportData {
         let lines: Vec<EntryRow> = (0..lines)
@@ -698,18 +809,12 @@ mod tests {
                 id: format!("id-{index}"),
                 employee_id: format!("e{}", index % 3),
                 work_date: format!("2026-11-{:02}", (index % 28) + 1),
-                day_fraction_bp: 10_000,
-                regular_minutes: 480,
-                overtime_minutes: 60,
-                ot_multiplier_bp: None,
-                override_amount_minor: None,
+                business_minor: 80_000,
                 bonus_minor: 0,
                 advance_minor: 5_000,
                 deduction_minor: 0,
-                base_minor: 80_000,
-                ot_minor: 15_000,
-                gross_minor: 95_000,
-                net_minor: 90_000,
+                gross_minor: 80_000,
+                net_minor: 75_000,
                 note: String::new(),
                 created_at: 0,
                 updated_at: 0,
@@ -717,7 +822,16 @@ mod tests {
                 seq: index as i64 + 1,
                 employee_name: format!("Employee {}", index % 3),
                 employee_code: None,
-                employee_pay_basis: "day_rate".into(),
+                lines: vec![EntryLineRow {
+                    id: format!("line-{index}"),
+                    entry_id: format!("id-{index}"),
+                    type_id: "sales".into(),
+                    type_name: "Sales".into(),
+                    description: String::new(),
+                    amount_minor: 80_000,
+                    position: 0,
+                    created_at: 0,
+                }],
             })
             .collect();
         crate::reports::summary::build("2026-11-01", "2026-11-30", 1_700_000_000_000, lines)
@@ -756,7 +870,7 @@ mod tests {
 
     #[test]
     fn pagination_splits_and_keeps_all_rows() {
-        assert_eq!(rows_per_page(210.0) > 10, true);
+        assert!(rows_per_page(210.0) > 10);
         let per_page = rows_per_page(297.0);
         let data = sample(per_page * 2 + 1);
         let table = build_table(&data, ReportLayout::Entries, None);
@@ -764,6 +878,29 @@ mod tests {
         assert!(table.landscape);
         let employee_layout = build_table(&sample(1), ReportLayout::Employee, None);
         assert!(!employee_layout.landscape);
+    }
+
+    #[test]
+    fn every_table_row_has_one_cell_per_column() {
+        for layout in [
+            ReportLayout::Employee,
+            ReportLayout::Daily,
+            ReportLayout::Entries,
+        ] {
+            let table = build_table(&sample(3), layout, None);
+            assert_eq!(
+                table.totals.len(),
+                table.columns.len(),
+                "totals row misaligned for {layout:?}"
+            );
+            for row in &table.rows {
+                assert_eq!(
+                    row.len(),
+                    table.columns.len(),
+                    "row misaligned for {layout:?}"
+                );
+            }
+        }
     }
 
     #[test]

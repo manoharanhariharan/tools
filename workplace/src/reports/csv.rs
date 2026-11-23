@@ -3,7 +3,7 @@
 
 use anyhow::Context;
 
-use crate::domain::money::{format_decimal, format_hours};
+use crate::domain::money::{format_decimal, format_inr};
 use crate::reports::summary::{MoneyTotals, ReportData, ReportLayout};
 
 pub fn render(data: &ReportData, layout: ReportLayout) -> anyhow::Result<Vec<u8>> {
@@ -16,12 +16,8 @@ pub fn render(data: &ReportData, layout: ReportLayout) -> anyhow::Result<Vec<u8>
             writer.write_record([
                 "employee",
                 "code",
-                "pay_basis",
                 "entries",
-                "regular_hours",
-                "overtime_hours",
-                "base",
-                "overtime",
+                "business",
                 "bonus",
                 "gross",
                 "advance",
@@ -33,12 +29,8 @@ pub fn render(data: &ReportData, layout: ReportLayout) -> anyhow::Result<Vec<u8>
                 writer.write_record([
                     employee.name.as_str(),
                     employee.code.as_deref().unwrap_or(""),
-                    employee.pay_basis.as_str(),
                     &t.entries.to_string(),
-                    &format_hours(t.regular_minutes),
-                    &format_hours(t.overtime_minutes),
-                    &format_decimal(t.base_minor),
-                    &format_decimal(t.ot_minor),
+                    &format_decimal(t.business_minor),
                     &format_decimal(t.bonus_minor),
                     &format_decimal(t.gross_minor),
                     &format_decimal(t.advance_minor),
@@ -46,16 +38,13 @@ pub fn render(data: &ReportData, layout: ReportLayout) -> anyhow::Result<Vec<u8>
                     &format_decimal(t.net_minor),
                 ])?;
             }
-            write_total_row(&mut writer, &data.totals, &["TOTAL", "", ""])?;
+            write_total_row(&mut writer, &data.totals, &["TOTAL", ""])?;
         }
         ReportLayout::Daily => {
             writer.write_record([
                 "date",
                 "entries",
-                "regular_hours",
-                "overtime_hours",
-                "base",
-                "overtime",
+                "business",
                 "bonus",
                 "gross",
                 "advance",
@@ -67,10 +56,7 @@ pub fn render(data: &ReportData, layout: ReportLayout) -> anyhow::Result<Vec<u8>
                 writer.write_record([
                     day.work_date.as_str(),
                     &t.entries.to_string(),
-                    &format_hours(t.regular_minutes),
-                    &format_hours(t.overtime_minutes),
-                    &format_decimal(t.base_minor),
-                    &format_decimal(t.ot_minor),
+                    &format_decimal(t.business_minor),
                     &format_decimal(t.bonus_minor),
                     &format_decimal(t.gross_minor),
                     &format_decimal(t.advance_minor),
@@ -85,35 +71,43 @@ pub fn render(data: &ReportData, layout: ReportLayout) -> anyhow::Result<Vec<u8>
                 "date",
                 "employee",
                 "code",
-                "pay_basis",
-                "day_fraction",
-                "regular_hours",
-                "overtime_hours",
-                "base",
-                "overtime",
+                "business",
                 "bonus",
                 "gross",
                 "advance",
                 "deduction",
                 "net",
+                "details",
                 "note",
             ])?;
             for line in &data.lines {
+                let details = line
+                    .lines
+                    .iter()
+                    .map(|entry_line| {
+                        let mut text = format!(
+                            "{}: {}",
+                            entry_line.type_name,
+                            format_inr(entry_line.amount_minor)
+                        );
+                        if !entry_line.description.is_empty() {
+                            text.push_str(&format!(" ({})", entry_line.description));
+                        }
+                        text
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ");
                 writer.write_record([
                     line.work_date.as_str(),
                     line.employee_name.as_str(),
                     line.employee_code.as_deref().unwrap_or(""),
-                    line.employee_pay_basis.as_str(),
-                    &super::summary::fraction_label(line.day_fraction_bp),
-                    &format_hours(line.regular_minutes),
-                    &format_hours(line.overtime_minutes),
-                    &format_decimal(line.base_minor),
-                    &format_decimal(line.ot_minor),
+                    &format_decimal(line.business_minor),
                     &format_decimal(line.bonus_minor),
                     &format_decimal(line.gross_minor),
                     &format_decimal(line.advance_minor),
                     &format_decimal(line.deduction_minor),
                     &format_decimal(line.net_minor),
+                    &details,
                     line.note.as_str(),
                 ])?;
             }
@@ -122,17 +116,13 @@ pub fn render(data: &ReportData, layout: ReportLayout) -> anyhow::Result<Vec<u8>
                 "TOTAL",
                 "",
                 "",
-                "",
-                "",
-                &format_hours(t.regular_minutes),
-                &format_hours(t.overtime_minutes),
-                &format_decimal(t.base_minor),
-                &format_decimal(t.ot_minor),
+                &format_decimal(t.business_minor),
                 &format_decimal(t.bonus_minor),
                 &format_decimal(t.gross_minor),
                 &format_decimal(t.advance_minor),
                 &format_decimal(t.deduction_minor),
                 &format_decimal(t.net_minor),
+                "",
                 "",
             ])?;
         }
@@ -148,8 +138,8 @@ pub fn render(data: &ReportData, layout: ReportLayout) -> anyhow::Result<Vec<u8>
     Ok(output)
 }
 
-/// Totals row: `prefix` fills the leading text columns, then the standard
-/// money/hour columns follow.
+/// Totals row: `prefix` fills the leading text columns, then the standard money
+/// columns follow (entries, business, bonus, gross, advance, deduction, net).
 fn write_total_row<W: std::io::Write>(
     writer: &mut csv::Writer<W>,
     totals: &MoneyTotals,
@@ -157,10 +147,7 @@ fn write_total_row<W: std::io::Write>(
 ) -> anyhow::Result<()> {
     let mut record: Vec<String> = prefix.iter().map(|value| value.to_string()).collect();
     record.push(totals.entries.to_string());
-    record.push(format_hours(totals.regular_minutes));
-    record.push(format_hours(totals.overtime_minutes));
-    record.push(format_decimal(totals.base_minor));
-    record.push(format_decimal(totals.ot_minor));
+    record.push(format_decimal(totals.business_minor));
     record.push(format_decimal(totals.bonus_minor));
     record.push(format_decimal(totals.gross_minor));
     record.push(format_decimal(totals.advance_minor));
@@ -173,25 +160,19 @@ fn write_total_row<W: std::io::Write>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repo::entries::EntryRow;
+    use crate::repo::entries::{EntryLineRow, EntryRow};
 
     fn sample_data() -> ReportData {
         let line = EntryRow {
             id: "1".into(),
             employee_id: "e1".into(),
             work_date: "2026-11-01".into(),
-            day_fraction_bp: 10_000,
-            regular_minutes: 450,
-            overtime_minutes: 60,
-            ot_multiplier_bp: None,
-            override_amount_minor: None,
+            business_minor: 80_000,
             bonus_minor: 10_000,
             advance_minor: 5_000,
             deduction_minor: 0,
-            base_minor: 80_000,
-            ot_minor: 15_000,
-            gross_minor: 105_000,
-            net_minor: 100_000,
+            gross_minor: 90_000,
+            net_minor: 85_000,
             note: "note, with \"quotes\"".into(),
             created_at: 0,
             updated_at: 0,
@@ -199,7 +180,16 @@ mod tests {
             seq: 1,
             employee_name: "Asha, Kumari".into(),
             employee_code: Some("A-1".into()),
-            employee_pay_basis: "day_rate".into(),
+            lines: vec![EntryLineRow {
+                id: "l1".into(),
+                entry_id: "1".into(),
+                type_id: "sales".into(),
+                type_name: "Sales".into(),
+                description: "3 jobs".into(),
+                amount_minor: 80_000,
+                position: 0,
+                created_at: 0,
+            }],
         };
         crate::reports::summary::build("2026-11-01", "2026-11-30", 0, vec![line])
     }
@@ -222,23 +212,23 @@ mod tests {
         let rows = parse(&bytes);
         assert_eq!(rows[0][0], "employee");
         assert_eq!(rows[1][0], "Asha, Kumari");
-        assert_eq!(rows[1][3], "1");
-        assert_eq!(rows[1][4], "7.50");
-        assert_eq!(rows[1][6], "800.00");
-        assert_eq!(rows[1][12], "1000.00");
+        assert_eq!(rows[1][2], "1");
+        assert_eq!(rows[1][3], "800.00");
+        assert_eq!(rows[1][4], "100.00");
+        assert_eq!(rows[1][8], "850.00");
         assert_eq!(rows.last().unwrap()[0], "TOTAL");
-        assert_eq!(rows.last().unwrap()[12], "1000.00");
+        assert_eq!(rows.last().unwrap()[8], "850.00");
     }
 
     #[test]
-    fn entries_csv_quotes_commas_and_quotes_and_formats_note() {
+    fn entries_csv_quotes_commas_and_lists_details() {
         let bytes = render(&sample_data(), ReportLayout::Entries).unwrap();
         let rows = parse(&bytes);
         assert_eq!(rows[0][0], "date");
         assert_eq!(rows[1][1], "Asha, Kumari");
-        assert_eq!(rows[1][14], "note, with \"quotes\"");
-        assert_eq!(rows[1][4], "1.00");
-        assert_eq!(rows[1][13], "1000.00");
+        assert!(rows[1][9].contains("Sales: ₹800.00 (3 jobs)"));
+        assert_eq!(rows[1][10], "note, with \"quotes\"");
+        assert_eq!(rows[1][8], "850.00");
         assert_eq!(rows.last().unwrap()[0], "TOTAL");
         assert_eq!(rows.last().unwrap()[1], "");
     }
@@ -250,7 +240,7 @@ mod tests {
         assert_eq!(rows[0][0], "date");
         assert_eq!(rows[1][0], "2026-11-01");
         assert_eq!(rows[1][1], "1");
-        assert_eq!(rows[1][10], "1000.00");
+        assert_eq!(rows[1][7], "850.00");
     }
 
     #[test]
@@ -259,6 +249,6 @@ mod tests {
         let rows = parse(&render(&data, ReportLayout::Employee).unwrap());
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[1][0], "TOTAL");
-        assert_eq!(rows[1][12], "0.00");
+        assert_eq!(rows[1][8], "0.00");
     }
 }

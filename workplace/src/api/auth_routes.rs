@@ -7,10 +7,10 @@ use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::AppState;
 use crate::api::AppJson;
 use crate::auth;
 use crate::error::{AppError, AppResult};
-use crate::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct LoginBody {
@@ -48,7 +48,9 @@ pub async fn login(
     let password = body.password;
     let verified = tokio::task::spawn_blocking(move || auth::verify_password(&password, &hash))
         .await
-        .map_err(|err| AppError::internal(anyhow::anyhow!("password verification task failed: {err}")))?;
+        .map_err(|err| {
+            AppError::internal(anyhow::anyhow!("password verification task failed: {err}"))
+        })?;
 
     if !verified {
         state.limiter.record_failure(ip);
@@ -63,8 +65,8 @@ pub async fn login(
         state.config.secure_cookies(),
     );
 
-    let mut response = Json(json!({ "authenticated": true, "expires_at": expires_at }))
-        .into_response();
+    let mut response =
+        Json(json!({ "authenticated": true, "expires_at": expires_at })).into_response();
     response.headers_mut().insert(header::SET_COOKIE, cookie);
     Ok(response)
 }
@@ -81,7 +83,10 @@ pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> AppRes
     Ok(response)
 }
 
-pub async fn me(State(state): State<AppState>, headers: HeaderMap) -> AppResult<(StatusCode, Json<MeResponse>)> {
+pub async fn me(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<(StatusCode, Json<MeResponse>)> {
     let expires_at = match auth::cookie_token(&headers) {
         Some(token) => auth::session_expires_at(&state.pool, &token).await?,
         None => None,

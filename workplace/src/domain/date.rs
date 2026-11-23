@@ -28,8 +28,7 @@ pub fn display(d: Date) -> String {
 }
 
 pub fn today_ist() -> Date {
-    let offset = UtcOffset::from_whole_seconds(SHOP_UTC_OFFSET_SECONDS)
-        .unwrap_or(UtcOffset::UTC);
+    let offset = UtcOffset::from_whole_seconds(SHOP_UTC_OFFSET_SECONDS).unwrap_or(UtcOffset::UTC);
     OffsetDateTime::now_utc().to_offset(offset).date()
 }
 
@@ -53,8 +52,7 @@ pub fn days_inclusive(from: Date, to: Date) -> i64 {
 /// Format a Unix-millisecond timestamp as an IST `dd-mm-yyyy HH:MM` string for
 /// report headers.
 pub fn format_datetime_ist(ms: i64) -> String {
-    let offset = UtcOffset::from_whole_seconds(SHOP_UTC_OFFSET_SECONDS)
-        .unwrap_or(UtcOffset::UTC);
+    let offset = UtcOffset::from_whole_seconds(SHOP_UTC_OFFSET_SECONDS).unwrap_or(UtcOffset::UTC);
     let Ok(timestamp) = OffsetDateTime::from_unix_timestamp_nanos(ms as i128 * 1_000_000) else {
         return String::new();
     };
@@ -72,8 +70,8 @@ pub fn format_datetime_ist(ms: i64) -> String {
 /// Reports are date ranges; validate ordering and bound the span so a single
 /// request cannot scan the whole ledger.
 pub fn validate_range(from: &str, to: &str) -> Result<(Date, Date), crate::error::FieldError> {
-    let from_date =
-        parse_iso(from).ok_or_else(|| crate::error::FieldError::new("from", "expected YYYY-MM-DD"))?;
+    let from_date = parse_iso(from)
+        .ok_or_else(|| crate::error::FieldError::new("from", "expected YYYY-MM-DD"))?;
     let to_date =
         parse_iso(to).ok_or_else(|| crate::error::FieldError::new("to", "expected YYYY-MM-DD"))?;
     if from_date > to_date {

@@ -4,12 +4,11 @@
 import { h, emptyState, errorState, spinner, toast } from '../dom.js';
 import {
   currentMonth,
+  daysInRange,
   displayDate,
-  formatHours,
   formatPaise,
   monthBounds,
 } from '../format.js';
-import { basisLabel } from '../pay.js';
 
 const LAYOUTS = [
   ['employee', 'By employee'],
@@ -21,6 +20,9 @@ export function renderReports(root, ctx) {
   const container = h('section', { class: 'view' });
   root.replaceChildren(container);
   let month = currentMonth();
+  const initialRange = monthBounds(month);
+  let from = initialRange.from;
+  let to = initialRange.to;
   let layout = 'employee';
   let requestController = null;
   let requestToken = 0;
@@ -28,14 +30,24 @@ export function renderReports(root, ctx) {
   const monthInput = h('input', {
     type: 'month',
     value: month,
-    'aria-label': 'Report month',
+    'aria-label': 'Quick-pick month',
+  });
+  const fromInput = h('input', {
+    type: 'date',
+    value: from,
+    'aria-label': 'Report start date',
+  });
+  const toInput = h('input', {
+    type: 'date',
+    value: to,
+    'aria-label': 'Report end date',
   });
   const layoutSelect = h(
     'select',
     { 'aria-label': 'Download layout' },
     LAYOUTS.map(([value, label]) => h('option', { value }, label)),
   );
-  const monthError = h('p', { class: 'field-error', role: 'alert' });
+  const rangeError = h('p', { class: 'field-error', role: 'alert' });
   const region = h('div', { class: 'report-region', 'aria-live': 'polite' });
 
   const actions = h(
@@ -54,22 +66,60 @@ export function renderReports(root, ctx) {
         'div',
         {},
         h('h1', {}, 'Reports'),
-        h('p', { class: 'subtitle' }, 'Daily, monthly and per-employee earnings summaries'),
+        h('p', { class: 'subtitle' }, 'Daily, date-range and per-employee earnings summaries'),
       ),
     ),
     h(
       'div',
       { class: 'filters' },
-      h('div', { class: 'field' }, h('label', {}, h('span', { class: 'field-label' }, 'Month'), monthInput), monthError),
-      h('div', { class: 'field' }, h('label', {}, h('span', { class: 'field-label' }, 'Layout'), layoutSelect)),
+      h(
+        'div',
+        { class: 'field' },
+        h('label', {}, h('span', { class: 'field-label' }, 'Month (quick pick)'), monthInput),
+      ),
+      h(
+        'div',
+        { class: 'field' },
+        h('label', {}, h('span', { class: 'field-label' }, 'From'), fromInput),
+      ),
+      h(
+        'div',
+        { class: 'field' },
+        h('label', {}, h('span', { class: 'field-label' }, 'To'), toInput),
+      ),
+      h(
+        'div',
+        { class: 'field' },
+        h('label', {}, h('span', { class: 'field-label' }, 'Layout'), layoutSelect),
+      ),
     ),
+    rangeError,
     actions,
-    h('p', { class: 'field-hint' }, 'Printable HTML opens in a new tab. The server generates PDF, CSV and totals.'),
+    h(
+      'p',
+      { class: 'field-hint' },
+      'Any range up to 366 days. Printable HTML opens in a new tab; PDF, CSV and totals are generated on the server.',
+    ),
     region,
   );
 
   function currentRange() {
-    return monthBounds(month);
+    const days = daysInRange(from, to);
+    if (days === null || days > 366) return null;
+    return { from, to };
+  }
+
+  function validatedRange() {
+    const range = currentRange();
+    if (!range) {
+      rangeError.textContent =
+        from > to
+          ? '“From” must be on or before “To”.'
+          : 'Choose a valid date range of at most 366 days.';
+      return null;
+    }
+    rangeError.textContent = '';
+    return range;
   }
 
   function ensureOnline() {
@@ -82,7 +132,7 @@ export function renderReports(root, ctx) {
 
   async function download(kind) {
     if (!ensureOnline()) return;
-    const range = currentRange();
+    const range = validatedRange();
     if (!range) return;
     try {
       await ctx.api.downloadReport(kind, {
@@ -97,12 +147,8 @@ export function renderReports(root, ctx) {
   }
 
   async function load() {
-    const range = currentRange();
-    if (!range) {
-      monthError.textContent = 'Choose a valid month';
-      return;
-    }
-    monthError.textContent = '';
+    const range = validatedRange();
+    if (!range) return;
     requestToken += 1;
     const token = requestToken;
     requestController?.abort();
@@ -147,15 +193,11 @@ export function renderReports(root, ctx) {
     const stats = h(
       'section',
       { class: 'stat-grid', 'aria-label': 'Report totals' },
-      stat('Gross earnings', formatPaise(totals.gross_minor), `${totals.entries} entries`),
+      stat('Business generated', formatPaise(totals.business_minor), `${totals.entries} day sheets`),
+      stat('Bonus', formatPaise(totals.bonus_minor), 'added'),
       stat('Advances', formatPaise(totals.advance_minor), 'deducted'),
       stat('Deductions', formatPaise(totals.deduction_minor), 'deducted'),
-      stat('Net payout', formatPaise(totals.net_minor), 'to pay'),
-      stat(
-        'Hours',
-        `${formatHours(totals.regular_minutes)} / ${formatHours(totals.overtime_minutes)}`,
-        'regular / overtime',
-      ),
+      stat('Final money', formatPaise(totals.net_minor), 'to present'),
     );
 
     const employeeTable = h(
@@ -171,9 +213,9 @@ export function renderReports(root, ctx) {
             'tr',
             {},
             h('th', { scope: 'col' }, 'Employee'),
-            h('th', { scope: 'col' }, 'Basis'),
-            h('th', { scope: 'col', class: 'num' }, 'Entries'),
-            h('th', { scope: 'col', class: 'num' }, 'Net'),
+            h('th', { scope: 'col', class: 'num' }, 'Sheets'),
+            h('th', { scope: 'col', class: 'num' }, 'Business'),
+            h('th', { scope: 'col', class: 'num' }, 'Final'),
           ),
         ),
         h(
@@ -184,8 +226,8 @@ export function renderReports(root, ctx) {
               'tr',
               {},
               h('th', { scope: 'row' }, employee.name),
-              h('td', {}, basisLabel(employee.pay_basis)),
               h('td', { class: 'num' }, String(employee.totals.entries)),
+              h('td', { class: 'num' }, formatPaise(employee.totals.business_minor)),
               h('td', { class: 'num strong' }, formatPaise(employee.totals.net_minor)),
             ),
           ),
@@ -206,9 +248,9 @@ export function renderReports(root, ctx) {
             'tr',
             {},
             h('th', { scope: 'col' }, 'Date'),
-            h('th', { scope: 'col', class: 'num' }, 'Entries'),
-            h('th', { scope: 'col', class: 'num' }, 'Gross'),
-            h('th', { scope: 'col', class: 'num' }, 'Net'),
+            h('th', { scope: 'col', class: 'num' }, 'Sheets'),
+            h('th', { scope: 'col', class: 'num' }, 'Business'),
+            h('th', { scope: 'col', class: 'num' }, 'Final'),
           ),
         ),
         h(
@@ -220,8 +262,39 @@ export function renderReports(root, ctx) {
               {},
               h('th', { scope: 'row' }, displayDate(day.work_date)),
               h('td', { class: 'num' }, String(day.totals.entries)),
-              h('td', { class: 'num' }, formatPaise(day.totals.gross_minor)),
+              h('td', { class: 'num' }, formatPaise(day.totals.business_minor)),
               h('td', { class: 'num strong' }, formatPaise(day.totals.net_minor)),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    const typeTable = h(
+      'div',
+      { class: 'table-wrap' },
+      h(
+        'table',
+        { class: 'data-table' },
+        h(
+          'thead',
+          {},
+          h(
+            'tr',
+            {},
+            h('th', { scope: 'col' }, 'Earning type'),
+            h('th', { scope: 'col', class: 'num' }, 'Business'),
+          ),
+        ),
+        h(
+          'tbody',
+          {},
+          (data.types ?? []).map((entryType) =>
+            h(
+              'tr',
+              {},
+              h('th', { scope: 'row' }, entryType.type_name),
+              h('td', { class: 'num strong' }, formatPaise(entryType.amount_minor)),
             ),
           ),
         ),
@@ -232,8 +305,10 @@ export function renderReports(root, ctx) {
       stats,
       h('h2', { class: 'section-title' }, 'By employee'),
       employeeTable,
-      h('h2', { class: 'section-title' }, 'Daily totals'),
+      h('h2', { class: 'section-title' }, 'By day'),
       dailyTable,
+      h('h2', { class: 'section-title' }, 'Business by earning type'),
+      typeTable,
     );
   }
 
@@ -249,6 +324,22 @@ export function renderReports(root, ctx) {
 
   monthInput.addEventListener('change', () => {
     month = monthInput.value;
+    const bounds = monthBounds(month);
+    if (!bounds) return;
+    from = bounds.from;
+    to = bounds.to;
+    fromInput.value = from;
+    toInput.value = to;
+    load();
+  });
+  fromInput.addEventListener('change', () => {
+    from = fromInput.value;
+    monthInput.value = '';
+    load();
+  });
+  toInput.addEventListener('change', () => {
+    to = toInput.value;
+    monthInput.value = '';
     load();
   });
   layoutSelect.addEventListener('change', () => {
@@ -259,7 +350,7 @@ export function renderReports(root, ctx) {
     if (!control) return;
     if (control.dataset.action === 'print') {
       if (!ensureOnline()) return;
-      const range = currentRange();
+      const range = validatedRange();
       if (range) ctx.api.openPrintReport({ from: range.from, to: range.to, layout });
     } else if (control.dataset.action === 'pdf') {
       void download('pdf');
@@ -268,9 +359,10 @@ export function renderReports(root, ctx) {
     }
   });
 
+  let wasOffline = !ctx.store.get().online;
   const unsubscribe = ctx.store.subscribe((state) => {
-    if (!state.online && !region.querySelector('.report-loading')) {
-      // If we went offline after loading, keep the last report visible but warn.
+    if (!state.online) {
+      // Keep the last loaded report visible but warn that it may be stale.
       if (!container.querySelector('.banner-offline')) {
         actions.before(
           h(
@@ -280,8 +372,13 @@ export function renderReports(root, ctx) {
           ),
         );
       }
-    } else if (state.online) {
+      wasOffline = true;
+    } else {
       container.querySelector('.banner-offline')?.remove();
+      if (wasOffline) {
+        wasOffline = false;
+        load();
+      }
     }
   });
 

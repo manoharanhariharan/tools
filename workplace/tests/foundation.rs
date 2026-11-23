@@ -25,7 +25,11 @@ async fn static_shell_is_served_with_security_headers() {
         response.headers.get("x-content-type-options").unwrap(),
         "nosniff"
     );
-    assert!(response.headers.contains_key(header::CONTENT_SECURITY_POLICY));
+    assert!(
+        response
+            .headers
+            .contains_key(header::CONTENT_SECURITY_POLICY)
+    );
 
     let missing = server.call(Method::GET, "/nope.js", None, None).await;
     assert_eq!(missing.status, StatusCode::NOT_FOUND);
@@ -146,6 +150,18 @@ async fn expired_sessions_are_rejected() {
         .call(Method::GET, "/api/employees", None, Some(&cookie))
         .await;
     assert_eq!(response.status, StatusCode::UNAUTHORIZED);
+
+    daybook::auth::cleanup_expired_sessions(&server.state.pool)
+        .await
+        .expect("cleanup");
+    let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions")
+        .fetch_one(&server.state.pool)
+        .await
+        .expect("count");
+    assert_eq!(
+        remaining, 0,
+        "expired sessions should be physically removed"
+    );
 }
 
 #[tokio::test]

@@ -5,7 +5,6 @@
 import * as api from './api.js';
 import * as db from './db.js';
 import { mergeStrategy, nextPullCursor, outboxKey, pendingKeys, sortChanges } from './sync-logic.js';
-
 const PUSH_BATCH = 100;
 const PULL_LIMIT = 200;
 const MAX_PULL_PAGES = 60;
@@ -28,7 +27,7 @@ function serverChange(change) {
   };
 }
 
-export function createSyncEngine({ store, refresh, notify }) {
+export function createSyncEngine({ store, refresh, notify, onSynced }) {
   let running = false;
   let interval = null;
   const listenerCleanups = [];
@@ -166,6 +165,7 @@ export function createSyncEngine({ store, refresh, notify }) {
     try {
       await pushOutbox();
       await pullAll();
+      if (onSynced) await onSynced();
       const conflicts = (await db.getAll(db.STORES.conflicts)).slice(-MAX_CONFLICTS);
       const lastSyncAt = Date.now();
       await db.setMeta('last_sync', lastSyncAt);

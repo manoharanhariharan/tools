@@ -38,7 +38,10 @@ pub fn generate(out_dir: &Path, hosts: &[String]) -> anyhow::Result<GeneratedCer
         if host.is_empty() {
             continue;
         }
-        if host_labels.iter().any(|existing| existing.eq_ignore_ascii_case(host)) {
+        if host_labels
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(host))
+        {
             continue;
         }
         let san = san_for(host)?;
@@ -77,10 +80,7 @@ pub fn generate(out_dir: &Path, hosts: &[String]) -> anyhow::Result<GeneratedCer
 
     let mut leaf_params = CertificateParams::new(Vec::<String>::new())?;
     leaf_params.subject_alt_names = sans;
-    leaf_params.key_usages = vec![
-        KeyUsagePurpose::DigitalSignature,
-        KeyUsagePurpose::KeyEncipherment,
-    ];
+    leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
     leaf_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
     leaf_params.use_authority_key_identifier_extension = true;
     leaf_params
@@ -211,11 +211,9 @@ mod tests {
     async fn rustls_can_load_the_generated_pair() {
         let dir = tempfile::tempdir().unwrap();
         let generated = generate(dir.path(), &["localhost".to_string()]).unwrap();
-        let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
-            &generated.cert,
-            &generated.key,
-        )
-        .await;
+        let config =
+            axum_server::tls_rustls::RustlsConfig::from_pem_file(&generated.cert, &generated.key)
+                .await;
         assert!(config.is_ok(), "rustls rejected the generated certificate");
     }
 }

@@ -32,7 +32,10 @@ fn service_worker_shell_paths_exist() {
         );
         checked += 1;
     }
-    assert!(checked >= 20, "expected the full app shell, checked {checked}");
+    assert!(
+        checked >= 20,
+        "expected the full app shell, checked {checked}"
+    );
 }
 
 #[test]

@@ -87,8 +87,7 @@ impl From<sqlx::Error> for AppError {
 
 impl From<serde_json::Error> for AppError {
     fn from(err: serde_json::Error) -> Self {
-        AppError::BadRequest("malformed JSON body")
-            .tap_log(err)
+        AppError::BadRequest("malformed JSON body").tap_log(err)
     }
 }
 

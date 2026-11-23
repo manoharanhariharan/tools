@@ -3,7 +3,7 @@
 // The UI is a no-build ES-module app; the shell list below must stay in sync
 // with web/ (an integration test verifies every path exists).
 
-const VERSION = 'daybook-v1';
+const VERSION = 'daybook-v2';
 const CACHE = `daybook-${VERSION}`;
 
 const SHELL = [
@@ -21,11 +21,11 @@ const SHELL = [
   '/js/db.js',
   '/js/store.js',
   '/js/format.js',
-  '/js/pay.js',
   '/js/dom.js',
   '/js/mutations.js',
   '/js/sync.js',
   '/js/sync-logic.js',
+  '/js/totals.js',
   '/js/views/login.js',
   '/js/views/today.js',
   '/js/views/employees.js',
@@ -33,6 +33,7 @@ const SHELL = [
   '/js/views/entry-dialog.js',
   '/js/views/reports.js',
   '/js/views/sync.js',
+  '/js/views/type-dialog.js',
 ];
 
 self.addEventListener('install', (event) => {

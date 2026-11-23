@@ -50,29 +50,6 @@ export function parsePaise(input) {
   return Number.isSafeInteger(value) ? value : null;
 }
 
-/** Minutes -> decimal hours with two places: 450 -> "7.50". */
-export function formatHours(minutes) {
-  if (!Number.isFinite(minutes) || minutes < 0) return '0.00';
-  const hundredths = Math.round((minutes * 100) / 60);
-  return `${Math.floor(hundredths / 100)}.${String(hundredths % 100).padStart(2, '0')}`;
-}
-
-/** "7.5" hours -> 450 minutes; returns null when invalid. */
-export function parseHoursToMinutes(input) {
-  const cleaned = String(input ?? '').trim();
-  if (!/^\d{1,2}(\.\d{1,2})?$/.test(cleaned)) return null;
-  const [whole, fraction = ''] = cleaned.split('.');
-  const minutes = Number(whole) * 60 + Math.round((Number(`0.${fraction || '0'}`) * 60));
-  if (!Number.isSafeInteger(minutes) || minutes > 1440) return null;
-  return minutes;
-}
-
-/** Basis points -> "0.50". */
-export function fractionLabel(bp) {
-  const hundredths = Math.round(bp / 100);
-  return `${Math.floor(hundredths / 100)}.${String(hundredths % 100).padStart(2, '0')}`;
-}
-
 function istParts(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: IST,
@@ -127,6 +104,18 @@ export function monthBounds(month) {
   const from = new Date(Date.UTC(year, monthIndex, 1));
   const to = new Date(Date.UTC(year, monthIndex + 1, 0));
   return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+}
+
+/** Inclusive day count for two ISO dates, or null when invalid/out of order. */
+export function daysInRange(from, to) {
+  if (typeof from !== 'string' || typeof to !== 'string') return null;
+  const matchFrom = /^(\d{4})-(\d{2})-(\d{2})$/.exec(from);
+  const matchTo = /^(\d{4})-(\d{2})-(\d{2})$/.exec(to);
+  if (!matchFrom || !matchTo) return null;
+  const start = Date.UTC(Number(matchFrom[1]), Number(matchFrom[2]) - 1, Number(matchFrom[3]));
+  const end = Date.UTC(Number(matchTo[1]), Number(matchTo[2]) - 1, Number(matchTo[3]));
+  const days = Math.round((end - start) / 86_400_000) + 1;
+  return days >= 1 ? days : null;
 }
 
 /** Milliseconds since epoch -> "23-11-2026 14:05" in IST. */

@@ -1,29 +1,43 @@
+//! Employee-day sheets: business across earning types, plus bonus/advance/
+//! deduction. The server recalculates every total and snapshots each line's
+//! type name so edits to the type list never rewrite history.
+
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, SqliteConnection, SqlitePool};
+use sqlx::{FromRow, QueryBuilder, SqliteConnection, SqlitePool};
 use time::Date;
+use uuid::Uuid;
 
 use crate::domain::date;
-use crate::domain::pay::{
-    Computed, EntryAmounts, FULL_DAY_BP, compute,
-};
+use crate::domain::totals::{self, DayTotals, LineAmount, MAX_LINES};
 use crate::error::{AppError, FieldError};
-use crate::repo::employees::{EmployeeRow, MAX_NOTE_LEN};
+use crate::repo::employees::MAX_NOTE_LEN;
+use crate::repo::types;
+
+#[derive(Debug, Clone, Serialize, FromRow, PartialEq, Eq)]
+pub struct EntryLineRow {
+    pub id: String,
+    pub entry_id: String,
+    pub type_id: String,
+    pub type_name: String,
+    pub description: String,
+    pub amount_minor: i64,
+    pub position: i64,
+    pub created_at: i64,
+}
 
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct EntryRow {
     pub id: String,
     pub employee_id: String,
     pub work_date: String,
-    pub day_fraction_bp: i64,
-    pub regular_minutes: i64,
-    pub overtime_minutes: i64,
-    pub ot_multiplier_bp: Option<i64>,
-    pub override_amount_minor: Option<i64>,
+    #[sqlx(rename = "base_minor")]
+    #[serde(rename = "business_minor")]
+    pub business_minor: i64,
     pub bonus_minor: i64,
     pub advance_minor: i64,
     pub deduction_minor: i64,
-    pub base_minor: i64,
-    pub ot_minor: i64,
     pub gross_minor: i64,
     pub net_minor: i64,
     pub note: String,
@@ -31,17 +45,14 @@ pub struct EntryRow {
     pub updated_at: i64,
     pub deleted_at: Option<i64>,
     pub seq: i64,
-    /// Present on list/detail queries that join the employee; absent (empty)
-    /// in sync payloads, which carry employees separately.
     #[sqlx(default)]
     #[serde(skip_serializing_if = "String::is_empty")]
     pub employee_name: String,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub employee_code: Option<String>,
-    #[sqlx(default)]
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub employee_pay_basis: String,
+    #[sqlx(skip)]
+    pub lines: Vec<EntryLineRow>,
 }
 
 impl EntryRow {
@@ -51,19 +62,20 @@ impl EntryRow {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct EntryLineInput {
+    pub type_id: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub amount_minor: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct EntryInput {
     pub employee_id: String,
     pub work_date: String,
     #[serde(default)]
-    pub day_fraction_bp: Option<i64>,
-    #[serde(default)]
-    pub regular_minutes: Option<i64>,
-    #[serde(default)]
-    pub overtime_minutes: Option<i64>,
-    #[serde(default)]
-    pub ot_multiplier_bp: Option<i64>,
-    #[serde(default)]
-    pub override_amount_minor: Option<i64>,
+    pub lines: Vec<EntryLineInput>,
     #[serde(default)]
     pub bonus_minor: Option<i64>,
     #[serde(default)]
@@ -74,25 +86,33 @@ pub struct EntryInput {
     pub note: Option<String>,
 }
 
-/// Normalized, validated inputs plus the server-authoritative amounts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedLine {
+    pub type_id: String,
+    pub type_name: String,
+    pub description: String,
+    pub amount_minor: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedEntry {
     pub employee_id: String,
     pub work_date: String,
-    pub day_fraction_bp: i64,
-    pub regular_minutes: i64,
-    pub overtime_minutes: i64,
-    pub ot_multiplier_bp: Option<i64>,
-    pub override_amount_minor: Option<i64>,
+    pub lines: Vec<PreparedLine>,
     pub bonus_minor: i64,
     pub advance_minor: i64,
     pub deduction_minor: i64,
     pub note: String,
-    pub computed: Computed,
+    pub totals: DayTotals,
 }
 
-/// Validate raw inputs against the employee's rule and recompute all amounts.
-pub fn prepare(employee: &EmployeeRow, input: &EntryInput) -> Result<PreparedEntry, AppError> {
+/// Validate raw inputs against the earning-type catalogue and recompute the day
+/// totals. Requires a connection to resolve type names (and to reject unknown
+/// type ids).
+pub async fn prepare(
+    conn: &mut SqliteConnection,
+    input: &EntryInput,
+) -> Result<PreparedEntry, AppError> {
     let work_date: Date = match date::parse_iso(input.work_date.trim()) {
         Some(d) if (1970..=2100).contains(&d.year()) => d,
         _ => {
@@ -120,38 +140,122 @@ pub fn prepare(employee: &EmployeeRow, input: &EntryInput) -> Result<PreparedEnt
         )]));
     }
 
-    let raw = EntryAmounts {
-        day_fraction_bp: input.day_fraction_bp.unwrap_or(FULL_DAY_BP),
-        regular_minutes: input.regular_minutes.unwrap_or(0),
-        overtime_minutes: input.overtime_minutes.unwrap_or(0),
-        ot_multiplier_bp: input.ot_multiplier_bp,
-        override_amount_minor: input.override_amount_minor,
-        bonus_minor: input.bonus_minor.unwrap_or(0),
-        advance_minor: input.advance_minor.unwrap_or(0),
-        deduction_minor: input.deduction_minor.unwrap_or(0),
-    };
-    let amounts = raw.normalized_for(employee.basis());
-    let computed = compute(&employee.rule(), &amounts).map_err(AppError::Validation)?;
+    if input.lines.len() > MAX_LINES {
+        return Err(AppError::Validation(vec![FieldError::new(
+            "lines",
+            format!("at most {MAX_LINES} earning rows are allowed"),
+        )]));
+    }
+
+    let raw: Vec<LineAmount> = input
+        .lines
+        .iter()
+        .map(|line| LineAmount {
+            type_id: line.type_id.trim().to_string(),
+            description: line
+                .description
+                .clone()
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+            amount_minor: line.amount_minor,
+        })
+        .collect();
+
+    let bonus_minor = input.bonus_minor.unwrap_or(0);
+    let advance_minor = input.advance_minor.unwrap_or(0);
+    let deduction_minor = input.deduction_minor.unwrap_or(0);
+    let totals = totals::compute(&raw, bonus_minor, advance_minor, deduction_minor)
+        .map_err(AppError::Validation)?;
+
+    let type_ids: Vec<String> = raw
+        .iter()
+        .map(|line| line.type_id.clone())
+        .filter(|id| !id.is_empty())
+        .collect();
+    let found = types::find_many(conn, &type_ids).await?;
+    let names: HashMap<String, String> = found.into_iter().map(|row| (row.id, row.name)).collect();
+
+    let mut lines = Vec::with_capacity(raw.len());
+    for line in raw {
+        let Some(type_name) = names.get(&line.type_id).cloned() else {
+            return Err(AppError::Validation(vec![FieldError::new(
+                "type_id",
+                "unknown earning type",
+            )]));
+        };
+        if line.amount_minor == 0 {
+            // Zero-valued rows carry no information; keep the day sheet clean.
+            continue;
+        }
+        lines.push(PreparedLine {
+            type_id: line.type_id,
+            type_name,
+            description: line.description,
+            amount_minor: line.amount_minor,
+        });
+    }
 
     Ok(PreparedEntry {
-        employee_id: employee.id.clone(),
+        employee_id: input.employee_id.trim().to_string(),
         work_date: date::iso(work_date),
-        day_fraction_bp: amounts.day_fraction_bp,
-        regular_minutes: amounts.regular_minutes,
-        overtime_minutes: amounts.overtime_minutes,
-        ot_multiplier_bp: amounts.ot_multiplier_bp,
-        override_amount_minor: amounts.override_amount_minor,
-        bonus_minor: amounts.bonus_minor,
-        advance_minor: amounts.advance_minor,
-        deduction_minor: amounts.deduction_minor,
+        lines,
+        bonus_minor,
+        advance_minor,
+        deduction_minor,
         note,
-        computed,
+        totals,
     })
 }
 
-const VIEW_SELECT: &str = "SELECT e.*, emp.name AS employee_name, emp.code AS employee_code,
-            emp.pay_basis AS employee_pay_basis
+const VIEW_SELECT: &str = "SELECT e.*, emp.name AS employee_name, emp.code AS employee_code
      FROM entries e JOIN employees emp ON emp.id = e.employee_id";
+
+async fn load_lines(
+    conn: &mut SqliteConnection,
+    entry_ids: &[String],
+) -> Result<HashMap<String, Vec<EntryLineRow>>, sqlx::Error> {
+    let mut grouped: HashMap<String, Vec<EntryLineRow>> = HashMap::new();
+    if entry_ids.is_empty() {
+        return Ok(grouped);
+    }
+
+    let mut builder = QueryBuilder::new("SELECT * FROM entry_lines WHERE entry_id IN (");
+    let mut separated = builder.separated(", ");
+    for id in entry_ids {
+        separated.push_bind(id);
+    }
+    separated.push_unseparated(") ORDER BY position ASC, created_at ASC, id ASC");
+
+    let rows: Vec<EntryLineRow> = builder.build_query_as().fetch_all(conn).await?;
+    for row in rows {
+        grouped.entry(row.entry_id.clone()).or_default().push(row);
+    }
+    Ok(grouped)
+}
+
+async fn attach_lines(
+    conn: &mut SqliteConnection,
+    rows: &mut [EntryRow],
+) -> Result<(), sqlx::Error> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
+    let mut grouped = load_lines(conn, &ids).await?;
+    for row in rows {
+        row.lines = grouped.remove(&row.id).unwrap_or_default();
+    }
+    Ok(())
+}
+
+/// Attach earning lines to rows fetched outside this module (sync pulls).
+pub async fn hydrate_lines(
+    conn: &mut SqliteConnection,
+    rows: &mut [EntryRow],
+) -> Result<(), sqlx::Error> {
+    attach_lines(conn, rows).await
+}
 
 pub async fn list_live(
     pool: &SqlitePool,
@@ -159,7 +263,8 @@ pub async fn list_live(
     to: &str,
     employee_id: Option<&str>,
 ) -> Result<Vec<EntryRow>, sqlx::Error> {
-    sqlx::query_as::<_, EntryRow>(&format!(
+    let mut conn = pool.acquire().await?;
+    let mut rows = sqlx::query_as::<_, EntryRow>(&format!(
         "{VIEW_SELECT}
          WHERE e.deleted_at IS NULL
            AND e.work_date BETWEEN ? AND ?
@@ -170,37 +275,51 @@ pub async fn list_live(
     .bind(to)
     .bind(employee_id)
     .bind(employee_id)
-    .fetch_all(pool)
-    .await
+    .fetch_all(&mut *conn)
+    .await?;
+    attach_lines(&mut conn, &mut rows).await?;
+    Ok(rows)
 }
 
 pub async fn find(conn: &mut SqliteConnection, id: &str) -> Result<Option<EntryRow>, sqlx::Error> {
-    sqlx::query_as::<_, EntryRow>("SELECT * FROM entries WHERE id = ?")
+    let mut row = sqlx::query_as::<_, EntryRow>("SELECT * FROM entries WHERE id = ?")
         .bind(id)
-        .fetch_optional(conn)
-        .await
+        .fetch_optional(&mut *conn)
+        .await?;
+    if let Some(row) = row.as_mut() {
+        attach_lines(conn, std::slice::from_mut(row)).await?;
+    }
+    Ok(row)
 }
 
 pub async fn find_live(
     conn: &mut SqliteConnection,
     id: &str,
 ) -> Result<Option<EntryRow>, sqlx::Error> {
-    sqlx::query_as::<_, EntryRow>(&format!(
+    let mut row = sqlx::query_as::<_, EntryRow>(&format!(
         "{VIEW_SELECT} WHERE e.id = ? AND e.deleted_at IS NULL"
     ))
     .bind(id)
-    .fetch_optional(conn)
-    .await
+    .fetch_optional(&mut *conn)
+    .await?;
+    if let Some(row) = row.as_mut() {
+        attach_lines(conn, std::slice::from_mut(row)).await?;
+    }
+    Ok(row)
 }
 
 pub async fn find_any_view(
     conn: &mut SqliteConnection,
     id: &str,
 ) -> Result<Option<EntryRow>, sqlx::Error> {
-    sqlx::query_as::<_, EntryRow>(&format!("{VIEW_SELECT} WHERE e.id = ?"))
+    let mut row = sqlx::query_as::<_, EntryRow>(&format!("{VIEW_SELECT} WHERE e.id = ?"))
         .bind(id)
-        .fetch_optional(conn)
-        .await
+        .fetch_optional(&mut *conn)
+        .await?;
+    if let Some(row) = row.as_mut() {
+        attach_lines(conn, std::slice::from_mut(row)).await?;
+    }
+    Ok(row)
 }
 
 pub async fn find_live_by_employee_date(
@@ -208,14 +327,48 @@ pub async fn find_live_by_employee_date(
     employee_id: &str,
     work_date: &str,
 ) -> Result<Option<EntryRow>, sqlx::Error> {
-    sqlx::query_as::<_, EntryRow>(&format!(
+    let mut row = sqlx::query_as::<_, EntryRow>(&format!(
         "{VIEW_SELECT}
          WHERE e.employee_id = ? AND e.work_date = ? AND e.deleted_at IS NULL"
     ))
     .bind(employee_id)
     .bind(work_date)
-    .fetch_optional(conn)
-    .await
+    .fetch_optional(&mut *conn)
+    .await?;
+    if let Some(row) = row.as_mut() {
+        attach_lines(conn, std::slice::from_mut(row)).await?;
+    }
+    Ok(row)
+}
+
+async fn replace_lines(
+    conn: &mut SqliteConnection,
+    entry_id: &str,
+    lines: &[PreparedLine],
+    now: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM entry_lines WHERE entry_id = ?")
+        .bind(entry_id)
+        .execute(&mut *conn)
+        .await?;
+    for (position, line) in lines.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO entry_lines
+                (id, entry_id, type_id, type_name, description, amount_minor, position, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(entry_id)
+        .bind(&line.type_id)
+        .bind(&line.type_name)
+        .bind(&line.description)
+        .bind(line.amount_minor)
+        .bind(position as i64)
+        .bind(now)
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(())
 }
 
 pub async fn insert(
@@ -225,36 +378,37 @@ pub async fn insert(
     now: i64,
     seq: i64,
 ) -> Result<EntryRow, sqlx::Error> {
-    sqlx::query_as::<_, EntryRow>(
+    let mut row = sqlx::query_as::<_, EntryRow>(
         "INSERT INTO entries
             (id, employee_id, work_date, day_fraction_bp, regular_minutes,
              overtime_minutes, ot_multiplier_bp, override_amount_minor,
              bonus_minor, advance_minor, deduction_minor, base_minor, ot_minor,
              gross_minor, net_minor, note, created_at, updated_at, deleted_at, seq)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+         VALUES (?, ?, ?, 10000, 0, 0, NULL, NULL, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, NULL, ?)
          RETURNING *",
     )
     .bind(id)
     .bind(&p.employee_id)
     .bind(&p.work_date)
-    .bind(p.day_fraction_bp)
-    .bind(p.regular_minutes)
-    .bind(p.overtime_minutes)
-    .bind(p.ot_multiplier_bp)
-    .bind(p.override_amount_minor)
     .bind(p.bonus_minor)
     .bind(p.advance_minor)
     .bind(p.deduction_minor)
-    .bind(p.computed.base_minor)
-    .bind(p.computed.ot_minor)
-    .bind(p.computed.gross_minor)
-    .bind(p.computed.net_minor)
+    .bind(p.totals.business_minor)
+    .bind(p.totals.gross_minor)
+    .bind(p.totals.net_minor)
     .bind(&p.note)
     .bind(now)
     .bind(now)
     .bind(seq)
-    .fetch_one(conn)
-    .await
+    .fetch_one(&mut *conn)
+    .await?;
+
+    replace_lines(conn, id, &p.lines, now).await?;
+    row.lines = load_lines(conn, &[id.to_string()])
+        .await?
+        .remove(id)
+        .unwrap_or_default();
+    Ok(row)
 }
 
 pub async fn update(
@@ -264,59 +418,41 @@ pub async fn update(
     now: i64,
     seq: i64,
 ) -> Result<EntryRow, sqlx::Error> {
-    sqlx::query_as::<_, EntryRow>(
+    let mut row = sqlx::query_as::<_, EntryRow>(
         "UPDATE entries SET
-            employee_id = ?, work_date = ?, day_fraction_bp = ?,
-            regular_minutes = ?, overtime_minutes = ?, ot_multiplier_bp = ?,
-            override_amount_minor = ?, bonus_minor = ?, advance_minor = ?,
-            deduction_minor = ?, base_minor = ?, ot_minor = ?, gross_minor = ?,
-            net_minor = ?, note = ?, updated_at = ?, seq = ?
+            employee_id = ?, work_date = ?, bonus_minor = ?, advance_minor = ?,
+            deduction_minor = ?, base_minor = ?, ot_minor = 0, gross_minor = ?,
+            net_minor = ?, note = ?, updated_at = ?, seq = ?,
+            day_fraction_bp = 10000, regular_minutes = 0, overtime_minutes = 0,
+            ot_multiplier_bp = NULL, override_amount_minor = NULL
          WHERE id = ? AND deleted_at IS NULL
          RETURNING *",
     )
     .bind(&p.employee_id)
     .bind(&p.work_date)
-    .bind(p.day_fraction_bp)
-    .bind(p.regular_minutes)
-    .bind(p.overtime_minutes)
-    .bind(p.ot_multiplier_bp)
-    .bind(p.override_amount_minor)
     .bind(p.bonus_minor)
     .bind(p.advance_minor)
     .bind(p.deduction_minor)
-    .bind(p.computed.base_minor)
-    .bind(p.computed.ot_minor)
-    .bind(p.computed.gross_minor)
-    .bind(p.computed.net_minor)
+    .bind(p.totals.business_minor)
+    .bind(p.totals.gross_minor)
+    .bind(p.totals.net_minor)
     .bind(&p.note)
     .bind(now)
     .bind(seq)
     .bind(id)
-    .fetch_one(conn)
-    .await
+    .fetch_one(&mut *conn)
+    .await?;
+
+    replace_lines(conn, id, &p.lines, now).await?;
+    row.lines = load_lines(conn, &[id.to_string()])
+        .await?
+        .remove(id)
+        .unwrap_or_default();
+    Ok(row)
 }
 
-pub async fn soft_delete(
-    conn: &mut SqliteConnection,
-    id: &str,
-    now: i64,
-    seq: i64,
-) -> Result<EntryRow, sqlx::Error> {
-    sqlx::query_as::<_, EntryRow>(
-        "UPDATE entries SET deleted_at = ?, updated_at = ?, seq = ?
-         WHERE id = ? AND deleted_at IS NULL
-         RETURNING *",
-    )
-    .bind(now)
-    .bind(now)
-    .bind(seq)
-    .bind(id)
-    .fetch_one(conn)
-    .await
-}
-
-/// Insert-or-replace used by the sync engine; can also resurrect a tombstoned
-/// entry and preserves the original `created_at`.
+/// Insert-or-replace for sync; can resurrect a tombstone and preserves the
+/// original `created_at`.
 pub async fn upsert(
     conn: &mut SqliteConnection,
     id: &str,
@@ -326,56 +462,81 @@ pub async fn upsert(
     deleted_at: Option<i64>,
     seq: i64,
 ) -> Result<EntryRow, sqlx::Error> {
-    sqlx::query_as::<_, EntryRow>(
+    let mut row = sqlx::query_as::<_, EntryRow>(
         "INSERT INTO entries
             (id, employee_id, work_date, day_fraction_bp, regular_minutes,
              overtime_minutes, ot_multiplier_bp, override_amount_minor,
              bonus_minor, advance_minor, deduction_minor, base_minor, ot_minor,
              gross_minor, net_minor, note, created_at, updated_at, deleted_at, seq)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, 10000, 0, 0, NULL, NULL, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
             employee_id = excluded.employee_id,
             work_date = excluded.work_date,
-            day_fraction_bp = excluded.day_fraction_bp,
-            regular_minutes = excluded.regular_minutes,
-            overtime_minutes = excluded.overtime_minutes,
-            ot_multiplier_bp = excluded.ot_multiplier_bp,
-            override_amount_minor = excluded.override_amount_minor,
             bonus_minor = excluded.bonus_minor,
             advance_minor = excluded.advance_minor,
             deduction_minor = excluded.deduction_minor,
             base_minor = excluded.base_minor,
-            ot_minor = excluded.ot_minor,
+            ot_minor = 0,
             gross_minor = excluded.gross_minor,
             net_minor = excluded.net_minor,
             note = excluded.note,
             updated_at = excluded.updated_at,
             deleted_at = excluded.deleted_at,
-            seq = excluded.seq
+            seq = excluded.seq,
+            day_fraction_bp = 10000,
+            regular_minutes = 0,
+            overtime_minutes = 0,
+            ot_multiplier_bp = NULL,
+            override_amount_minor = NULL
          RETURNING *",
     )
     .bind(id)
     .bind(&p.employee_id)
     .bind(&p.work_date)
-    .bind(p.day_fraction_bp)
-    .bind(p.regular_minutes)
-    .bind(p.overtime_minutes)
-    .bind(p.ot_multiplier_bp)
-    .bind(p.override_amount_minor)
     .bind(p.bonus_minor)
     .bind(p.advance_minor)
     .bind(p.deduction_minor)
-    .bind(p.computed.base_minor)
-    .bind(p.computed.ot_minor)
-    .bind(p.computed.gross_minor)
-    .bind(p.computed.net_minor)
+    .bind(p.totals.business_minor)
+    .bind(p.totals.gross_minor)
+    .bind(p.totals.net_minor)
     .bind(&p.note)
     .bind(created_at)
     .bind(updated_at)
     .bind(deleted_at)
     .bind(seq)
-    .fetch_one(conn)
-    .await
+    .fetch_one(&mut *conn)
+    .await?;
+
+    replace_lines(conn, id, &p.lines, updated_at).await?;
+    row.lines = load_lines(conn, &[id.to_string()])
+        .await?
+        .remove(id)
+        .unwrap_or_default();
+    Ok(row)
+}
+
+pub async fn soft_delete(
+    conn: &mut SqliteConnection,
+    id: &str,
+    now: i64,
+    seq: i64,
+) -> Result<EntryRow, sqlx::Error> {
+    let mut row = sqlx::query_as::<_, EntryRow>(
+        "UPDATE entries SET deleted_at = ?, updated_at = ?, seq = ?
+         WHERE id = ? AND deleted_at IS NULL
+         RETURNING *",
+    )
+    .bind(now)
+    .bind(now)
+    .bind(seq)
+    .bind(id)
+    .fetch_one(&mut *conn)
+    .await?;
+    row.lines = load_lines(conn, &[id.to_string()])
+        .await?
+        .remove(id)
+        .unwrap_or_default();
+    Ok(row)
 }
 
 /// Tombstone an entry. Returns `None` when it was already deleted.
@@ -385,7 +546,7 @@ pub async fn mark_deleted(
     now: i64,
     seq: i64,
 ) -> Result<Option<EntryRow>, sqlx::Error> {
-    sqlx::query_as::<_, EntryRow>(
+    let mut row = sqlx::query_as::<_, EntryRow>(
         "UPDATE entries SET deleted_at = ?, updated_at = ?, seq = ?
          WHERE id = ? AND deleted_at IS NULL
          RETURNING *",
@@ -394,92 +555,13 @@ pub async fn mark_deleted(
     .bind(now)
     .bind(seq)
     .bind(id)
-    .fetch_optional(conn)
-    .await
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::domain::pay::PayBasis;
-
-    fn employee(basis: &str, rate: i64) -> EmployeeRow {
-        EmployeeRow {
-            id: "emp-1".into(),
-            name: "Asha".into(),
-            code: Some("E1".into()),
-            pay_basis: basis.into(),
-            rate_minor: rate,
-            ot_multiplier_bp: 15_000,
-            standard_minutes_per_day: 480,
-            note: String::new(),
-            active: true,
-            created_at: 0,
-            updated_at: 0,
-            deleted_at: None,
-            seq: 0,
-        }
+    .fetch_optional(&mut *conn)
+    .await?;
+    if let Some(row) = row.as_mut() {
+        row.lines = load_lines(conn, &[id.to_string()])
+            .await?
+            .remove(id)
+            .unwrap_or_default();
     }
-
-    fn input() -> EntryInput {
-        EntryInput {
-            employee_id: "emp-1".into(),
-            work_date: "2026-11-23".into(),
-            day_fraction_bp: None,
-            regular_minutes: None,
-            overtime_minutes: None,
-            ot_multiplier_bp: None,
-            override_amount_minor: None,
-            bonus_minor: None,
-            advance_minor: None,
-            deduction_minor: None,
-            note: None,
-        }
-    }
-
-    #[test]
-    fn prepares_day_rate_entry() {
-        let p = prepare(&employee("day_rate", 80_000), &input()).unwrap();
-        assert_eq!(p.computed.base_minor, 80_000);
-        assert_eq!(p.work_date, "2026-11-23");
-        assert_eq!(p.day_fraction_bp, FULL_DAY_BP);
-    }
-
-    #[test]
-    fn normalizes_hourly_inputs() {
-        let mut i = input();
-        i.day_fraction_bp = Some(5_000);
-        i.regular_minutes = Some(480);
-        let p = prepare(&employee("hourly", 15_000), &i).unwrap();
-        assert_eq!(p.day_fraction_bp, FULL_DAY_BP);
-        assert_eq!(p.computed.base_minor, 120_000);
-    }
-
-    #[test]
-    fn rejects_bad_dates_and_notes() {
-        let mut i = input();
-        i.work_date = "23/11/2026".into();
-        assert!(matches!(prepare(&employee("day_rate", 1), &i), Err(AppError::Validation(_))));
-
-        let mut i = input();
-        i.note = Some("x".repeat(MAX_NOTE_LEN + 1));
-        assert!(matches!(prepare(&employee("day_rate", 1), &i), Err(AppError::Validation(_))));
-    }
-
-    #[test]
-    fn rejects_irrelevant_inputs_after_normalization_only_when_invalid() {
-        let mut i = input();
-        i.day_fraction_bp = Some(30_000);
-        let errors = match prepare(&employee("day_rate", 80_000), &i) {
-            Err(AppError::Validation(errors)) => errors,
-            other => panic!("expected validation error, got {other:?}"),
-        };
-        assert!(errors.iter().any(|e| e.field == "day_fraction_bp"));
-    }
-
-    #[test]
-    fn basis_parsing_is_total() {
-        assert_eq!(employee("day_rate", 1).basis(), PayBasis::DayRate);
-        assert_eq!(employee("bogus", 1).basis(), PayBasis::Fixed);
-    }
+    Ok(row)
 }

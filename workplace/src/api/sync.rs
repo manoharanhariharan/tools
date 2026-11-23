@@ -95,7 +95,7 @@ pub async fn pull(
         Vec::new()
     };
 
-    let entries = if cursor > since {
+    let mut entries = if cursor > since {
         sqlx::query_as::<_, EntryRow>(
             "SELECT * FROM entries WHERE seq > ? AND seq <= ? ORDER BY seq ASC",
         )
@@ -106,6 +106,7 @@ pub async fn pull(
     } else {
         Vec::new()
     };
+    entries::hydrate_lines(&mut tx, &mut entries).await?;
 
     let has_more: bool = sqlx::query_scalar(
         "SELECT EXISTS(
@@ -233,10 +234,10 @@ pub async fn push(
             "too many changes in one push (max 200)",
         ));
     }
-    if let Some(device) = &body.device_id {
-        if device.chars().count() > 64 {
-            return Err(AppError::BadRequest("device_id is too long"));
-        }
+    if let Some(device) = &body.device_id
+        && device.chars().count() > 64
+    {
+        return Err(AppError::BadRequest("device_id is too long"));
     }
 
     let now = now_millis();
@@ -286,7 +287,7 @@ async fn apply_employee(
         ));
     }
 
-    let existing = employees::find(&mut **tx, id).await?;
+    let existing = employees::find(tx, id).await?;
 
     if change.deleted {
         let decision = sync::decide(
@@ -306,7 +307,7 @@ async fn apply_employee(
             )),
             Decision::Apply => {
                 let seq = db::next_seq(tx).await?;
-                match employees::mark_deleted(&mut **tx, id, now, seq).await? {
+                match employees::mark_deleted(tx, id, now, seq).await? {
                     Some(row) => Ok(applied("employee", id, row_json(&row))),
                     None => Ok(noop("employee", id, existing.as_ref().map(row_json))),
                 }
@@ -360,11 +361,11 @@ async fn apply_employee(
         Decision::Apply => {
             let created_at = existing.as_ref().map(|row| row.created_at).unwrap_or(now);
             let seq = db::next_seq(tx).await?;
-            match employees::upsert(&mut **tx, id, &validated, created_at, now, None, seq).await {
+            match employees::upsert(tx, id, &validated, created_at, now, None, seq).await {
                 Ok(row) => Ok(applied("employee", id, row_json(&row))),
                 Err(err) if is_unique_violation(&err) => {
                     let existing = match &validated.code {
-                        Some(code) => employees::find_live_by_code(&mut **tx, code).await?,
+                        Some(code) => employees::find_live_by_code(tx, code).await?,
                         None => None,
                     };
                     Ok(conflict(
@@ -395,7 +396,7 @@ async fn apply_entry(
         ));
     }
 
-    let existing = entries::find(&mut **tx, id).await?;
+    let existing = entries::find(tx, id).await?;
 
     if change.deleted {
         let decision = sync::decide(
@@ -412,7 +413,7 @@ async fn apply_entry(
             }
             Decision::Apply => {
                 let seq = db::next_seq(tx).await?;
-                match entries::mark_deleted(&mut **tx, id, now, seq).await? {
+                match entries::mark_deleted(tx, id, now, seq).await? {
                     Some(row) => Ok(applied("entry", id, row_json(&row))),
                     None => Ok(noop("entry", id, existing.as_ref().map(row_json))),
                 }
@@ -440,19 +441,22 @@ async fn apply_entry(
         }
     };
 
-    let employee = match employees::find(&mut **tx, input.employee_id.trim()).await? {
-        Some(employee) if employee.deleted_at.is_none() => employee,
-        _ => {
-            return Ok(invalid(
-                "entry",
-                id,
-                "employee does not exist or was deleted",
-                vec![FieldError::new("employee_id", "unknown or deleted employee")],
-            ));
-        }
-    };
+    if employees::find(tx, input.employee_id.trim())
+        .await?
+        .is_none_or(|employee| employee.deleted_at.is_some())
+    {
+        return Ok(invalid(
+            "entry",
+            id,
+            "employee does not exist or was deleted",
+            vec![FieldError::new(
+                "employee_id",
+                "unknown or deleted employee",
+            )],
+        ));
+    }
 
-    let prepared = match entries::prepare(&employee, &input) {
+    let prepared = match entries::prepare(tx, &input).await {
         Ok(prepared) => prepared,
         Err(AppError::Validation(fields)) => {
             return Ok(invalid("entry", id, "some fields are invalid", fields));
@@ -479,26 +483,25 @@ async fn apply_entry(
         Decision::Apply => {
             // A different row already occupies this employee/day.
             if let Some(other) =
-                entries::find_live_by_employee_date(&mut **tx, &prepared.employee_id, &prepared.work_date)
+                entries::find_live_by_employee_date(tx, &prepared.employee_id, &prepared.work_date)
                     .await?
+                && other.id != id
             {
-                if other.id != id {
-                    return Ok(conflict(
-                        "entry",
-                        id,
-                        "duplicate_entry_date",
-                        Some(row_json(&other)),
-                    ));
-                }
+                return Ok(conflict(
+                    "entry",
+                    id,
+                    "duplicate_entry_date",
+                    Some(row_json(&other)),
+                ));
             }
 
             let created_at = existing.as_ref().map(|row| row.created_at).unwrap_or(now);
             let seq = db::next_seq(tx).await?;
-            match entries::upsert(&mut **tx, id, &prepared, created_at, now, None, seq).await {
+            match entries::upsert(tx, id, &prepared, created_at, now, None, seq).await {
                 Ok(row) => Ok(applied("entry", id, row_json(&row))),
                 Err(err) if is_unique_violation(&err) => {
                     let other = entries::find_live_by_employee_date(
-                        &mut **tx,
+                        tx,
                         &prepared.employee_id,
                         &prepared.work_date,
                     )

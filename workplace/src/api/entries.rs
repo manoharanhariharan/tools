@@ -37,13 +37,7 @@ pub async fn list(
     Query(query): Query<EntriesQuery>,
 ) -> AppResult<Json<Vec<EntryRow>>> {
     let (from, to) = resolve_range(query.from.as_deref(), query.to.as_deref())?;
-    let rows = entries::list_live(
-        &state.pool,
-        &from,
-        &to,
-        query.employee_id.as_deref(),
-    )
-    .await?;
+    let rows = entries::list_live(&state.pool, &from, &to, query.employee_id.as_deref()).await?;
     Ok(Json(rows))
 }
 
@@ -62,18 +56,23 @@ pub async fn create(
     State(state): State<AppState>,
     AppJson(input): AppJson<EntryInput>,
 ) -> AppResult<(StatusCode, Json<EntryRow>)> {
-    let employee = employees::get_live(&state.pool, input.employee_id.trim())
-        .await?
-        .ok_or(AppError::NotFound("employee"))?;
-    if employee.is_deleted() {
-        return Err(AppError::NotFound("employee"));
-    }
-    let prepared = entries::prepare(&employee, &input)?;
-
     let id = Uuid::now_v7().to_string();
     let now = now_millis();
     let _gate = state.write_gate.lock().await;
     let mut tx = state.pool.begin().await?;
+
+    let employee = employees::find(&mut tx, input.employee_id.trim())
+        .await?
+        .filter(|employee| employee.deleted_at.is_none())
+        .ok_or(AppError::NotFound("employee"))?;
+
+    let prepared = entries::prepare(&mut tx, &input).await?;
+    if prepared.employee_id != employee.id {
+        return Err(AppError::Validation(vec![crate::error::FieldError::new(
+            "employee_id",
+            "does not match the selected employee",
+        )]));
+    }
 
     if let Some(existing) =
         entries::find_live_by_employee_date(&mut tx, &prepared.employee_id, &prepared.work_date)
@@ -88,9 +87,12 @@ pub async fn create(
         Err(err) if is_unique_violation(&err) => {
             drop(tx);
             let mut conn = state.pool.acquire().await?;
-            let existing =
-                entries::find_live_by_employee_date(&mut conn, &prepared.employee_id, &prepared.work_date)
-                    .await?;
+            let existing = entries::find_live_by_employee_date(
+                &mut conn,
+                &prepared.employee_id,
+                &prepared.work_date,
+            )
+            .await?;
             return Err(match existing {
                 Some(row) => duplicate_entry_error(&row),
                 None => AppError::conflict(
@@ -115,29 +117,33 @@ pub async fn update(
     Path(id): Path<String>,
     AppJson(input): AppJson<EntryInput>,
 ) -> AppResult<Json<EntryRow>> {
-    {
-        let mut conn = state.pool.acquire().await?;
-        entries::find_live(&mut conn, &id)
-            .await?
-            .ok_or(AppError::NotFound("entry"))?;
-    }
-
-    let employee = employees::get_live(&state.pool, input.employee_id.trim())
-        .await?
-        .ok_or(AppError::NotFound("employee"))?;
-    let prepared = entries::prepare(&employee, &input)?;
-
     let now = now_millis();
     let _gate = state.write_gate.lock().await;
     let mut tx = state.pool.begin().await?;
 
+    entries::find_live(&mut tx, &id)
+        .await?
+        .ok_or(AppError::NotFound("entry"))?;
+
+    let employee = employees::find(&mut tx, input.employee_id.trim())
+        .await?
+        .filter(|employee| employee.deleted_at.is_none())
+        .ok_or(AppError::NotFound("employee"))?;
+
+    let prepared = entries::prepare(&mut tx, &input).await?;
+    if prepared.employee_id != employee.id {
+        return Err(AppError::Validation(vec![crate::error::FieldError::new(
+            "employee_id",
+            "does not match the selected employee",
+        )]));
+    }
+
     if let Some(other) =
         entries::find_live_by_employee_date(&mut tx, &prepared.employee_id, &prepared.work_date)
             .await?
+        && other.id != id
     {
-        if other.id != id {
-            return Err(duplicate_entry_error(&other));
-        }
+        return Err(duplicate_entry_error(&other));
     }
 
     let seq = db::next_seq(&mut tx).await?;

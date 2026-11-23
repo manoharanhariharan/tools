@@ -1,5 +1,6 @@
 use axum::Json;
-use axum::extract::State;use axum::http::{StatusCode, header};
+use axum::extract::State;
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +8,7 @@ use crate::AppState;
 use crate::api::{AppQuery, resolve_range};
 use crate::error::{AppError, AppResult, FieldError};
 use crate::reports::summary::{
-    self, DayTotals, EmployeeTotals, MoneyTotals, ReportData, ReportLayout,
+    self, DayTotals, EmployeeTotals, MoneyTotals, ReportData, ReportLayout, TypeTotals,
 };
 use crate::reports::{csv, html, pdf};
 
@@ -27,6 +28,7 @@ pub struct SummaryResponse {
     pub totals: MoneyTotals,
     pub employees: Vec<EmployeeTotals>,
     pub days: Vec<DayTotals>,
+    pub types: Vec<TypeTotals>,
 }
 
 impl From<ReportData> for SummaryResponse {
@@ -38,6 +40,7 @@ impl From<ReportData> for SummaryResponse {
             totals: data.totals,
             employees: data.employees,
             days: data.days,
+            types: data.types,
         }
     }
 }
@@ -56,13 +59,13 @@ fn parse_request(query: &ReportQuery) -> AppResult<ReportRequest> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string);
-    if let Some(id) = &employee_id {
-        if id.chars().count() > 64 {
-            return Err(AppError::Validation(vec![FieldError::new(
-                "employee_id",
-                "is too long",
-            )]));
-        }
+    if let Some(id) = &employee_id
+        && id.chars().count() > 64
+    {
+        return Err(AppError::Validation(vec![FieldError::new(
+            "employee_id",
+            "is too long",
+        )]));
     }
     Ok(ReportRequest {
         from,

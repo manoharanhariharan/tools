@@ -2,7 +2,6 @@
 
 import { h, toast } from '../dom.js';
 import { displayDate, formatPaise, formatTimestamp } from '../format.js';
-import { basisLabel } from '../pay.js';
 import {
   discardLocalVersion,
   keepMyVersion,
@@ -103,16 +102,16 @@ export function renderSync(root, ctx) {
       h(
         'dd',
         {},
-        conflict.local
-          ? `${conflict.local.name} · ${formatPaise(conflict.local.rate_minor ?? 0)}`
-          : 'removed',
+        conflict.local ? conflict.local.name : 'removed',
       ),
       h('dt', {}, 'Server version'),
       h(
         'dd',
         {},
         conflict.server
-          ? `${conflict.server.name} · ${formatPaise(conflict.server.rate_minor ?? 0)}`
+          ? conflict.server.deleted_at
+            ? 'deleted'
+            : conflict.server.name
           : 'not present',
       ),
     );
@@ -138,8 +137,13 @@ export function renderSync(root, ctx) {
       actions.append(
         h(
           'button',
-          { class: 'btn', type: 'button', 'data-action': 'use-server', 'data-key': conflict.key },
-          'Use server version',
+          {
+            class: 'btn',
+            type: 'button',
+            'data-action': permanent ? 'discard' : 'use-server',
+            'data-key': conflict.key,
+          },
+          permanent ? 'Discard my version' : 'Use server version',
         ),
       );
     } else {
@@ -256,34 +260,36 @@ export function renderSync(root, ctx) {
         );
 
     container.replaceChildren(
-      h(
-        'div',
-        { class: 'view-head' },
+      ...[
         h(
           'div',
-          {},
-          h('h1', {}, 'Sync'),
-          h('p', { class: 'subtitle' }, 'Offline changes, sync state and conflict resolution'),
+          { class: 'view-head' },
+          h(
+            'div',
+            {},
+            h('h1', {}, 'Sync'),
+            h('p', { class: 'subtitle' }, 'Offline changes, sync state and conflict resolution'),
+          ),
         ),
-      ),
-      statusGrid,
-      state.syncError ? h('div', { class: 'banner banner-error' }, state.syncError) : null,
-      actions,
-      body,
-      h(
-        'details',
-        { class: 'info-block' },
-        h('summary', {}, 'How sync behaves'),
+        statusGrid,
+        state.syncError ? h('div', { class: 'banner banner-error' }, state.syncError) : null,
+        actions,
+        body,
         h(
-          'ul',
-          {},
-          h('li', {}, 'Edits are saved on this device first, then pushed when a connection is available.'),
-          h('li', {}, 'Every record carries a server sequence number. Pulls never overwrite edits that are still waiting to push.'),
-          h('li', {}, 'If two devices edit the same record, the change is held here so you can choose a version instead of losing data.'),
-          h('li', {}, 'Deletes are soft: historical pay stays visible in reports while the row disappears from daily entry screens.'),
-          h('li', {}, 'The server recalculates all amounts from pay rules; the preview shown offline is an estimate.'),
+          'details',
+          { class: 'info-block' },
+          h('summary', {}, 'How sync behaves'),
+          h(
+            'ul',
+            {},
+            h('li', {}, 'Edits are saved on this device first, then pushed when a connection is available.'),
+            h('li', {}, 'Every record carries a server sequence number. Pulls never overwrite edits that are still waiting to push.'),
+            h('li', {}, 'If two devices edit the same record, the change is held here so you can choose a version instead of losing data.'),
+            h('li', {}, 'Deletes are soft: historical pay stays visible in reports while the row disappears from daily entry screens.'),
+            h('li', {}, 'The server recalculates all amounts from pay rules; the preview shown offline is an estimate.'),
+          ),
         ),
-      ),
+      ].filter(Boolean),
     );
   }
 

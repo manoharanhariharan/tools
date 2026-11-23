@@ -65,6 +65,9 @@ enum CertCommand {
         /// Directory for the generated PEM files.
         #[arg(long, default_value = "certs")]
         out: PathBuf,
+        /// Replace existing certificate files (installed phones must re-trust the new CA).
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -86,7 +89,7 @@ async fn main() -> anyhow::Result<()> {
             AdminCommand::SetPassword => set_password(cli.data_dir).await,
         },
         Command::Cert { command } => match command {
-            CertCommand::Init { hosts, out } => init_certs(hosts, out),
+            CertCommand::Init { hosts, out, force } => init_certs(hosts, out, force),
         },
         Command::Doctor => doctor(cli.data_dir).await,
     }
@@ -125,16 +128,15 @@ async fn serve(bind: Option<String>, data_dir: Option<PathBuf>) -> anyhow::Resul
     }
 
     let result = if let Some(tls) = &config.tls {
-        let tls_config =
-            axum_server::tls_rustls::RustlsConfig::from_pem_file(&tls.cert, &tls.key)
-                .await
-                .with_context(|| {
-                    format!(
-                        "cannot load TLS certificate {} / key {}",
-                        tls.cert.display(),
-                        tls.key.display()
-                    )
-                })?;
+        let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&tls.cert, &tls.key)
+            .await
+            .with_context(|| {
+                format!(
+                    "cannot load TLS certificate {} / key {}",
+                    tls.cert.display(),
+                    tls.key.display()
+                )
+            })?;
 
         let handle = axum_server::Handle::new();
         let shutdown_handle = handle.clone();
@@ -185,7 +187,30 @@ async fn set_password(data_dir: Option<PathBuf>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn init_certs(hosts: Vec<String>, out: PathBuf) -> anyhow::Result<()> {
+fn init_certs(hosts: Vec<String>, out: PathBuf, force: bool) -> anyhow::Result<()> {
+    if !force {
+        let existing = [
+            out.join(daybook::cert::CA_FILENAME),
+            out.join(daybook::cert::CERT_FILENAME),
+            out.join(daybook::cert::KEY_FILENAME),
+        ]
+        .into_iter()
+        .filter(|path| path.exists())
+        .collect::<Vec<_>>();
+        if !existing.is_empty() {
+            anyhow::bail!(
+                "certificate files already exist in {} ({}); pass --force to replace them. \
+                 Replacing the CA requires installing the new CA on every phone.",
+                out.display(),
+                existing
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+    }
+
     let mut hosts = hosts;
     if hosts.is_empty() {
         hosts.push("localhost".to_string());
@@ -214,31 +239,59 @@ fn init_certs(hosts: Vec<String>, out: PathBuf) -> anyhow::Result<()> {
     println!();
     println!("Next steps");
     println!("  1. Install the CA certificate on each phone (never the private key):");
-    println!("       Android: Settings > Security > Encryption & credentials > Install a certificate > CA certificate");
-    println!("       iPhone : open the .crt, install the profile, then Settings > General > About >");
-    println!("                Certificate Trust Settings > enable full trust for 'Daybook Local CA'");
+    println!(
+        "       Android: Settings > Security > Encryption & credentials > Install a certificate > CA certificate"
+    );
+    println!(
+        "       iPhone : open the .crt, install the profile, then Settings > General > About >"
+    );
+    println!(
+        "                Certificate Trust Settings > enable full trust for 'Daybook Local CA'"
+    );
     println!("  2. Start the server over HTTPS:");
-    println!("       PowerShell: $env:DAYBOOK_TLS_CERT='{}'; $env:DAYBOOK_TLS_KEY='{}'; daybook serve", generated.cert.display(), generated.key.display());
-    println!("  3. Open https://<one-of-the-hosts>:8787 on the phone and use 'Add to Home Screen'.");
+    println!(
+        "       PowerShell: $env:DAYBOOK_TLS_CERT='{}'; $env:DAYBOOK_TLS_KEY='{}'; daybook serve",
+        generated.cert.display(),
+        generated.key.display()
+    );
+    println!(
+        "  3. Open https://<one-of-the-hosts>:8787 on the phone and use 'Add to Home Screen'."
+    );
     Ok(())
 }
 
-async fn doctor(data_dir: Option<PathBuf>) -> anyhow::Result<()> {    let config = Config::resolve(None, data_dir)?;
+async fn doctor(data_dir: Option<PathBuf>) -> anyhow::Result<()> {
+    let config = Config::resolve(None, data_dir)?;
     println!("Daybook doctor");
     println!("  data directory : {}", config.data_dir.display());
     println!("  database       : {}", config.db_path().display());
     println!("  listen address : {}", config.bind);
     println!(
         "  TLS            : {}",
-        if config.is_tls() { "enabled" } else { "disabled" }
+        if config.is_tls() {
+            "enabled"
+        } else {
+            "disabled"
+        }
     );
-    println!("  web assets     : {}", if config.web_dir.is_some() { "from disk (dev)" } else { "embedded" });
+    println!(
+        "  web assets     : {}",
+        if config.web_dir.is_some() {
+            "from disk (dev)"
+        } else {
+            "embedded"
+        }
+    );
 
     match daybook::reports::pdf::PdfFont::discover(config.pdf_font.as_deref()) {
         Ok(font) => println!(
             "  PDF font       : {} (₹ glyph: {})",
             font.path.display(),
-            if font.has_rupee_glyph { "yes" } else { "no, using Rs" }
+            if font.has_rupee_glyph {
+                "yes"
+            } else {
+                "no, using Rs"
+            }
         ),
         Err(err) => println!("  PDF font       : unavailable ({err})"),
     }
@@ -249,9 +302,10 @@ async fn doctor(data_dir: Option<PathBuf>) -> anyhow::Result<()> {    let config
             sqlx::query_scalar("SELECT COUNT(*) FROM employees WHERE deleted_at IS NULL")
                 .fetch_one(&init.pool)
                 .await?;
-        let entries: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL")
-            .fetch_one(&init.pool)
-            .await?;
+        let entries: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL")
+                .fetch_one(&init.pool)
+                .await?;
         let seq = db::current_seq(&init.pool).await?;
         println!("  employees      : {employees}");
         println!("  entries        : {entries}");

@@ -4,6 +4,7 @@ pub mod entries;
 pub mod health;
 pub mod reports;
 pub mod sync;
+pub mod types;
 
 use axum::extract::{FromRequest, FromRequestParts, Request};
 use axum::http::request::Parts;
@@ -64,7 +65,8 @@ pub fn is_unique_violation(err: &sqlx::Error) -> bool {
 
 /// Resolve an optional `from`/`to` range, defaulting to the current IST month
 /// when neither is supplied. Partial ranges are rejected rather than guessed.
-pub fn resolve_range(from: Option<&str>, to: Option<&str>) -> AppResult<(String, String)> {    match (from, to) {
+pub fn resolve_range(from: Option<&str>, to: Option<&str>) -> AppResult<(String, String)> {
+    match (from, to) {
         (Some(from), Some(to)) => {
             let (f, t) = crate::domain::date::validate_range(from, to)
                 .map_err(|err| AppError::Validation(vec![err]))?;
@@ -91,10 +93,7 @@ pub fn router() -> Router<AppState> {
         .route("/auth/login", axum::routing::post(auth_routes::login))
         .route("/auth/logout", axum::routing::post(auth_routes::logout))
         .route("/auth/me", get(auth_routes::me))
-        .route(
-            "/employees",
-            get(employees::list).post(employees::create),
-        )
+        .route("/employees", get(employees::list).post(employees::create))
         .route(
             "/employees/{id}",
             get(employees::get_one)
@@ -111,6 +110,11 @@ pub fn router() -> Router<AppState> {
         .route("/sync/state", get(sync::state))
         .route("/sync/pull", get(sync::pull))
         .route("/sync/push", axum::routing::post(sync::push))
+        .route("/earning-types", get(types::list).post(types::create))
+        .route(
+            "/earning-types/{id}",
+            axum::routing::patch(types::update).delete(types::delete),
+        )
         .route("/reports/summary", get(reports::summary))
         .route("/reports/export.csv", get(reports::export_csv))
         .route("/reports/print.html", get(reports::print_html))

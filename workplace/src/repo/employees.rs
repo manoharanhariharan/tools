@@ -1,11 +1,10 @@
+//! Employee records. Pay is no longer derived from a rate or hours: daily
+//! earnings are entered as business lines. Legacy rate columns are retained in
+//! the database for historical compatibility but are not exposed or edited.
+
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqliteConnection, SqlitePool};
 
-use crate::domain::money::MAX_AMOUNT_MINOR;
-use crate::domain::pay::{
-    DEFAULT_OT_MULTIPLIER_BP, DEFAULT_STANDARD_MINUTES, MAX_OT_MULTIPLIER_BP,
-    MAX_STANDARD_MINUTES, MIN_OT_MULTIPLIER_BP, MIN_STANDARD_MINUTES, PayBasis, PayRule,
-};
 use crate::error::FieldError;
 
 pub const MAX_NAME_LEN: usize = 120;
@@ -17,9 +16,14 @@ pub struct EmployeeRow {
     pub id: String,
     pub name: String,
     pub code: Option<String>,
+    /// Legacy columns kept for schema compatibility; hidden from the API.
+    #[serde(skip_serializing)]
     pub pay_basis: String,
+    #[serde(skip_serializing)]
     pub rate_minor: i64,
+    #[serde(skip_serializing)]
     pub ot_multiplier_bp: i64,
+    #[serde(skip_serializing)]
     pub standard_minutes_per_day: i64,
     pub note: String,
     pub active: bool,
@@ -30,19 +34,6 @@ pub struct EmployeeRow {
 }
 
 impl EmployeeRow {
-    pub fn basis(&self) -> PayBasis {
-        PayBasis::parse(&self.pay_basis).unwrap_or(PayBasis::Fixed)
-    }
-
-    pub fn rule(&self) -> PayRule {
-        PayRule {
-            basis: self.basis(),
-            rate_minor: self.rate_minor,
-            ot_multiplier_bp: self.ot_multiplier_bp,
-            standard_minutes_per_day: self.standard_minutes_per_day,
-        }
-    }
-
     pub fn is_deleted(&self) -> bool {
         self.deleted_at.is_some()
     }
@@ -53,13 +44,6 @@ pub struct EmployeeInput {
     pub name: String,
     #[serde(default)]
     pub code: Option<String>,
-    pub pay_basis: String,
-    #[serde(default)]
-    pub rate_minor: i64,
-    #[serde(default)]
-    pub ot_multiplier_bp: Option<i64>,
-    #[serde(default)]
-    pub standard_minutes_per_day: Option<i64>,
     #[serde(default)]
     pub note: Option<String>,
     #[serde(default = "default_active")]
@@ -74,10 +58,6 @@ fn default_active() -> bool {
 pub struct ValidatedEmployee {
     pub name: String,
     pub code: Option<String>,
-    pub pay_basis: PayBasis,
-    pub rate_minor: i64,
-    pub ot_multiplier_bp: i64,
-    pub standard_minutes_per_day: i64,
     pub note: String,
     pub active: bool,
 }
@@ -94,7 +74,10 @@ pub fn validate_input(input: &EmployeeInput) -> Result<ValidatedEmployee, Vec<Fi
             format!("must be at most {MAX_NAME_LEN} characters"),
         ));
     } else if name.chars().any(|c| c.is_control()) {
-        errors.push(FieldError::new("name", "must not contain control characters"));
+        errors.push(FieldError::new(
+            "name",
+            "must not contain control characters",
+        ));
     }
 
     let code = input
@@ -121,39 +104,6 @@ pub fn validate_input(input: &EmployeeInput) -> Result<ValidatedEmployee, Vec<Fi
         }
     }
 
-    let pay_basis = PayBasis::parse(&input.pay_basis);
-    if pay_basis.is_none() {
-        errors.push(FieldError::new(
-            "pay_basis",
-            "must be one of day_rate, hourly, fixed",
-        ));
-    }
-
-    if !(0..=MAX_AMOUNT_MINOR).contains(&input.rate_minor) {
-        errors.push(FieldError::new(
-            "rate_minor",
-            format!("must be between 0 and {MAX_AMOUNT_MINOR} minor units"),
-        ));
-    }
-
-    let ot_multiplier_bp = input.ot_multiplier_bp.unwrap_or(DEFAULT_OT_MULTIPLIER_BP);
-    if !(MIN_OT_MULTIPLIER_BP..=MAX_OT_MULTIPLIER_BP).contains(&ot_multiplier_bp) {
-        errors.push(FieldError::new(
-            "ot_multiplier_bp",
-            format!("must be between {MIN_OT_MULTIPLIER_BP} and {MAX_OT_MULTIPLIER_BP}"),
-        ));
-    }
-
-    let standard_minutes_per_day = input
-        .standard_minutes_per_day
-        .unwrap_or(DEFAULT_STANDARD_MINUTES);
-    if !(MIN_STANDARD_MINUTES..=MAX_STANDARD_MINUTES).contains(&standard_minutes_per_day) {
-        errors.push(FieldError::new(
-            "standard_minutes_per_day",
-            format!("must be between {MIN_STANDARD_MINUTES} and {MAX_STANDARD_MINUTES}"),
-        ));
-    }
-
     let note = input.note.clone().unwrap_or_default();
     if note.chars().count() > MAX_NOTE_LEN {
         errors.push(FieldError::new(
@@ -165,7 +115,10 @@ pub fn validate_input(input: &EmployeeInput) -> Result<ValidatedEmployee, Vec<Fi
         .chars()
         .any(|c| c.is_control() && !matches!(c, '\n' | '\t'))
     {
-        errors.push(FieldError::new("note", "must not contain control characters"));
+        errors.push(FieldError::new(
+            "note",
+            "must not contain control characters",
+        ));
     }
 
     if !errors.is_empty() {
@@ -175,10 +128,6 @@ pub fn validate_input(input: &EmployeeInput) -> Result<ValidatedEmployee, Vec<Fi
     Ok(ValidatedEmployee {
         name: name.to_string(),
         code,
-        pay_basis: pay_basis.expect("checked above"),
-        rate_minor: input.rate_minor,
-        ot_multiplier_bp,
-        standard_minutes_per_day,
         note,
         active: input.active,
     })
@@ -210,9 +159,109 @@ pub async fn find(
         .await
 }
 
-/// Insert-or-replace used by the sync engine. Unlike [`update`], this can also
-/// resurrect a tombstoned row (when the client explicitly forces it) and
-/// preserves the original `created_at`.
+pub async fn get_live(pool: &SqlitePool, id: &str) -> Result<Option<EmployeeRow>, sqlx::Error> {
+    sqlx::query_as::<_, EmployeeRow>("SELECT * FROM employees WHERE id = ? AND deleted_at IS NULL")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+}
+
+pub async fn get_live_by_code(
+    pool: &SqlitePool,
+    code: &str,
+) -> Result<Option<EmployeeRow>, sqlx::Error> {
+    sqlx::query_as::<_, EmployeeRow>(
+        "SELECT * FROM employees WHERE code = ? COLLATE NOCASE AND deleted_at IS NULL",
+    )
+    .bind(code)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn find_live_by_code(
+    conn: &mut SqliteConnection,
+    code: &str,
+) -> Result<Option<EmployeeRow>, sqlx::Error> {
+    sqlx::query_as::<_, EmployeeRow>(
+        "SELECT * FROM employees WHERE code = ? COLLATE NOCASE AND deleted_at IS NULL",
+    )
+    .bind(code)
+    .fetch_optional(conn)
+    .await
+}
+
+pub async fn insert(
+    conn: &mut SqliteConnection,
+    id: &str,
+    v: &ValidatedEmployee,
+    now: i64,
+    seq: i64,
+) -> Result<EmployeeRow, sqlx::Error> {
+    sqlx::query_as::<_, EmployeeRow>(
+        "INSERT INTO employees
+            (id, name, code, pay_basis, rate_minor, ot_multiplier_bp,
+             standard_minutes_per_day, note, active, created_at, updated_at,
+             deleted_at, seq)
+         VALUES (?, ?, ?, 'fixed', 0, 15000, 480, ?, ?, ?, ?, NULL, ?)
+         RETURNING *",
+    )
+    .bind(id)
+    .bind(&v.name)
+    .bind(&v.code)
+    .bind(&v.note)
+    .bind(v.active)
+    .bind(now)
+    .bind(now)
+    .bind(seq)
+    .fetch_one(conn)
+    .await
+}
+
+pub async fn update(
+    conn: &mut SqliteConnection,
+    id: &str,
+    v: &ValidatedEmployee,
+    now: i64,
+    seq: i64,
+) -> Result<EmployeeRow, sqlx::Error> {
+    sqlx::query_as::<_, EmployeeRow>(
+        "UPDATE employees SET
+            name = ?, code = ?, note = ?, active = ?, updated_at = ?, seq = ?
+         WHERE id = ? AND deleted_at IS NULL
+         RETURNING *",
+    )
+    .bind(&v.name)
+    .bind(&v.code)
+    .bind(&v.note)
+    .bind(v.active)
+    .bind(now)
+    .bind(seq)
+    .bind(id)
+    .fetch_one(conn)
+    .await
+}
+
+pub async fn soft_delete(
+    conn: &mut SqliteConnection,
+    id: &str,
+    now: i64,
+    seq: i64,
+) -> Result<EmployeeRow, sqlx::Error> {
+    sqlx::query_as::<_, EmployeeRow>(
+        "UPDATE employees SET deleted_at = ?, updated_at = ?, seq = ?
+         WHERE id = ? AND deleted_at IS NULL
+         RETURNING *",
+    )
+    .bind(now)
+    .bind(now)
+    .bind(seq)
+    .bind(id)
+    .fetch_one(conn)
+    .await
+}
+
+/// Insert-or-replace used by the sync engine; preserves legacy rate columns on
+/// existing rows and preserves `created_at`.
 pub async fn upsert(
     conn: &mut SqliteConnection,
     id: &str,
@@ -227,14 +276,10 @@ pub async fn upsert(
             (id, name, code, pay_basis, rate_minor, ot_multiplier_bp,
              standard_minutes_per_day, note, active, created_at, updated_at,
              deleted_at, seq)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, 'fixed', 0, 15000, 480, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
             name = excluded.name,
             code = excluded.code,
-            pay_basis = excluded.pay_basis,
-            rate_minor = excluded.rate_minor,
-            ot_multiplier_bp = excluded.ot_multiplier_bp,
-            standard_minutes_per_day = excluded.standard_minutes_per_day,
             note = excluded.note,
             active = excluded.active,
             updated_at = excluded.updated_at,
@@ -245,10 +290,6 @@ pub async fn upsert(
     .bind(id)
     .bind(&v.name)
     .bind(&v.code)
-    .bind(v.pay_basis.as_str())
-    .bind(v.rate_minor)
-    .bind(v.ot_multiplier_bp)
-    .bind(v.standard_minutes_per_day)
     .bind(&v.note)
     .bind(v.active)
     .bind(created_at)
@@ -279,119 +320,6 @@ pub async fn mark_deleted(
     .await
 }
 
-pub async fn get_live(pool: &SqlitePool, id: &str) -> Result<Option<EmployeeRow>, sqlx::Error> {
-    sqlx::query_as::<_, EmployeeRow>(
-        "SELECT * FROM employees WHERE id = ? AND deleted_at IS NULL",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-}
-
-pub async fn get_live_by_code(
-    pool: &SqlitePool,
-    code: &str,
-) -> Result<Option<EmployeeRow>, sqlx::Error> {
-    sqlx::query_as::<_, EmployeeRow>(
-        "SELECT * FROM employees WHERE code = ? AND deleted_at IS NULL",
-    )
-    .bind(code)
-    .fetch_optional(pool)
-    .await
-}
-
-pub async fn find_live_by_code(
-    conn: &mut SqliteConnection,
-    code: &str,
-) -> Result<Option<EmployeeRow>, sqlx::Error> {
-    sqlx::query_as::<_, EmployeeRow>(
-        "SELECT * FROM employees WHERE code = ? AND deleted_at IS NULL",
-    )
-    .bind(code)
-    .fetch_optional(conn)
-    .await
-}
-
-pub async fn insert(
-    conn: &mut SqliteConnection,
-    id: &str,
-    v: &ValidatedEmployee,
-    now: i64,
-    seq: i64,
-) -> Result<EmployeeRow, sqlx::Error> {
-    sqlx::query_as::<_, EmployeeRow>(
-        "INSERT INTO employees
-            (id, name, code, pay_basis, rate_minor, ot_multiplier_bp,
-             standard_minutes_per_day, note, active, created_at, updated_at,
-             deleted_at, seq)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
-         RETURNING *",
-    )
-    .bind(id)
-    .bind(&v.name)
-    .bind(&v.code)
-    .bind(v.pay_basis.as_str())
-    .bind(v.rate_minor)
-    .bind(v.ot_multiplier_bp)
-    .bind(v.standard_minutes_per_day)
-    .bind(&v.note)
-    .bind(v.active)
-    .bind(now)
-    .bind(now)
-    .bind(seq)
-    .fetch_one(conn)
-    .await
-}
-
-pub async fn update(
-    conn: &mut SqliteConnection,
-    id: &str,
-    v: &ValidatedEmployee,
-    now: i64,
-    seq: i64,
-) -> Result<EmployeeRow, sqlx::Error> {
-    sqlx::query_as::<_, EmployeeRow>(
-        "UPDATE employees SET
-            name = ?, code = ?, pay_basis = ?, rate_minor = ?,
-            ot_multiplier_bp = ?, standard_minutes_per_day = ?, note = ?,
-            active = ?, updated_at = ?, seq = ?
-         WHERE id = ? AND deleted_at IS NULL
-         RETURNING *",
-    )
-    .bind(&v.name)
-    .bind(&v.code)
-    .bind(v.pay_basis.as_str())
-    .bind(v.rate_minor)
-    .bind(v.ot_multiplier_bp)
-    .bind(v.standard_minutes_per_day)
-    .bind(&v.note)
-    .bind(v.active)
-    .bind(now)
-    .bind(seq)
-    .bind(id)
-    .fetch_one(conn)
-    .await
-}
-
-pub async fn soft_delete(
-    conn: &mut SqliteConnection,
-    id: &str,
-    now: i64,
-    seq: i64,
-) -> Result<EmployeeRow, sqlx::Error> {
-    sqlx::query_as::<_, EmployeeRow>(
-        "UPDATE employees SET deleted_at = ?, updated_at = ?, seq = ?
-         WHERE id = ? AND deleted_at IS NULL
-         RETURNING *",
-    )
-    .bind(now)
-    .bind(now)
-    .bind(seq)
-    .bind(id)
-    .fetch_one(conn)
-    .await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -400,10 +328,6 @@ mod tests {
         EmployeeInput {
             name: "  Asha  ".into(),
             code: Some(" EMP-01 ".into()),
-            pay_basis: "day_rate".into(),
-            rate_minor: 80_000,
-            ot_multiplier_bp: None,
-            standard_minutes_per_day: None,
             note: Some("hired 2024".into()),
             active: true,
         }
@@ -414,9 +338,7 @@ mod tests {
         let v = validate_input(&input()).unwrap();
         assert_eq!(v.name, "Asha");
         assert_eq!(v.code.as_deref(), Some("EMP-01"));
-        assert_eq!(v.pay_basis, PayBasis::DayRate);
-        assert_eq!(v.ot_multiplier_bp, DEFAULT_OT_MULTIPLIER_BP);
-        assert_eq!(v.standard_minutes_per_day, DEFAULT_STANDARD_MINUTES);
+        assert!(v.active);
     }
 
     #[test]
@@ -430,17 +352,8 @@ mod tests {
     fn rejects_bad_fields() {
         let mut i = input();
         i.name = "   ".into();
-        i.pay_basis = "weekly".into();
-        i.rate_minor = -1;
-        i.ot_multiplier_bp = Some(5_000);
-        i.standard_minutes_per_day = Some(0);
         let errors = validate_input(&i).unwrap_err();
-        let fields: Vec<_> = errors.iter().map(|e| e.field.as_str()).collect();
-        assert!(fields.contains(&"name"));
-        assert!(fields.contains(&"pay_basis"));
-        assert!(fields.contains(&"rate_minor"));
-        assert!(fields.contains(&"ot_multiplier_bp"));
-        assert!(fields.contains(&"standard_minutes_per_day"));
+        assert!(errors.iter().any(|e| e.field == "name"));
     }
 
     #[test]
