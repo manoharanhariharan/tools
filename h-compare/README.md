@@ -49,6 +49,9 @@ A fast, native folder / text / CSV comparison tool written in Rust. It is built 
 - F7 / Shift+F7 change navigation steps through each **intra-line change group** before
   moving to the next changed line, focusing and scrolling the group into view. The
   counter shows the current group and the total number of change groups.
+- Arrow keys move the comparison cursor: Up/Down/PageUp/PageDown/Home/End move by line,
+  and Left/Right step through the focused intra-line change groups (moving to the
+  neighbouring changed line at a group boundary).
 - Side-by-side mode shares vertical and horizontal scrolling between both panes.
 - Unified diff and HTML report export.
 - System CJK font fallback (when a font such as Yu Gothic or Microsoft YaHei exists) so
@@ -79,6 +82,9 @@ A fast, native folder / text / CSV comparison tool written in Rust. It is built 
   - **Row order** aligns by position.
   - Any column can be selected explicitly as a key.
 - Cell-level highlighting with character-level highlights in side-by-side mode.
+- Column headers are tinted and underlined when the column contains differing cells; the
+  tooltip reports the number of differing cells and any header-text change. This makes
+  changed columns easy to spot while scrolling wide tables.
 - Two layouts:
   - **Merged** shows `left` and `right` values stacked in each changed cell.
   - **Side by side** gives both full tables with a central change gutter.
@@ -91,8 +97,13 @@ A fast, native folder / text / CSV comparison tool written in Rust. It is built 
 - F7 / Shift+F7 change navigation steps through each differing cell in a row before
   moving to the next changed row, focusing and scrolling the cell into view. The
   counter shows the current changed-cell position and the total number of cells.
+- Arrow keys move the selected cell through visible rows and columns. Home/End jump to the
+  first/last visible column and PageUp/PageDown move ten rows; the selection follows
+  filters and hidden columns.
 - **Hide any column** from the table and comparison with one context-menu action.
-- The **Hidden columns (N)** toolbar menu restores individual columns or all of them.
+- The **Columns (visible/total)** toolbar menu lists every column with a checkbox. Visible
+  columns are checked; unchecking one hides it and moves it into the **Hidden columns**
+  group at the bottom of the menu. A **Show all columns** action restores everything.
 - Hidden columns do not contribute to row alignment, cell differences, stats or exports.
 - Hidden-column choices are remembered per open file for the current session.
 - Right-click a column header or cell for hide/key/copy/delete actions, and right-click a row
@@ -103,7 +114,8 @@ A fast, native folder / text / CSV comparison tool written in Rust. It is built 
   scans so they do not pollute the comparison.
 - **Undo delete** (or `Ctrl+Z`) restores the last deleted column from its backup.
 - **Restore deleted columns** lists the `.hcompare.bak` backups beside the open CSVs so any
-  earlier state can be restored deliberately.
+  earlier state can be restored deliberately. A backup is removed from this list as soon as
+  it has been restored, so the same restore is never offered twice in one session.
 - Export the differences as CSV or the whole comparison as a standalone HTML report.
 
 ### Headless mode
@@ -132,6 +144,12 @@ cargo build --release
 ```
 
 The executable is `target/release/hcompare.exe` (or `target/release/hcompare`).
+
+### Published builds
+
+Ready-to-run portable executables are kept in `publish/` using the
+`hcompare-vYY.MM.DD.N.exe` naming format. Each published build is accompanied by
+`BUILD.txt` (source commit, toolchain, build time) and `SHA256SUMS.txt`.
 
 Run during development:
 
@@ -166,6 +184,9 @@ stamp. This is the quickest way to confirm which executable is running on a mach
 | --- | --- |
 | `F5` | Rescan both folders |
 | `F7` / `Shift+F7` | Next / previous change (file, text hunk or CSV row) |
+| `Arrow keys` | Move the CSV cell selection or text/PDF cursor |
+| `Home` / `End` | First / last visible CSV column, or first / last text line |
+| `PageUp` / `PageDown` | Move ten CSV rows or text lines |
 | `Ctrl+F` | Find in the current text/CSV comparison |
 | `Ctrl+B` | Collapse or expand the folder tree |
 | `Enter` / `Shift+Enter` | Next / previous search match while searching |
@@ -180,7 +201,8 @@ stamp. This is the quickest way to confirm which executable is running on a mach
 - **CSV header or cell**: copy values, hide the column, use the column as the alignment key,
   copy the column name/number, or delete the column from the left file, the right file, or
   both files.
-- The **Hidden columns (N)** toolbar menu brings hidden columns back individually or all at once.
+- The **Columns (visible/total)** toolbar menu lets you hide and restore columns with
+  checkboxes; hidden columns are grouped at the bottom of that menu.
 - **CSV row gutter**: copy the left row, right row, or both rows as TSV.
 - **Text diff line**: copy the line.
 

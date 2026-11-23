@@ -61,6 +61,46 @@ pub enum SearchUpdate {
     Navigate,
 }
 
+/// Logical navigation keys shared by the CSV and text/PDF comparison views.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavKey {
+    Up,
+    Down,
+    Left,
+    Right,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+}
+
+/// Consume one unmodified navigation key for the active comparison view.
+/// Returns `None` while a text input (for example the search box) has focus, so
+/// the caret keeps working normally.
+pub fn take_navigation_key(ui: &Ui) -> Option<NavKey> {
+    if ui.ctx().wants_keyboard_input() {
+        return None;
+    }
+    const KEYS: [(Key, NavKey); 8] = [
+        (Key::ArrowUp, NavKey::Up),
+        (Key::ArrowDown, NavKey::Down),
+        (Key::ArrowLeft, NavKey::Left),
+        (Key::ArrowRight, NavKey::Right),
+        (Key::Home, NavKey::Home),
+        (Key::End, NavKey::End),
+        (Key::PageUp, NavKey::PageUp),
+        (Key::PageDown, NavKey::PageDown),
+    ];
+    ui.ctx().input_mut(|input| {
+        for (key, nav) in KEYS {
+            if input.consume_key(egui::Modifiers::NONE, key) {
+                return Some(nav);
+            }
+        }
+        None
+    })
+}
+
 pub fn search_bar(ui: &mut Ui, state: &mut SearchUiState) -> SearchUpdate {
     let mut update = SearchUpdate::None;
     ui.horizontal(|ui| {

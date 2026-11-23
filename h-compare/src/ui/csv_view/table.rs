@@ -112,6 +112,7 @@ pub(super) fn merged_table(ui: &mut Ui, ctx: &CsvTableContext<'_>, state: &mut C
                     let col = *col;
                     header.col(|ui| {
                         let changed = compare.changed_headers.contains(&col);
+                        paint_column_header(ui, compare, col);
                         let label = Label::new(
                             RichText::new(compare.column_name(col))
                                 .color(if changed {
@@ -133,16 +134,10 @@ pub(super) fn merged_table(ui: &mut Ui, ctx: &CsvTableContext<'_>, state: &mut C
                         response.context_menu(|ui| {
                             column_context_menu(ui, compare, col, state);
                         });
-                        if changed {
+                        if let Some(tip) = column_header_tooltip(compare, col) {
                             response.on_hover_ui(|ui| {
-                                ui.label(
-                                    RichText::new(format!(
-                                        "Left header: {}\nRight header: {}",
-                                        compare.left.display_header(col),
-                                        compare.right.display_header(col),
-                                    ))
-                                    .monospace(),
-                                );
+                                ui.set_max_width(420.0);
+                                ui.label(RichText::new(tip).monospace().size(12.0));
                             });
                         }
                     });
@@ -383,6 +378,7 @@ fn render_csv_pane(
                     let col = *col;
                     header.col(|ui| {
                         let changed = compare.changed_headers.contains(&col);
+                        paint_column_header(ui, compare, col);
                         ui.add(
                             Label::new(
                                 RichText::new(if left_side {
@@ -416,6 +412,12 @@ fn render_csv_pane(
                         response.context_menu(|ui| {
                             column_context_menu(ui, compare, col, state);
                         });
+                        if let Some(tip) = column_header_tooltip(compare, col) {
+                            response.on_hover_ui(|ui| {
+                                ui.set_max_width(420.0);
+                                ui.label(RichText::new(tip).monospace().size(12.0));
+                            });
+                        }
                     });
                 }
             });
@@ -606,6 +608,21 @@ fn status_glyph(kind: CsvRowKind) -> (&'static str, Color32) {
         CsvRowKind::LeftOnly => ("-", theme::left()),
         CsvRowKind::RightOnly => ("+", theme::right()),
     }
+}
+
+/// Tint the header of a column that contains differing cells and draw a short
+/// underline so the column stands out while scrolling the table.
+fn paint_column_header(ui: &Ui, compare: &CsvCompare, col: usize) {
+    if compare.column_change_count(col) == 0 {
+        return;
+    }
+    let rect = ui.max_rect();
+    ui.painter().rect_filled(rect, 3.0, theme::mod_bg());
+    let underline = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + 5.0, rect.bottom() - 3.0),
+        egui::pos2(rect.right() - 5.0, rect.bottom() - 1.0),
+    );
+    ui.painter().rect_filled(underline, 1.0, theme::diff());
 }
 
 fn paint_merged_cell(ui: &mut Ui, cell: &MergedCell<'_>, state: &mut CsvUiState) -> egui::Response {

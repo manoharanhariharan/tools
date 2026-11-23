@@ -1,9 +1,7 @@
 //! CSV comparison view, layouts, navigation and column actions.
 
 use crate::actions::{ExportKind, UiAction};
-use crate::csvdiff::{
-    column_backups, CsvAlign, CsvCompare, CsvIgnore, CsvOptions, CsvRowKind, DelimiterChoice,
-};
+use crate::csvdiff::{CsvAlign, CsvCompare, CsvIgnore, CsvOptions, CsvRowKind, DelimiterChoice};
 use crate::load::OpenData;
 use crate::textdiff::find_ranges;
 use crate::ui::common::{self, SearchUiState, SearchUpdate};
@@ -15,6 +13,7 @@ use eframe::egui::{
 use egui_extras::{Column, TableBuilder};
 use std::borrow::Cow;
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -43,6 +42,8 @@ pub struct CsvUiState {
     pub column_widths: Vec<f32>,
     pub hidden_columns: BTreeSet<usize>,
     pub hidden_dirty: bool,
+    /// Backups already restored in this session; hidden from the restore menu.
+    pub restored_backups: BTreeSet<PathBuf>,
     pub pending_key: Option<usize>,
     pub pending_delete: Option<(CsvDeleteTarget, usize)>,
     pub scroll_to_col: Option<usize>,
@@ -68,6 +69,7 @@ impl CsvUiState {
             column_widths: Vec::new(),
             hidden_columns: BTreeSet::new(),
             hidden_dirty: false,
+            restored_backups: BTreeSet::new(),
             pending_key: None,
             pending_delete: None,
             scroll_to_col: first_cell,
@@ -94,6 +96,51 @@ impl CsvUiState {
         (0..compare.column_count)
             .filter(|col| !self.hidden_columns.contains(col))
             .collect()
+    }
+
+    /// Move the selected cell with the keyboard. Up/Down walk the currently
+    /// visible rows, Left/Right walk the visible columns, and Page/Home/End
+    /// jump by ten rows or to the first/last column.
+    pub fn navigate_cells(
+        &mut self,
+        compare: &CsvCompare,
+        visible: &[usize],
+        key: common::NavKey,
+    ) -> bool {
+        if visible.is_empty() {
+            return false;
+        }
+        let columns = self.visible_columns(compare);
+        if columns.is_empty() {
+            return false;
+        }
+        let row_pos = self
+            .selected_row
+            .and_then(|row| visible.iter().position(|candidate| *candidate == row))
+            .unwrap_or(0);
+        let col_pos = self
+            .selected_cell
+            .filter(|(row, _)| Some(*row) == self.selected_row)
+            .and_then(|(_, col)| columns.iter().position(|candidate| *candidate == col))
+            .unwrap_or(0);
+        const PAGE_STEP: usize = 10;
+        let (row_pos, col_pos) = match key {
+            common::NavKey::Up => (row_pos.saturating_sub(1), col_pos),
+            common::NavKey::Down => ((row_pos + 1).min(visible.len() - 1), col_pos),
+            common::NavKey::Left => (row_pos, col_pos.saturating_sub(1)),
+            common::NavKey::Right => (row_pos, (col_pos + 1).min(columns.len() - 1)),
+            common::NavKey::Home => (row_pos, 0),
+            common::NavKey::End => (row_pos, columns.len() - 1),
+            common::NavKey::PageUp => (row_pos.saturating_sub(PAGE_STEP), col_pos),
+            common::NavKey::PageDown => ((row_pos + PAGE_STEP).min(visible.len() - 1), col_pos),
+        };
+        let row = visible[row_pos];
+        let col = columns[col_pos];
+        if self.selected_row == Some(row) && self.selected_cell == Some((row, col)) {
+            return false;
+        }
+        self.select_cell(row, col);
+        true
     }
 
     pub fn ensure_widths(&mut self, compare: &CsvCompare) {
@@ -402,53 +449,7 @@ pub fn show(
                 } else {
                     ui.label("");
                 }
-                ui.menu_button(format!("Hidden columns ({})", state.hidden_count()), |ui| {
-                    ui.set_min_width(330.0);
-                    if state.hidden_columns.is_empty() {
-                        common::small_muted(
-                            ui,
-                            "No hidden columns. Right-click a column header to hide one.",
-                        );
-                    } else {
-                        let hidden_cols: Vec<usize> =
-                            state.hidden_columns.iter().copied().collect();
-                        for col in hidden_cols {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    RichText::new(format!(
-                                        "{} · {}",
-                                        col + 1,
-                                        compare.column_name(col)
-                                    ))
-                                    .strong(),
-                                );
-                                if common::intent_button(
-                                    ui,
-                                    "Restore",
-                                    common::ButtonIntent::Secondary,
-                                )
-                                .clicked()
-                                {
-                                    state.hidden_columns.remove(&col);
-                                    state.hidden_dirty = true;
-                                    ui.close_menu();
-                                }
-                            });
-                        }
-                        ui.separator();
-                        if common::intent_button(
-                            ui,
-                            "Restore all hidden columns",
-                            common::ButtonIntent::Secondary,
-                        )
-                        .clicked()
-                        {
-                            state.hidden_columns.clear();
-                            state.hidden_dirty = true;
-                            ui.close_menu();
-                        }
-                    }
-                });
+                menus::columns_menu(ui, compare, state);
                 if common::intent_button(ui, "Find", common::ButtonIntent::Ghost)
                     .on_hover_text("Find (Ctrl+F)")
                     .clicked()
@@ -470,53 +471,7 @@ pub fn show(
                 } else {
                     ui.label("");
                 }
-                ui.menu_button("Restore deleted columns", |ui| {
-                    ui.set_min_width(360.0);
-                    let mut any = false;
-                    for (side, path) in [
-                        ("Left", data.left_path.as_deref()),
-                        ("Right", data.right_path.as_deref()),
-                    ] {
-                        let Some(path) = path else { continue };
-                        let backups = column_backups(path);
-                        if backups.is_empty() {
-                            continue;
-                        }
-                        any = true;
-                        ui.label(
-                            RichText::new(format!("{side} · {}", path.display()))
-                                .strong()
-                                .size(11.5),
-                        );
-                        for backup in backups.iter().take(12) {
-                            let file_name = path
-                                .file_name()
-                                .map(|name| name.to_string_lossy().into_owned())
-                                .unwrap_or_default();
-                            let stamp = backup
-                                .file_name()
-                                .map(|name| name.to_string_lossy().into_owned())
-                                .unwrap_or_default()
-                                .trim_start_matches(&format!("{file_name}."))
-                                .trim_end_matches(".hcompare.bak")
-                                .to_string();
-                            let label = format!("Restore {file_name} · {stamp}");
-                            if common::intent_button(ui, &label, common::ButtonIntent::Secondary)
-                                .clicked()
-                            {
-                                actions.push(UiAction::RestoreCsvBackup {
-                                    path: path.to_path_buf(),
-                                    backup: backup.clone(),
-                                });
-                                ui.close_menu();
-                            }
-                        }
-                        ui.separator();
-                    }
-                    if !any {
-                        common::small_muted(ui, "No .hcompare.bak backups beside these CSV files.");
-                    }
-                });
+                menus::restore_columns_menu(ui, data, &state.restored_backups, actions);
                 ui.menu_button("Format", |ui| {
                     ui.menu_button(format!("Delimiter: {}", options.delimiter.label()), |ui| {
                         for choice in DelimiterChoice::ALL {
@@ -691,6 +646,11 @@ pub fn show(
             state.selected_row = visible.first().copied();
         }
     }
+    if let Some(key) = common::take_navigation_key(ui) {
+        if state.navigate_cells(compare, &visible, key) {
+            ui.ctx().request_repaint();
+        }
+    }
 
     let query = state.search.query.clone();
     let case_sensitive = state.search.case_sensitive;
@@ -702,7 +662,7 @@ pub fn show(
         .and_then(|row| visible.iter().position(|visible_row| *visible_row == row));
     common::small_muted(
         ui,
-        "Right-click a column to hide or delete it · panes share vertical and horizontal scroll",
+        "Arrow keys move the selected cell · right-click a column to hide or delete it · panes share vertical and horizontal scroll",
     );
     let widths = state.column_widths.clone();
     let visible_columns = state.visible_columns(compare);

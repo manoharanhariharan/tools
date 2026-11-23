@@ -201,12 +201,19 @@ pub struct CsvCompare {
     pub rows: Vec<CsvRow>,
     pub stats: CsvStats,
     pub changed_headers: Vec<usize>,
+    /// Number of differing cells per column, indexed by column.
+    pub column_changes: Vec<usize>,
     pub column_count: usize,
     pub align: CsvAlign,
     pub warnings: Vec<String>,
 }
 
 impl CsvCompare {
+    /// Number of cells that differ in `col`, across all rows.
+    pub fn column_change_count(&self, col: usize) -> usize {
+        self.column_changes.get(col).copied().unwrap_or(0)
+    }
+
     pub fn column_name(&self, col: usize) -> String {
         let left = self.left.display_header(col);
         let right = self.right.display_header(col);
@@ -439,6 +446,7 @@ pub fn compare_tables_with_ignore(
         header_changes: changed_headers.len(),
         ..Default::default()
     };
+    let mut column_changes = vec![0usize; column_count];
     for row in &rows {
         match row.kind {
             CsvRowKind::Equal => stats.equal += 1,
@@ -449,6 +457,11 @@ pub fn compare_tables_with_ignore(
             CsvRowKind::LeftOnly => stats.removed += 1,
             CsvRowKind::RightOnly => stats.added += 1,
         }
+        for col in &row.changed_cols {
+            if let Some(count) = column_changes.get_mut(*col) {
+                *count += 1;
+            }
+        }
     }
 
     CsvCompare {
@@ -457,6 +470,7 @@ pub fn compare_tables_with_ignore(
         rows,
         stats,
         changed_headers,
+        column_changes,
         column_count,
         align,
         warnings,
@@ -924,7 +938,9 @@ pub fn delete_column_from_file(
 }
 
 /// Find backups that `delete_column_from_file` left beside `path`, newest first.
-pub fn column_backups(path: &Path) -> Vec<PathBuf> {
+/// Backups that were already restored are omitted, so a restore is never offered
+/// twice in the same session.
+pub fn column_backups_excluding(path: &Path, restored: &BTreeSet<PathBuf>) -> Vec<PathBuf> {
     let Some(dir) = path.parent() else {
         return Vec::new();
     };
@@ -945,7 +961,11 @@ pub fn column_backups(path: &Path) -> Vec<PathBuf> {
             let stamp = file_name[prefix.len()..file_name.len() - ".hcompare.bak".len()]
                 .parse::<u128>()
                 .unwrap_or(0);
-            Some((stamp, entry.path()))
+            let path = entry.path();
+            if restored.contains(&path) {
+                return None;
+            }
+            Some((stamp, path))
         })
         .collect();
     backups.sort_by_key(|left| std::cmp::Reverse(left.0));
@@ -1032,6 +1052,32 @@ mod tests {
             .find(|row| row.kind == CsvRowKind::Modified)
             .unwrap();
         assert_eq!(modified.changed_cols, vec![1, 2]);
+    }
+
+    #[test]
+    fn column_change_counts_track_differences_per_column() {
+        let compare = compare_csv(
+            b"id,a,b\n1,x,y\n2,p,q\n3,s,t\n",
+            b"id,a,b\n1,X,y\n2,p,Q\n3,s,t\n",
+            &options(),
+        )
+        .unwrap();
+        assert_eq!(compare.column_change_count(0), 0);
+        assert_eq!(compare.column_change_count(1), 1);
+        assert_eq!(compare.column_change_count(2), 1);
+        assert_eq!(compare.column_change_count(99), 0);
+    }
+
+    #[test]
+    fn ignored_columns_have_no_column_change_count() {
+        let mut ignore = CsvIgnore::default();
+        ignore.right.insert(1);
+        let compare =
+            compare_csv_with_ignore(b"id,a,b\n1,x,y\n", b"id,a,b\n1,X,Q\n", &options(), &ignore)
+                .unwrap();
+        assert_eq!(compare.column_change_count(1), 0);
+        assert_eq!(compare.column_change_count(2), 1);
+        assert_eq!(compare.stats.changed_cells, 1);
     }
 
     #[test]
@@ -1257,10 +1303,15 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(5));
         let second = delete_column_from_file(&path, 1, b',').unwrap();
 
-        let backups = column_backups(&path);
+        let backups = column_backups_excluding(&path, &BTreeSet::new());
         assert_eq!(backups.len(), 2);
         assert_eq!(backups[0], second);
         assert_eq!(backups[1], first);
+
+        let mut restored = BTreeSet::new();
+        restored.insert(second.clone());
+        let pending = column_backups_excluding(&path, &restored);
+        assert_eq!(pending, vec![first.clone()]);
 
         restore_column_backup(&path, &second).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "id,value\n1,10\n");

@@ -26,7 +26,7 @@ use eframe::egui::{
     self, Align, Align2, Color32, Frame, Key, Label, Layout, Margin, RichText, Sense, Stroke,
     TextEdit, Ui, Vec2,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -53,6 +53,9 @@ pub struct App {
     initial_open: Option<String>,
     csv_ignores: HashMap<String, CsvIgnore>,
     csv_column_undo: Option<CsvColumnUndo>,
+    /// Backups already restored in this session, so the restore menu does not
+    /// offer the same backup twice.
+    csv_restored_backups: BTreeSet<PathBuf>,
     scan_rx: Option<Receiver<Result<CompareTree, String>>>,
     scan_started: Option<Instant>,
     scan_error: Option<String>,
@@ -174,6 +177,7 @@ impl App {
             initial_open,
             csv_ignores: HashMap::new(),
             csv_column_undo: None,
+            csv_restored_backups: BTreeSet::new(),
             scan_rx: None,
             scan_started: None,
             scan_error: None,
@@ -218,6 +222,7 @@ impl App {
         if !same_pair {
             self.csv_ignores.clear();
             self.csv_column_undo = None;
+            self.csv_restored_backups.clear();
         }
         let (tx, rx) = mpsc::channel();
         let repaint = ctx.clone();
@@ -382,6 +387,7 @@ impl App {
                             };
                             csv_ui.differences_only = self.settings.csv_differences_only;
                             csv_ui.options_collapsed = self.settings.csv_options_collapsed;
+                            csv_ui.restored_backups = self.csv_restored_backups.clone();
                         }
                         self.open = Some(state);
                         self.open_error = None;

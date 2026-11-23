@@ -1,6 +1,4 @@
 use super::*;
-
-use super::*;
 use crate::load::{OpenData, OpenKind};
 use crate::model::CompareOptions;
 use crate::textdiff::build_text_diff;
@@ -240,4 +238,58 @@ fn each_modified_line_is_a_separate_change_target() {
     assert_eq!(state.selected_row, Some(1));
     assert!(state.goto_change(&view, false));
     assert_eq!(state.selected_row, Some(4));
+}
+
+#[test]
+fn arrow_navigation_moves_the_text_cursor_by_line_and_group() {
+    let view = build_text_diff(
+        "one\ntwo\nthree\nfour\n",
+        "one\nTWO\nthree\nfour\n",
+        &CompareOptions::default(),
+    );
+    let mut state = TextUiState::new(&view);
+    state.selected_row = Some(0);
+    state.selected_group = 0;
+    state.current_change = None;
+    state.scroll_to_row = None;
+
+    assert!(state.navigate(&view, crate::ui::common::NavKey::Down));
+    assert_eq!(state.selected_row, Some(1));
+    assert_eq!(state.current_change, Some(1));
+    assert_eq!(state.scroll_to_row, Some(1));
+
+    assert!(state.navigate(&view, crate::ui::common::NavKey::Down));
+    assert_eq!(state.selected_row, Some(2));
+    assert_eq!(state.current_change, None);
+
+    assert!(state.navigate(&view, crate::ui::common::NavKey::End));
+    assert_eq!(state.selected_row, Some(3));
+
+    assert!(state.navigate(&view, crate::ui::common::NavKey::Home));
+    assert_eq!(state.selected_row, Some(0));
+
+    assert!(state.navigate(&view, crate::ui::common::NavKey::PageDown));
+    assert_eq!(state.selected_row, Some(3));
+
+    assert!(!state.navigate(&view, crate::ui::common::NavKey::PageDown));
+    assert!(state.navigate(&view, crate::ui::common::NavKey::PageUp));
+    assert_eq!(state.selected_row, Some(0));
+}
+
+#[test]
+fn left_and_right_arrows_step_through_change_groups() {
+    let view = build_text_diff(
+        "one\nline with KLK and lkld end\nthree\n",
+        "one\nline with hhh and and end\nthree\n",
+        &CompareOptions::default(),
+    );
+    let mut state = TextUiState::new(&view);
+    assert_eq!(state.selected_group, 0);
+
+    assert!(state.navigate(&view, crate::ui::common::NavKey::Right));
+    assert_eq!(state.selected_row, Some(1));
+    assert_eq!(state.selected_group, 1);
+
+    assert!(state.navigate(&view, crate::ui::common::NavKey::Left));
+    assert_eq!(state.selected_group, 0);
 }

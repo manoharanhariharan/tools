@@ -122,6 +122,48 @@ impl TextUiState {
         // The row is already visible; do not re-trigger a vertical animation.
         self.scroll_to_char = group_start_char(view, row, self.selected_group);
     }
+
+    /// Move the selection with the keyboard. Up/Down/Page/Home/End move by
+    /// line; Left/Right walk the intra-line change groups (the visible cursor)
+    /// and advance to the neighbouring change row at a group boundary.
+    pub fn navigate(&mut self, view: &TextDiffView, key: common::NavKey) -> bool {
+        match key {
+            common::NavKey::Left => return self.goto_change(view, false),
+            common::NavKey::Right => return self.goto_change(view, true),
+            _ => {}
+        }
+        if view.rows.is_empty() {
+            return false;
+        }
+        let current = self
+            .selected_row
+            .or(self.current_change)
+            .unwrap_or(0)
+            .min(view.rows.len() - 1);
+        const PAGE_STEP: usize = 10;
+        let target = match key {
+            common::NavKey::Up => current.saturating_sub(1),
+            common::NavKey::Down => (current + 1).min(view.rows.len() - 1),
+            common::NavKey::PageUp => current.saturating_sub(PAGE_STEP),
+            common::NavKey::PageDown => (current + PAGE_STEP).min(view.rows.len() - 1),
+            common::NavKey::Home => 0,
+            common::NavKey::End => view.rows.len() - 1,
+            common::NavKey::Left | common::NavKey::Right => unreachable!(),
+        };
+        if target == current && self.selected_row == Some(target) {
+            return false;
+        }
+        self.selected_group = 0;
+        self.current_change = if view.rows[target].kind == RowKind::Equal {
+            None
+        } else {
+            Some(target)
+        };
+        self.selected_row = Some(target);
+        self.scroll_to_row = Some(target);
+        self.scroll_to_char = None;
+        true
+    }
 }
 
 fn group_start_char(view: &TextDiffView, row: usize, group: usize) -> Option<usize> {
@@ -358,7 +400,7 @@ pub fn show(
         common::small_muted(
             ui,
             format!(
-                "{encoding_line}   ·   F7 / Shift+F7 changes · Ctrl+C copies the selected line"
+                "{encoding_line}   ·   Arrow keys move the cursor · F7 / Shift+F7 changes · Ctrl+C copies the selected line"
             ),
         );
     }
@@ -389,6 +431,12 @@ pub fn show(
             common::small_muted(ui, "Both files are empty.");
         });
         return reload;
+    }
+
+    if let Some(key) = common::take_navigation_key(ui) {
+        if state.navigate(view, key) {
+            ui.ctx().request_repaint();
+        }
     }
 
     let scroll_to = state.scroll_to_row.take();
@@ -491,9 +539,9 @@ pub fn show(
     common::small_muted(
         ui,
         if state.mode == TextViewMode::Merged {
-            "Merged view · F7 / Shift+F7 moves between changes · Ctrl+C copies the selected line"
+            "Merged view · Arrow keys move the cursor · F7 / Shift+F7 moves between changes · Ctrl+C copies the selected line"
         } else {
-            "Ctrl+C copies the selected line · F7 / Shift+F7 moves between changes · both panes share vertical scroll"
+            "Arrow keys move the cursor · Ctrl+C copies the selected line · F7 / Shift+F7 moves between changes · both panes share vertical scroll"
         },
     );
     reload

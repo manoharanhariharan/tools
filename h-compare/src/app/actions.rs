@@ -164,8 +164,13 @@ impl App {
                 }
             }
             UiAction::RestoreCsvBackup { path, backup } => {
+                if self.csv_restored_backups.contains(&backup) {
+                    self.set_message("That backup was already restored.", false);
+                    return;
+                }
                 match restore_column_backup(&path, &backup) {
                     Ok(()) => {
+                        self.csv_restored_backups.insert(backup);
                         self.csv_ignores.clear();
                         self.csv_column_undo = None;
                         self.set_message(
@@ -183,10 +188,15 @@ impl App {
                     return;
                 };
                 let mut errors = Vec::new();
+                let mut restored = Vec::new();
                 for entry in &undo.entries {
-                    if let Err(error) = restore_column_backup(&entry.path, &entry.backup) {
-                        errors.push(format!("{}: {error}", entry.path.display()));
+                    match restore_column_backup(&entry.path, &entry.backup) {
+                        Ok(()) => restored.push(entry.backup.clone()),
+                        Err(error) => errors.push(format!("{}: {error}", entry.path.display())),
                     }
+                }
+                for backup in restored {
+                    self.csv_restored_backups.insert(backup);
                 }
                 if errors.is_empty() {
                     self.csv_ignores.clear();
@@ -381,6 +391,7 @@ impl App {
                 delimiter,
             } => match delete_column_from_file(&path, column, delimiter) {
                 Ok(backup) => {
+                    self.csv_restored_backups.remove(&backup);
                     self.csv_ignores.clear();
                     self.csv_column_undo = Some(CsvColumnUndo {
                         column,
@@ -406,7 +417,10 @@ impl App {
                 let mut errors = Vec::new();
                 for (path, delimiter) in targets {
                     match delete_column_from_file(&path, column, delimiter) {
-                        Ok(backup) => entries.push(CsvColumnUndoEntry { path, backup }),
+                        Ok(backup) => {
+                            self.csv_restored_backups.remove(&backup);
+                            entries.push(CsvColumnUndoEntry { path, backup });
+                        }
                         Err(error) => errors.push(format!("{}: {error}", path.display())),
                     }
                 }

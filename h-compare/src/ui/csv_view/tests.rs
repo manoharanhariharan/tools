@@ -1,8 +1,7 @@
 use super::*;
-
-use super::*;
 use crate::csvdiff::compare_csv;
 use crate::load::{OpenData, OpenKind};
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 fn data_with(compare: CsvCompare) -> OpenData {
@@ -299,4 +298,104 @@ fn side_by_side_change_navigation_scrolls_vertically_to_the_row() {
         "vertical offset did not stick: {}",
         state.sync_scroll_y
     );
+}
+
+#[test]
+fn column_visibility_entries_list_visible_first_then_hidden() {
+    let compare = compare_csv(
+        b"id,a,b,c\n1,x,y,z\n",
+        b"id,a,b,c\n1,x,y,z\n",
+        &CsvOptions::default(),
+    )
+    .unwrap();
+    let mut hidden = BTreeSet::from([1, 3]);
+    let (visible, hidden_cols) = super::menus::column_visibility_entries(&compare, &hidden);
+    assert_eq!(visible, vec![0, 2]);
+    assert_eq!(hidden_cols, vec![1, 3]);
+
+    super::menus::set_column_visible(&mut hidden, 1, true);
+    assert!(!hidden.contains(&1));
+    super::menus::set_column_visible(&mut hidden, 0, false);
+    let (visible, hidden_cols) = super::menus::column_visibility_entries(&compare, &hidden);
+    assert_eq!(visible, vec![1, 2]);
+    assert_eq!(hidden_cols, vec![0, 3]);
+    assert_eq!(visible.len() + hidden_cols.len(), compare.column_count);
+}
+
+#[test]
+fn column_header_tooltip_reports_cell_and_header_differences() {
+    let compare = compare_csv(
+        b"id,name,note\n1,alpha,keep\n",
+        b"id,title,note\n1,alpha,CHANGED\n",
+        &CsvOptions::default(),
+    )
+    .unwrap();
+    let header_tip = super::menus::column_header_tooltip(&compare, 1).expect("header tooltip");
+    assert!(header_tip.contains("Header differs"));
+    assert!(header_tip.contains("Left: name"));
+    assert!(header_tip.contains("Right: title"));
+    assert!(!header_tip.contains("differing cell"));
+
+    let cell_tip = super::menus::column_header_tooltip(&compare, 2).expect("cell tooltip");
+    assert!(cell_tip.contains("1 differing cell in this column"));
+    assert!(!cell_tip.contains("Header differs"));
+
+    assert!(super::menus::column_header_tooltip(&compare, 0).is_none());
+}
+
+#[test]
+fn arrow_navigation_moves_between_visible_cells() {
+    let compare = compare_csv(
+        b"id,a,b\n1,x,y\n2,p,q\n3,s,t\n",
+        b"id,a,b\n1,x,y\n2,p,q\n3,s,t\n",
+        &CsvOptions::default(),
+    )
+    .unwrap();
+    let mut state = CsvUiState::new(&compare);
+    state.selected_row = Some(0);
+    state.selected_cell = Some((0, 0));
+    state.scroll_to_col = None;
+    let visible: Vec<usize> = (0..compare.rows.len()).collect();
+
+    assert!(state.navigate_cells(&compare, &visible, crate::ui::common::NavKey::Right));
+    assert_eq!(state.selected_cell, Some((0, 1)));
+    assert_eq!(state.scroll_to_col, Some(1));
+
+    assert!(state.navigate_cells(&compare, &visible, crate::ui::common::NavKey::Down));
+    assert_eq!(state.selected_cell, Some((1, 1)));
+    assert_eq!(state.selected_row, Some(1));
+
+    assert!(state.navigate_cells(&compare, &visible, crate::ui::common::NavKey::Left));
+    assert_eq!(state.selected_cell, Some((1, 0)));
+
+    assert!(state.navigate_cells(&compare, &visible, crate::ui::common::NavKey::End));
+    assert_eq!(state.selected_cell, Some((1, 2)));
+
+    assert!(state.navigate_cells(&compare, &visible, crate::ui::common::NavKey::Home));
+    assert_eq!(state.selected_cell, Some((1, 0)));
+}
+
+#[test]
+fn arrow_navigation_skips_hidden_columns_and_filtered_rows() {
+    let compare = compare_csv(
+        b"id,a,b\n1,x,y\n2,p,q\n3,s,t\n",
+        b"id,a,b\n1,x,y\n2,p,q\n3,s,t\n",
+        &CsvOptions::default(),
+    )
+    .unwrap();
+    let mut state = CsvUiState::new(&compare);
+    state.hidden_columns.insert(1);
+    state.selected_row = Some(0);
+    state.selected_cell = Some((0, 0));
+    let visible = vec![1, 2];
+
+    assert!(state.navigate_cells(&compare, &visible, crate::ui::common::NavKey::Right));
+    assert_eq!(state.selected_cell, Some((1, 2)));
+    assert!(!state.navigate_cells(&compare, &visible, crate::ui::common::NavKey::Right));
+    assert_eq!(state.selected_cell, Some((1, 2)));
+
+    assert!(state.navigate_cells(&compare, &visible, crate::ui::common::NavKey::Down));
+    assert_eq!(state.selected_cell, Some((2, 2)));
+    assert!(!state.navigate_cells(&compare, &visible, crate::ui::common::NavKey::Down));
+    assert_eq!(state.selected_cell, Some((2, 2)));
 }
