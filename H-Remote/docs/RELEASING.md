@@ -20,12 +20,15 @@ the metadata at the top level.
 The build pipeline sets `HREMOTE_BUILD_VERSION` from the tag, so the running app
 reports the release version (used by update checks) rather than `0.1.0`.
 
-`release/` and `release-build.log` are gitignored: binaries are not committed.
+`release/` and `release-build.log` are gitignored. The portable exe is copied to
+`publish/` and committed (with its `SHA256SUMS.txt` and `BUILD.txt`) so released
+builds persist in the repository; the installer stays in the ignored
+`release/<tag>/` audit folder.
 
 ## One command
 
 ```powershell
-cd tools\3rd-party-repo\H-Remote
+cd tools\H-Remote
 .\scripts\release.ps1
 ```
 
@@ -41,6 +44,8 @@ What it does:
 5. Signs both when `HREMOTE_SIGN_CERT` is set (see `docs/SIGNING.md`).
 6. Writes `BUILD.txt` + `SHA256SUMS.txt` for the tag folder.
 7. Mirrors the artifacts and hashes into `release/`.
+8. (Manual publish) Copy the portable exe to `publish/`, update
+   `publish/SHA256SUMS.txt`, then commit/push `publish/`.
 
 Useful variants:
 
