@@ -1,0 +1,8 @@
+/target
+/daybook-data
+/scratch
+/certs
+*.db
+*.db-shm
+*.db-wal
+node_modules

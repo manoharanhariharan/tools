@@ -1,0 +1,9 @@
+{
+  "name": "daybook-web",
+  "private": true,
+  "type": "module",
+  "description": "Daybook PWA assets (no build step, ES modules)",
+  "scripts": {
+    "test": "node --test tests/js/*.test.mjs"
+  }
+}
