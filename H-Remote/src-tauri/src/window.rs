@@ -206,6 +206,7 @@ pub fn save_placement(app: &AppHandle) {
     }
     for (label, window) in app.webview_windows() {
         if label == SESSION_WINDOW
+            && window.is_visible().unwrap_or(false)
             && let Some(placement) = capture_placement(&window)
         {
             state.locality.update(|locality| {
@@ -235,18 +236,18 @@ pub fn save_session_placement(app: &AppHandle, label: &str) {
 
 /// Opens (or focuses) the shared session window. The size/position comes from
 /// the last stored placement, then a centred default.
+/// Shows the session window that Tauri creates (hidden) at startup. Building a
+/// webview synchronously from a command used to leave a white window while the
+/// main thread waited on the new webview's first navigation.
 pub fn open_session_window(
     app: &AppHandle,
     _session_id: &str,
     requested: Option<WindowPlacement>,
 ) -> AppResult<String> {
     let label = SESSION_WINDOW.to_string();
-    if let Some(existing) = app.get_webview_window(&label) {
-        let _ = existing.show();
-        let _ = existing.unminimize();
-        let _ = existing.set_focus();
-        return Ok(label);
-    }
+    let window = app
+        .get_webview_window(&label)
+        .ok_or_else(|| AppError::not_found("session window"))?;
     let state = app.state::<AppState>();
     let stored = state
         .locality
@@ -255,38 +256,16 @@ pub fn open_session_window(
         .session_windows
         .get(&label)
         .cloned();
-    let placement = requested.or(stored).unwrap_or_else(|| {
-        let fallback = app
-            .get_webview_window(MAIN_WINDOW)
-            .and_then(|window| monitor_snapshot(&window).into_iter().next())
-            .map(|monitor| WindowPlacement {
-                x: monitor.x + 80,
-                y: monitor.y + 80,
-                width: 980,
-                height: 700,
-                scale_factor: Some(monitor.scale_factor),
-                monitor_name: monitor.name.clone(),
-                layout_signature: Some(screen_layout_signature(&[monitor])),
-                ..WindowPlacement::default()
-            });
-        fallback.unwrap_or(WindowPlacement {
-            width: 980,
-            height: 700,
-            ..WindowPlacement::default()
-        })
-    });
-    let window = tauri::WebviewWindowBuilder::new(
-        app,
-        &label,
-        tauri::WebviewUrl::App("index.html?window=sessions".into()),
-    )
-    .title("H-Remote sessions")
-    .inner_size(f64::from(placement.width), f64::from(placement.height))
-    .position(f64::from(placement.x), f64::from(placement.y))
-    .min_inner_size(640.0, 480.0)
-    .build()
-    .map_err(|error| AppError::platform(format!("cannot open the session window: {error}")))?;
-    let _ = window.show();
+    let monitors = monitor_snapshot(&window);
+    let placement = requested
+        .or(stored)
+        .unwrap_or_else(|| session_placement(&monitors));
+    let decision = validate_placement(&placement, &monitors);
+    apply_placement(&window, &decision)?;
+    window
+        .show()
+        .map_err(|error| AppError::platform(format!("cannot show the session window: {error}")))?;
+    let _ = window.unminimize();
     let _ = window.set_focus();
     Ok(label)
 }
@@ -358,6 +337,30 @@ fn monitor_snapshot(window: &WebviewWindow) -> Vec<MonitorInfo> {
         .collect()
 }
 
+fn session_placement(monitors: &[MonitorInfo]) -> WindowPlacement {
+    let primary = monitors
+        .iter()
+        .find(|monitor| monitor.is_primary)
+        .or_else(|| monitors.first());
+    match primary {
+        Some(monitor) => WindowPlacement {
+            x: monitor.x + 80,
+            y: monitor.y + 80,
+            width: 980.min(monitor.width),
+            height: 700.min(monitor.height),
+            scale_factor: Some(monitor.scale_factor),
+            monitor_name: monitor.name.clone(),
+            layout_signature: Some(screen_layout_signature(monitors)),
+            ..WindowPlacement::default()
+        },
+        None => WindowPlacement {
+            width: 980,
+            height: 700,
+            ..WindowPlacement::default()
+        },
+    }
+}
+
 fn default_placement(monitors: &[MonitorInfo]) -> WindowPlacement {
     let primary = monitors
         .iter()
@@ -391,6 +394,24 @@ mod tests {
     fn session_window_is_a_single_shared_label() {
         assert_eq!(SESSION_WINDOW, "sessions");
         assert!(!SESSION_WINDOW.starts_with("session-"));
+    }
+
+    #[test]
+    fn session_placement_is_offset_and_clamped() {
+        let monitors = vec![MonitorInfo {
+            name: Some("primary".into()),
+            x: 0,
+            y: 0,
+            width: 1024,
+            height: 768,
+            scale_factor: 1.0,
+            is_primary: true,
+        }];
+        let placement = session_placement(&monitors);
+        assert_eq!(placement.x, 80);
+        assert_eq!(placement.y, 80);
+        assert_eq!(placement.width, 980);
+        assert_eq!(placement.height, 700);
     }
 
     #[test]

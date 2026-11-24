@@ -329,8 +329,12 @@ fn main() {
                 return;
             }
             if window.label() == window::SESSION_WINDOW {
-                if let WindowEvent::CloseRequested { .. } = event {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    // Keep the pre-created webview alive; recreating it at
+                    // runtime is what caused a blank, unresponsive window.
+                    api.prevent_close();
                     window::save_session_placement(window.app_handle(), window.label());
+                    let _ = window.hide();
                 }
                 return;
             }

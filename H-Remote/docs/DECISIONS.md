@@ -231,11 +231,13 @@ dragging tabs between windows. Our sessions render in a webview, and OS-level
 window dragging between webviews is not portable.
 
 **Decision.** Connections never replace the catalog with a session workspace.
-The first connection opens the single `sessions` webview window
-(`index.html?window=sessions`); later connections focus it and appear as tabs.
-That window renders the full tab strip and grid workspace, polls only its
-visible panes and stores its geometry in `locality.session.sessionWindows`.
-Closing the main catalog window exits the app because there is no tray icon.
+A hidden `sessions` webview window is declared in `tauri.conf.json`
+(`index.html?window=sessions`), so it is loaded during startup rather than
+created from an IPC command. The first connection shows it; later connections
+focus it and appear as tabs. It renders the full tab strip and grid workspace,
+polls only its visible panes and stores its geometry in
+`locality.session.sessionWindows`. Closing it hides the webview. Closing the
+main catalog window exits the app because there is no tray icon.
 
 **Consequences.** Tabs/grid always render in a window dedicated to sessions,
 and the catalog remains usable while sessions are live. The shared window is a

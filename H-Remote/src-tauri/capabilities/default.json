@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Permissions required by the H-Remote shell window.",
-  "windows": ["main", "launcher", "session-*"],
+  "windows": ["main", "launcher", "sessions"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

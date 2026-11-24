@@ -141,13 +141,16 @@ command (connect_server / quick_connect)
 `SharedFrameRing` is a single-slot seqlock: the sequence is odd while writing,
 readers retry, and the frame capacity is bounded at 4096×4096×4 bytes. The ring
 name is `Local\HRemoteFrame-<session id>`; non-Windows hosts use the bounded heap
-store. The shared `sessions` window loads the same SPA with
-`index.html?window=sessions` and polls only its visible panes (one in focus
-mode, all tabs in grid mode). Every connection opens or focuses that window, so
-the catalog remains a catalog and session tabs/grids always render in a window
-built for them. PNG frame encoding runs on the blocking pool, never on Tauri's
-main thread, so a busy desktop cannot prevent the session window from painting
-or responding.
+store. The shared `sessions` window is declared hidden in `tauri.conf.json`
+(like the launcher), loads the same SPA with `index.html?window=sessions`, and
+polls only its visible panes (one in focus mode, all tabs in grid mode). Every
+connection shows or focuses that window, so the catalog remains a catalog and
+session tabs/grids always render in a window built for them. The window is
+never created from an IPC command, avoiding the white-window/hang caused by
+building a webview while the main thread was still dispatching the command.
+Closing it hides the webview instead of destroying it. PNG frame encoding runs
+on the blocking pool, never on Tauri's main thread, so a busy desktop cannot
+prevent the session window from painting or responding.
 
 The launcher is a second always-on-top webview (`launcher`) loading
 `index.html?window=launcher`. The hotkey toggles it; it loads the catalog and
