@@ -105,18 +105,30 @@ fn parse_args() -> Result<Args, String> {
 }
 
 fn parse_theme(value: &str) -> Result<ThemeMode, String> {
-    match value.to_ascii_lowercase().as_str() {
-        "dark" => Ok(ThemeMode::Dark),
-        "light" => Ok(ThemeMode::Light),
-        other => Err(format!(
-            "Unknown theme '{other}'. Use dark or light.\n\n{}",
-            usage()
-        )),
-    }
+    let normalized = value.to_ascii_lowercase().replace([' ', '-', '_'], "");
+    let mode = match normalized.as_str() {
+        "dark" => ThemeMode::Dark,
+        "light" => ThemeMode::Light,
+        "premote" | "premotem" => ThemeMode::PRemoteM,
+        "secretkey" => ThemeMode::SecretKey,
+        "greystone" => ThemeMode::Greystone,
+        "asphalt" => ThemeMode::Asphalt,
+        "wine" => ThemeMode::Wine,
+        "forest" => ThemeMode::Forest,
+        "soil" => ThemeMode::Soil,
+        "highcontrast" => ThemeMode::HighContrast,
+        _ => {
+            return Err(format!(
+                "Unknown theme '{value}'. Use dark, light, premote, secretkey, greystone, asphalt, wine, forest, soil or highcontrast.\n\n{}",
+                usage()
+            ))
+        }
+    };
+    Ok(mode)
 }
 
 fn usage() -> &'static str {
-    "Usage:\n  hcompare [LEFT] [RIGHT]        Open the desktop comparison\n  hcompare --report LEFT RIGHT   Compare headlessly and print a report\n\nOptions:\n  -r, --report   Headless report (exit code 1 when differences exist)\n      --all      Include common build folders in a report\n      --open P   Open relative path P after the initial scan\n      --theme T  Start with dark or light theme\n  -h, --help     Show this help\n  -V, --version  Show the version"
+    "Usage:\n  hcompare [LEFT] [RIGHT]        Open the desktop comparison\n  hcompare --report LEFT RIGHT   Compare headlessly and print a report\n\nOptions:\n  -r, --report   Headless report (exit code 1 when differences exist)\n      --all      Include common build folders in a report\n      --open P   Open relative path P after the initial scan\n      --theme T  Start with a theme: dark, light, premote, secretkey,\n                 greystone, asphalt, wine, forest, soil, highcontrast\n  -h, --help     Show this help\n  -V, --version  Show the version"
 }
 
 fn print_help() {

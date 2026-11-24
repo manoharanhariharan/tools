@@ -21,6 +21,7 @@ use crate::textdiff;
 use crate::ui;
 use crate::ui::common;
 use crate::ui::csv_view::CsvViewMode;
+use crate::ui::icons::Icon;
 use crate::ui::theme;
 use eframe::egui::{
     self, Align, Align2, Color32, Frame, Key, Label, Layout, Margin, RichText, Sense, Stroke,

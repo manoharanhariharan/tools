@@ -5,6 +5,7 @@ use crate::model::{
     format_modified, format_size, format_size_delta, CompareTree, EntryStatus, StatusFilter,
 };
 use crate::ui::common::{self, selectable_chip, small_muted};
+use crate::ui::icons::Icon;
 use crate::ui::theme;
 use egui::{Align2, FontId, RichText, Sense, Ui, Vec2};
 use std::collections::{HashMap, HashSet};
@@ -51,13 +52,19 @@ const INDENT: f32 = 14.0;
 pub fn show(ui: &mut Ui, tree: &CompareTree, state: &mut TreeState, actions: &mut Vec<UiAction>) {
     ui.add_space(6.0);
     ui.horizontal(|ui| {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(13.0, 13.0), egui::Sense::hover());
+        crate::ui::icons::paint(ui.painter(), rect, Icon::Filter, theme::muted());
         small_muted(ui, "FILTER BY NAME");
         ui.add(
             egui::TextEdit::singleline(&mut state.query)
                 .hint_text("*.csv, reports, …")
                 .desired_width(f32::INFINITY),
         );
-        if !state.query.is_empty() && ui.small_button("×").clicked() {
+        if !state.query.is_empty()
+            && common::icon_button(ui, Icon::Close, "", common::ButtonIntent::Ghost)
+                .on_hover_text("Clear name filter")
+                .clicked()
+        {
             state.query.clear();
         }
     });
@@ -123,10 +130,15 @@ pub fn show(ui: &mut Ui, tree: &CompareTree, state: &mut TreeState, actions: &mu
     });
 
     ui.horizontal(|ui| {
-        if common::intent_button(ui, "⊞ Expand all", common::ButtonIntent::Secondary).clicked() {
+        if common::icon_button(ui, Icon::Plus, "Expand", common::ButtonIntent::Ghost)
+            .on_hover_text("Expand all folders")
+            .clicked()
+        {
             state.expand_all(tree);
         }
-        if common::intent_button(ui, "⊟ Collapse all", common::ButtonIntent::Secondary).clicked()
+        if common::icon_button(ui, Icon::Minus, "Collapse", common::ButtonIntent::Ghost)
+            .on_hover_text("Collapse all folders")
+            .clicked()
         {
             state.collapse_all();
         }
@@ -271,14 +283,21 @@ fn draw_row(ui: &mut Ui, ctx: &mut TreeDrawContext<'_>, idx: usize, is_root: boo
         actions.push(UiAction::OpenNode(node.rel.clone()));
     }
     response.context_menu(|ui| {
-        if common::intent_button(ui, "Open", common::ButtonIntent::Secondary).clicked() {
+        if common::icon_button(ui, Icon::External, "Open", common::ButtonIntent::Secondary)
+            .clicked()
+        {
             actions.push(UiAction::OpenNode(node.rel.clone()));
             ui.close_menu();
         }
         if !node.is_dir {
             if node.left.is_some()
-                && common::intent_button(ui, "Copy left → right", common::ButtonIntent::Secondary)
-                    .clicked()
+                && common::icon_button(
+                    ui,
+                    Icon::Copy,
+                    "Copy left → right",
+                    common::ButtonIntent::Secondary,
+                )
+                .clicked()
             {
                 actions.push(UiAction::Copy {
                     rel: node.rel.clone(),
@@ -287,8 +306,13 @@ fn draw_row(ui: &mut Ui, ctx: &mut TreeDrawContext<'_>, idx: usize, is_root: boo
                 ui.close_menu();
             }
             if node.right.is_some()
-                && common::intent_button(ui, "Copy right → left", common::ButtonIntent::Secondary)
-                    .clicked()
+                && common::icon_button(
+                    ui,
+                    Icon::Copy,
+                    "Copy right → left",
+                    common::ButtonIntent::Secondary,
+                )
+                .clicked()
             {
                 actions.push(UiAction::Copy {
                     rel: node.rel.clone(),
@@ -296,8 +320,13 @@ fn draw_row(ui: &mut Ui, ctx: &mut TreeDrawContext<'_>, idx: usize, is_root: boo
                 });
                 ui.close_menu();
             }
-            if common::intent_button(ui, "Reveal left in Explorer", common::ButtonIntent::Ghost)
-                .clicked()
+            if common::icon_button(
+                ui,
+                Icon::Folder,
+                "Reveal left in Explorer",
+                common::ButtonIntent::Ghost,
+            )
+            .clicked()
             {
                 actions.push(UiAction::Reveal {
                     rel: node.rel.clone(),
@@ -305,8 +334,13 @@ fn draw_row(ui: &mut Ui, ctx: &mut TreeDrawContext<'_>, idx: usize, is_root: boo
                 });
                 ui.close_menu();
             }
-            if common::intent_button(ui, "Reveal right in Explorer", common::ButtonIntent::Ghost)
-                .clicked()
+            if common::icon_button(
+                ui,
+                Icon::Folder,
+                "Reveal right in Explorer",
+                common::ButtonIntent::Ghost,
+            )
+            .clicked()
             {
                 actions.push(UiAction::Reveal {
                     rel: node.rel.clone(),
@@ -315,8 +349,13 @@ fn draw_row(ui: &mut Ui, ctx: &mut TreeDrawContext<'_>, idx: usize, is_root: boo
                 ui.close_menu();
             }
             if node.left.is_some()
-                && common::intent_button(ui, "Delete left file…", common::ButtonIntent::Danger)
-                    .clicked()
+                && common::icon_button(
+                    ui,
+                    Icon::Trash,
+                    "Delete left file…",
+                    common::ButtonIntent::Danger,
+                )
+                .clicked()
             {
                 actions.push(UiAction::Delete {
                     rel: node.rel.clone(),
@@ -325,8 +364,13 @@ fn draw_row(ui: &mut Ui, ctx: &mut TreeDrawContext<'_>, idx: usize, is_root: boo
                 ui.close_menu();
             }
             if node.right.is_some()
-                && common::intent_button(ui, "Delete right file…", common::ButtonIntent::Danger)
-                    .clicked()
+                && common::icon_button(
+                    ui,
+                    Icon::Trash,
+                    "Delete right file…",
+                    common::ButtonIntent::Danger,
+                )
+                .clicked()
             {
                 actions.push(UiAction::Delete {
                     rel: node.rel.clone(),
@@ -336,14 +380,26 @@ fn draw_row(ui: &mut Ui, ctx: &mut TreeDrawContext<'_>, idx: usize, is_root: boo
             }
         }
         if !node.rel.is_empty()
-            && common::intent_button(ui, "Copy relative path", common::ButtonIntent::Ghost)
-                .clicked()
+            && common::icon_button(
+                ui,
+                Icon::Copy,
+                "Copy relative path",
+                common::ButtonIntent::Ghost,
+            )
+            .clicked()
         {
             ui.ctx().copy_text(node.rel.clone());
             ui.close_menu();
         }
         if let Some(path) = node.left_path().or_else(|| node.right_path()) {
-            if common::intent_button(ui, "Copy full path", common::ButtonIntent::Ghost).clicked() {
+            if common::icon_button(
+                ui,
+                Icon::Copy,
+                "Copy full path",
+                common::ButtonIntent::Ghost,
+            )
+            .clicked()
+            {
                 ui.ctx().copy_text(path.display().to_string());
                 ui.close_menu();
             }
@@ -355,9 +411,9 @@ fn draw_row(ui: &mut Ui, ctx: &mut TreeDrawContext<'_>, idx: usize, is_root: boo
     }
     let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
     if selected {
-        painter.rect_filled(rect, 6.0, theme::sel_bg());
+        painter.rect_filled(rect, 8.0, theme::sel_bg());
     } else if response.hovered() {
-        painter.rect_filled(rect, 6.0, theme::hover_bg());
+        painter.rect_filled(rect, 8.0, theme::hover_bg());
     }
 
     let mut x = rect.left() + 6.0 + node.depth as f32 * INDENT;

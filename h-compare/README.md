@@ -7,14 +7,21 @@ A fast, native folder / text / CSV comparison tool written in Rust. It is built 
 - side-by-side text diff with line and character-level highlights, plus merged view
 - table-aware CSV diff with cell-level changes, merged or side-by-side layouts
 - PDF text diff (Poppler fast path with a bundled pure-Rust fallback)
-- dark and light themes, search, change navigation, copy/sync actions and HTML/CSV exports
+- Ten polished theme presets, search, change navigation, copy/sync actions and HTML/CSV exports
 
 ## Features
 
 ### Appearance
 
-- Dark and light themes, switchable from the top bar or **Options**.
-- The choice is persisted in the settings file.
+- Ten theme presets: **Dark**, **Light**, **PRemoteM**, **Secret Key**, **Greystone**,
+  **Asphalt**, **Wine**, **Forest**, **Soil** and **High Contrast**.
+- Pick a preset from the top-bar **Settings** menu; the choice is persisted in the settings
+  file and applies immediately.
+- Crisp, icon + text buttons throughout the toolbar, comparison views, dialogs and
+  context menus, so each action is self-describing.
+- One **Settings** menu consolidates theme selection, the full comparison options dialog and
+  app-level actions that were previously split across separate Theme/Options/Quick options
+  menus.
 - Intent-based buttons: filled **primary** actions, softly outlined **secondary** actions,
   quiet **ghost** actions and muted red **danger** actions for destructive operations.
 - Right-click context menus throughout the tree and comparison tables.
@@ -151,6 +158,19 @@ Ready-to-run portable executables are kept in `publish/` using the
 `hcompare-vYY.MM.DD.N.exe` naming format. Each published build is accompanied by
 `BUILD.txt` (source commit, toolchain, build time) and `SHA256SUMS.txt`.
 
+The release task does the full flow in one command:
+
+```powershell
+cd tools/h-compare
+.\scripts\release.ps1
+```
+
+It runs `cargo fmt --check`, `cargo test`, `cargo clippy -D warnings`, builds the
+release binary, computes the next `vYY.MM.DD.N` version, updates `publish/`,
+commits `h-compare`, and pushes to the current git branch. Use
+`-Version v...`, `-Message "..."`, `-SkipTests`, or `-NoPush` to override parts
+of the flow.
+
 Run during development:
 
 ```powershell
@@ -169,7 +189,8 @@ Options:
   -r, --report   Headless report (exit code 1 when differences exist)
       --all      Include common build folders in a report
       --open P   Open relative path P after the initial scan
-      --theme T  Start with `dark` or `light` theme
+      --theme T  Start with a theme: dark, light, premote, secretkey,
+                 greystone, asphalt, wine, forest, soil, highcontrast
   -h, --help     Show this help
   -V, --version  Show the version and build stamp
 ```

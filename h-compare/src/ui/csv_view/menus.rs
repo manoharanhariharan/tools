@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::csvdiff::column_backups_excluding;
+use crate::ui::icons::Icon;
 use std::path::PathBuf;
 
 /// Split the columns into the visible group (checked, in column order) and the
@@ -60,8 +61,10 @@ pub(super) fn column_header_tooltip(compare: &CsvCompare, col: usize) -> Option<
 pub(super) fn columns_menu(ui: &mut Ui, compare: &CsvCompare, state: &mut CsvUiState) {
     let hidden_count = state.hidden_count();
     let visible_count = compare.column_count.saturating_sub(hidden_count);
-    ui.menu_button(
-        format!("Columns ({visible_count}/{})", compare.column_count),
+    let _ = common::icon_menu_button(
+        ui,
+        Icon::Columns,
+        &format!("Columns ({visible_count}/{})", compare.column_count),
         |ui| {
             ui.set_min_width(360.0);
             common::small_muted(
@@ -89,8 +92,9 @@ pub(super) fn columns_menu(ui: &mut Ui, compare: &CsvCompare, state: &mut CsvUiS
                 });
             if !state.hidden_columns.is_empty() {
                 ui.separator();
-                if common::intent_button(
+                if common::icon_button(
                     ui,
+                    Icon::Check,
                     "Show all columns",
                     common::ButtonIntent::Secondary,
                 )
@@ -98,6 +102,7 @@ pub(super) fn columns_menu(ui: &mut Ui, compare: &CsvCompare, state: &mut CsvUiS
                 {
                     state.hidden_columns.clear();
                     state.hidden_dirty = true;
+                    common::close_menu(ui);
                 }
             }
         },
@@ -149,7 +154,7 @@ pub(super) fn restore_columns_menu(
     restored_backups: &BTreeSet<PathBuf>,
     actions: &mut Vec<UiAction>,
 ) {
-    ui.menu_button("Restore deleted columns", |ui| {
+    let _ = common::icon_menu_button(ui, Icon::Restore, "Restore deleted", |ui| {
         ui.set_min_width(360.0);
         let mut any = false;
         for (side, path) in [
@@ -180,12 +185,14 @@ pub(super) fn restore_columns_menu(
                     .trim_end_matches(".hcompare.bak")
                     .to_string();
                 let label = format!("Restore {file_name} · {stamp}");
-                if common::intent_button(ui, &label, common::ButtonIntent::Secondary).clicked() {
+                if common::icon_button(ui, Icon::Restore, &label, common::ButtonIntent::Secondary)
+                    .clicked()
+                {
                     actions.push(UiAction::RestoreCsvBackup {
                         path: path.to_path_buf(),
                         backup: backup.clone(),
                     });
-                    ui.close_menu();
+                    common::close_menu(ui);
                 }
             }
             ui.separator();
@@ -204,13 +211,26 @@ pub(super) fn row_context_menu(ui: &mut Ui, compare: &CsvCompare, row: usize) {
         return;
     };
     if let Some(left) = diff_row.left {
-        if common::intent_button(ui, "Copy left row (TSV)", common::ButtonIntent::Ghost).clicked() {
+        if common::icon_button(
+            ui,
+            Icon::Copy,
+            "Copy left row (TSV)",
+            common::ButtonIntent::Ghost,
+        )
+        .clicked()
+        {
             ui.ctx().copy_text(compare.left.rows[left].join("\t"));
             ui.close_menu();
         }
     }
     if let Some(right) = diff_row.right {
-        if common::intent_button(ui, "Copy right row (TSV)", common::ButtonIntent::Ghost).clicked()
+        if common::icon_button(
+            ui,
+            Icon::Copy,
+            "Copy right row (TSV)",
+            common::ButtonIntent::Ghost,
+        )
+        .clicked()
         {
             ui.ctx().copy_text(compare.right.rows[right].join("\t"));
             ui.close_menu();
@@ -218,7 +238,13 @@ pub(super) fn row_context_menu(ui: &mut Ui, compare: &CsvCompare, row: usize) {
     }
     if diff_row.left.is_some()
         && diff_row.right.is_some()
-        && common::intent_button(ui, "Copy row numbers", common::ButtonIntent::Ghost).clicked()
+        && common::icon_button(
+            ui,
+            Icon::Copy,
+            "Copy row numbers",
+            common::ButtonIntent::Ghost,
+        )
+        .clicked()
     {
         let left = diff_row
             .left
@@ -239,27 +265,51 @@ pub(super) fn column_context_menu(
     col: usize,
     state: &mut CsvUiState,
 ) {
-    let mut hidden = state.hidden_columns.contains(&col);
-    if ui.checkbox(&mut hidden, "Hide column").changed() {
-        if hidden {
-            state.hidden_columns.insert(col);
-        } else {
-            state.hidden_columns.remove(&col);
+    let mut visible = !state.hidden_columns.contains(&col);
+    ui.horizontal(|ui| {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(15.0, 15.0), Sense::hover());
+        crate::ui::icons::paint(
+            ui.painter(),
+            rect,
+            if visible { Icon::Eye } else { Icon::EyeOff },
+            theme::muted(),
+        );
+        if ui.checkbox(&mut visible, "Visible").changed() {
+            if visible {
+                state.hidden_columns.remove(&col);
+            } else {
+                state.hidden_columns.insert(col);
+            }
+            state.hidden_dirty = true;
+            ui.close_menu();
         }
-        state.hidden_dirty = true;
-        ui.close_menu();
-    }
+    });
     ui.separator();
-    if common::intent_button(ui, "Use as key column", common::ButtonIntent::Ghost).clicked() {
+    if common::icon_button(
+        ui,
+        Icon::Key,
+        "Use as key column",
+        common::ButtonIntent::Ghost,
+    )
+    .clicked()
+    {
         state.pending_key = Some(col);
         ui.close_menu();
     }
-    if common::intent_button(ui, "Copy column name", common::ButtonIntent::Ghost).clicked() {
+    if common::icon_button(
+        ui,
+        Icon::Copy,
+        "Copy column name",
+        common::ButtonIntent::Ghost,
+    )
+    .clicked()
+    {
         ui.ctx().copy_text(compare.column_name(col));
         ui.close_menu();
     }
-    if common::intent_button(
+    if common::icon_button(
         ui,
+        Icon::Copy,
         &format!("Copy column {}", col + 1),
         common::ButtonIntent::Ghost,
     )
@@ -272,9 +322,10 @@ pub(super) fn column_context_menu(
     let left_enabled = col < compare.left.column_count;
     let left_clicked = ui
         .add_enabled_ui(left_enabled, |ui| {
-            common::intent_button(
+            common::icon_button(
                 ui,
-                "Delete left column from file…",
+                Icon::Trash,
+                "Delete left column…",
                 common::ButtonIntent::Danger,
             )
         })
@@ -288,9 +339,10 @@ pub(super) fn column_context_menu(
     let right_enabled = col < compare.right.column_count;
     let right_clicked = ui
         .add_enabled_ui(right_enabled, |ui| {
-            common::intent_button(
+            common::icon_button(
                 ui,
-                "Delete right column from file…",
+                Icon::Trash,
+                "Delete right column…",
                 common::ButtonIntent::Danger,
             )
         })
@@ -304,9 +356,10 @@ pub(super) fn column_context_menu(
     let both_enabled = left_enabled || right_enabled;
     let both_clicked = ui
         .add_enabled_ui(both_enabled, |ui| {
-            common::intent_button(
+            common::icon_button(
                 ui,
-                "Delete column from both files…",
+                Icon::Trash,
+                "Delete column from both…",
                 common::ButtonIntent::Danger,
             )
         })

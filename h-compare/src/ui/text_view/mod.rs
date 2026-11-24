@@ -5,6 +5,7 @@ use crate::load::{OpenData, OpenKind};
 use crate::model::CompareOptions;
 use crate::textdiff::{find_ranges, RowKind, TextDiffView};
 use crate::ui::common::{self, SearchUiState, SearchUpdate};
+use crate::ui::icons::Icon;
 use crate::ui::theme;
 use eframe::egui::{
     self, Align, Align2, Color32, FontId, Label, RichText, Sense, Stroke, TextWrapMode, Ui,
@@ -252,23 +253,12 @@ pub fn show(
         common::stat_chip(ui, "removed", view.stats.removed.to_string(), theme::left());
         common::stat_chip(ui, "hunks", view.stats.hunks.to_string(), theme::muted());
         ui.separator();
-        if common::intent_button(ui, "◀ Change", common::ButtonIntent::Ghost)
-            .on_hover_text("Previous difference (Shift+F7)")
-            .clicked()
-            && !state.goto_change(view, false)
-        {
-            actions.push(UiAction::NextFileDiff { forward: false });
-        }
-        if common::intent_button(ui, "Change ▶", common::ButtonIntent::Ghost)
-            .on_hover_text("Next difference (F7)")
-            .clicked()
-            && !state.goto_change(view, true)
-        {
-            actions.push(UiAction::NextFileDiff { forward: true });
-        }
-        if state.current_change.is_some() || !view.change_rows.is_empty() {
-            let (current, total) = change_progress(view, state);
-            common::change_counter(ui, current, total);
+        let (current, total) = change_progress(view, state);
+        if let Some(forward) = common::change_nav(ui, current, total) {
+            if !state.goto_change(view, forward) {
+                actions.push(UiAction::NextFileDiff { forward });
+            }
+            ui.ctx().request_repaint();
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             common::collapse_arrow(ui, &mut state.options_collapsed);
@@ -280,7 +270,16 @@ pub fn show(
             .num_columns(5)
             .spacing(egui::vec2(14.0, 6.0))
             .show(ui, |ui| {
-                ui.selectable_value(&mut state.mode, TextViewMode::Merged, "Merged");
+                let mut mode = state.mode;
+                common::view_menu(
+                    ui,
+                    &mut mode,
+                    &[
+                        (TextViewMode::Merged, "Merged"),
+                        (TextViewMode::SideBySide, "Side by side"),
+                    ],
+                );
+                state.mode = mode;
                 if ui
                     .checkbox(&mut options.ignore_case, "Ignore case")
                     .on_hover_text("Case-insensitive line comparison")
@@ -289,7 +288,7 @@ pub fn show(
                     reload = true;
                 }
                 if data.left_path.is_some() {
-                    if common::intent_button(ui, "A → B", common::ButtonIntent::Secondary)
+                    if common::icon_button(ui, Icon::Copy, "A → B", common::ButtonIntent::Secondary)
                         .on_hover_text("Copy the left file over the right file")
                         .clicked()
                     {
@@ -302,7 +301,14 @@ pub fn show(
                     ui.label("");
                 }
                 if data.left_path.is_some() {
-                    if common::intent_button(ui, "Open A", common::ButtonIntent::Ghost).clicked() {
+                    if common::icon_button(
+                        ui,
+                        Icon::External,
+                        "Open A",
+                        common::ButtonIntent::Ghost,
+                    )
+                    .clicked()
+                    {
                         actions.push(UiAction::OpenDefault {
                             rel: data.rel.clone(),
                             left: true,
@@ -311,15 +317,10 @@ pub fn show(
                 } else {
                     ui.label("");
                 }
-                if common::intent_button(ui, "Find", common::ButtonIntent::Ghost)
-                    .on_hover_text("Find (Ctrl+F)")
-                    .clicked()
-                {
-                    state.search.open_and_focus();
-                }
+                common::find_button(ui, &mut state.search);
                 ui.end_row();
 
-                ui.selectable_value(&mut state.mode, TextViewMode::SideBySide, "Side by side");
+                ui.label("");
                 if ui
                     .checkbox(&mut options.ignore_whitespace, "Ignore whitespace")
                     .on_hover_text("Collapse runs of whitespace and trim line edges")
@@ -328,7 +329,7 @@ pub fn show(
                     reload = true;
                 }
                 if data.right_path.is_some() {
-                    if common::intent_button(ui, "B → A", common::ButtonIntent::Secondary)
+                    if common::icon_button(ui, Icon::Copy, "B → A", common::ButtonIntent::Secondary)
                         .on_hover_text("Copy the right file over the left file")
                         .clicked()
                     {
@@ -341,7 +342,14 @@ pub fn show(
                     ui.label("");
                 }
                 if data.right_path.is_some() {
-                    if common::intent_button(ui, "Open B", common::ButtonIntent::Ghost).clicked() {
+                    if common::icon_button(
+                        ui,
+                        Icon::External,
+                        "Open B",
+                        common::ButtonIntent::Ghost,
+                    )
+                    .clicked()
+                    {
                         actions.push(UiAction::OpenDefault {
                             rel: data.rel.clone(),
                             left: false,
@@ -361,26 +369,28 @@ pub fn show(
                 {
                     reload = true;
                 }
-                ui.menu_button("Export", |ui| {
-                    if common::intent_button(
+                let _ = common::icon_menu_button(ui, Icon::Download, "Export", |ui| {
+                    if common::icon_button(
                         ui,
-                        "Export HTML report…",
+                        Icon::Download,
+                        "HTML report…",
                         common::ButtonIntent::Secondary,
                     )
                     .clicked()
                     {
                         actions.push(UiAction::Export(ExportKind::TextHtml));
-                        ui.close_menu();
+                        common::close_menu(ui);
                     }
-                    if common::intent_button(
+                    if common::icon_button(
                         ui,
-                        "Export unified diff…",
+                        Icon::Download,
+                        "Unified diff…",
                         common::ButtonIntent::Secondary,
                     )
                     .clicked()
                     {
                         actions.push(UiAction::Export(ExportKind::TextUnified));
-                        ui.close_menu();
+                        common::close_menu(ui);
                     }
                 });
                 ui.label("");

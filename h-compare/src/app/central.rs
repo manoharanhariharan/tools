@@ -40,7 +40,14 @@ impl App {
                                     RichText::new("Scan failed:").color(theme::error()).strong(),
                                 );
                                 ui.label(RichText::new(error).color(theme::text()));
-                                if ui.small_button("Retry").clicked() {
+                                if common::icon_button(
+                                    ui,
+                                    Icon::Refresh,
+                                    "Retry",
+                                    common::ButtonIntent::Ghost,
+                                )
+                                .clicked()
+                                {
                                     self.deferred.push(UiAction::Scan);
                                 }
                             });
@@ -154,7 +161,7 @@ impl App {
                 Frame::NONE
                     .fill(theme::panel())
                     .stroke(Stroke::new(1.0_f32, theme::border()))
-                    .corner_radius(8.0)
+                    .corner_radius(14.0)
                     .inner_margin(Margin::symmetric(18, 14))
                     .show(ui, |ui| {
                         ui.label(RichText::new("1  Choose the two folders").strong());
@@ -181,13 +188,21 @@ impl App {
                         }
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
-                            if common::accent_button(ui, "Compare folders").clicked() {
+                            if common::icon_button(
+                                ui,
+                                Icon::Refresh,
+                                "Compare folders",
+                                common::ButtonIntent::Primary,
+                            )
+                            .clicked()
+                            {
                                 self.start_scan(ctx);
                             }
-                            if common::intent_button(
+                            if common::icon_button(
                                 ui,
-                                "Browse left…",
-                                common::ButtonIntent::Ghost,
+                                Icon::Folder,
+                                "Browse left",
+                                common::ButtonIntent::Secondary,
                             )
                             .clicked()
                             {
@@ -198,10 +213,11 @@ impl App {
                                     self.left_path = path.display().to_string();
                                 }
                             }
-                            if common::intent_button(
+                            if common::icon_button(
                                 ui,
-                                "Browse right…",
-                                common::ButtonIntent::Ghost,
+                                Icon::Folder,
+                                "Browse right",
+                                common::ButtonIntent::Secondary,
                             )
                             .clicked()
                             {
@@ -216,63 +232,82 @@ impl App {
                     });
                 if !recent.is_empty() {
                     ui.add_space(14.0);
-                    Frame::NONE
-                        .fill(theme::panel())
-                        .stroke(Stroke::new(1.0_f32, theme::border()))
-                        .corner_radius(8.0)
-                        .inner_margin(Margin::symmetric(18, 12))
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new("Recent comparisons").strong());
-                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    if ui
-                                        .add(
-                                            egui::Button::new(
-                                                RichText::new("Clear")
-                                                    .color(theme::muted())
-                                                    .size(11.0),
-                                            )
-                                            .frame(false),
-                                        )
-                                        .on_hover_text("Clear recent comparisons")
-                                        .clicked()
-                                    {
-                                        self.settings.recent.clear();
-                                        self.persist();
-                                    }
-                                });
-                            });
-                            ui.add_space(4.0);
-                            for entry in recent.iter().take(6) {
-                                let label = format!(
-                                    "{}   ↔   {}",
-                                    short_path(&entry.left),
-                                    short_path(&entry.right)
-                                );
-                                if common::card_button(ui, &label, false)
-                                    .on_hover_text(format!("{}\n{}", entry.left, entry.right))
-                                    .clicked()
+                    common::card(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Recent comparisons").strong());
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                if common::icon_button(
+                                    ui,
+                                    Icon::Trash,
+                                    "Clear",
+                                    common::ButtonIntent::Ghost,
+                                )
+                                .on_hover_text("Clear recent comparisons")
+                                .clicked()
                                 {
-                                    recent_pick = Some((entry.left.clone(), entry.right.clone()));
+                                    self.settings.recent.clear();
+                                    self.persist();
                                 }
-                            }
+                            });
                         });
+                        ui.add_space(4.0);
+                        for entry in recent.iter().take(6) {
+                            let label = format!(
+                                "{}   ↔   {}",
+                                short_path(&entry.left),
+                                short_path(&entry.right)
+                            );
+                            if common::card_button(ui, &label, false)
+                                .on_hover_text(format!("{}\n{}", entry.left, entry.right))
+                                .clicked()
+                            {
+                                recent_pick = Some((entry.left.clone(), entry.right.clone()));
+                            }
+                        }
+                    });
                 }
                 ui.add_space(16.0);
-                ui.label(RichText::new("What you get").strong());
-                ui.add_space(4.0);
-                for line in [
-                    "A status-aware folder tree with one-click filtering and instant rescan.",
-                    "Side-by-side text diff with intra-line highlights, search and F7 change navigation.",
-                    "CSV table diff with cell-level highlighting, key alignment, and merged or side-by-side views.",
-                    "Safe copy and sync actions for individual files or every difference at once.",
-                ] {
-                    ui.label(RichText::new(format!("•  {line}")).color(theme::muted()));
-                }
-                ui.add_space(14.0);
+                common::card(ui, |ui| {
+                    ui.label(RichText::new("What you get").strong());
+                    ui.add_space(6.0);
+                    for (icon, title, detail) in [
+                        (
+                            Icon::Layout,
+                            "Status-aware folder tree",
+                            "One-click filtering, expansion and instant rescans.",
+                        ),
+                        (
+                            Icon::Columns,
+                            "Text, PDF and CSV diffs",
+                            "Line and cell highlights, search, and arrow-key navigation.",
+                        ),
+                        (
+                            Icon::Settings,
+                            "Preset themes",
+                            "Ten polished palettes, from Dark and Light to Forest and High Contrast.",
+                        ),
+                        (
+                            Icon::Copy,
+                            "Safe copy and sync",
+                            "Copy one file or every difference with confirmation and backups.",
+                        ),
+                    ] {
+                        ui.horizontal(|ui| {
+                            let (rect, _) =
+                                ui.allocate_exact_size(egui::vec2(20.0, 20.0), Sense::hover());
+                            ui::icons::paint(ui.painter(), rect, icon, theme::accent());
+                            ui.vertical(|ui| {
+                                ui.label(RichText::new(title).strong().size(12.5));
+                                ui.label(RichText::new(detail).color(theme::muted()).size(11.0));
+                            });
+                        });
+                        ui.add_space(4.0);
+                    }
+                });
+                ui.add_space(10.0);
                 common::small_muted(
                     ui,
-                    "Shortcuts: F5 rescan · F7 / Shift+F7 next/previous change · Ctrl+F find · Ctrl+C copy selection · Ctrl+B toggle tree",
+                    "F5 rescan · F7 / Shift+F7 next/previous change · Arrow keys navigate · Ctrl+F find · Ctrl+C copy · Ctrl+B toggle tree",
                 );
             });
         });
@@ -314,8 +349,9 @@ impl App {
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if counts.differences() > 0
-                    && common::intent_button(
+                    && common::icon_button(
                         ui,
+                        Icon::ChevronRight,
                         "First difference",
                         common::ButtonIntent::Secondary,
                     )
@@ -324,8 +360,13 @@ impl App {
                     self.deferred.push(UiAction::NextFileDiff { forward: true });
                 }
                 if counts.differences() > 0
-                    && common::intent_button(ui, "Copy all A → B", common::ButtonIntent::Ghost)
-                        .clicked()
+                    && common::icon_button(
+                        ui,
+                        Icon::Copy,
+                        "Copy all A → B",
+                        common::ButtonIntent::Ghost,
+                    )
+                    .clicked()
                 {
                     self.deferred.push(UiAction::Sync { from_left: true });
                 }

@@ -224,10 +224,6 @@ impl CsvCompare {
         }
     }
 
-    pub fn row_change_count(&self) -> usize {
-        self.stats.modified + self.stats.added + self.stats.removed
-    }
-
     pub fn next_change(&self, current: Option<usize>) -> Option<usize> {
         let start = current.map(|row| row + 1).unwrap_or(0);
         (start..self.rows.len()).find(|idx| self.rows[*idx].kind.is_change())

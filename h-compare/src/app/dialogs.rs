@@ -9,29 +9,12 @@ impl App {
             let mut reload = false;
             let mut rescan = false;
             let mut close = false;
-            egui::Window::new("Options")
+            egui::Window::new("Comparison options")
                 .open(&mut open_settings)
                 .collapsible(false)
                 .resizable(false)
                 .default_width(560.0)
                 .show(ctx, |ui| {
-                    ui.label(RichText::new("Appearance").strong());
-                    ui.horizontal(|ui| {
-                        for mode in [
-                            ui::theme::ThemeMode::Dark,
-                            ui::theme::ThemeMode::Light,
-                        ] {
-                            if ui
-                                .selectable_label(self.settings.theme == mode, mode.label())
-                                .clicked()
-                            {
-                                self.settings.theme = mode;
-                                self.pending_theme = Some(mode);
-                                self.persist();
-                            }
-                        }
-                    });
-                    ui.separator();
                     ui.label(RichText::new("Text comparison").strong());
                     ui.checkbox(&mut self.settings.compare.ignore_case, "Ignore case");
                     ui.checkbox(
@@ -70,8 +53,9 @@ impl App {
                     }
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        if common::intent_button(
+                        if common::icon_button(
                             ui,
+                            Icon::Refresh,
                             "Reload open file",
                             common::ButtonIntent::Secondary,
                         )
@@ -79,8 +63,9 @@ impl App {
                         {
                             reload = true;
                         }
-                        if common::intent_button(
+                        if common::icon_button(
                             ui,
+                            Icon::Refresh,
                             "Rescan folders",
                             common::ButtonIntent::Secondary,
                         )
@@ -88,14 +73,16 @@ impl App {
                         {
                             rescan = true;
                         }
-                        if common::intent_button(ui, "Close", common::ButtonIntent::Ghost).clicked() {
+                        if common::icon_button(ui, Icon::Close, "Close", common::ButtonIntent::Ghost)
+                            .clicked()
+                        {
                             close = true;
                         }
                     });
                     ui.add_space(4.0);
                     common::small_muted(
                         ui,
-                        "Options are saved automatically. Text and CSV changes apply the next time a file is opened.",
+                        "Options are saved automatically. Theme presets live in the top-bar Settings menu.",
                     );
                 });
             if close {
@@ -142,10 +129,13 @@ impl App {
                     for (key, action) in [
                         ("F5", "Rescan both folders"),
                         ("F7 / Shift+F7", "Next / previous change"),
+                        ("Arrow keys", "Move the CSV cell selection or text/PDF cursor"),
+                        ("Home / End", "First / last CSV column or text line"),
+                        ("PageUp / PageDown", "Move ten CSV rows or text lines"),
                         ("Ctrl+F", "Find in the current text or CSV comparison"),
                         ("Ctrl+B", "Collapse or expand the folder tree"),
                         ("Ctrl+C", "Copy the selected line, cell or row"),
-                        ("Enter", "Jump between search matches"),
+                        ("Ctrl+Z", "Undo the last deleted CSV column"),
                         ("Escape", "Close search or dialog"),
                     ] {
                         ui.horizontal(|ui| {
@@ -208,8 +198,13 @@ impl App {
                         ui.label(RichText::new(&confirm.message).color(theme::text()));
                         ui.add_space(12.0);
                         ui.horizontal(|ui| {
-                            if common::intent_button(ui, "Cancel", common::ButtonIntent::Ghost)
-                                .clicked()
+                            if common::icon_button(
+                                ui,
+                                Icon::Close,
+                                "Cancel",
+                                common::ButtonIntent::Ghost,
+                            )
+                            .clicked()
                             {
                                 cancelled = true;
                             }
@@ -222,8 +217,12 @@ impl App {
                             } else {
                                 common::ButtonIntent::Primary
                             };
-                            let label = if danger { "Delete" } else { "Continue" };
-                            if common::intent_button(ui, label, intent).clicked() {
+                            let (icon, label) = if danger {
+                                (Icon::Trash, "Delete")
+                            } else {
+                                (Icon::Check, "Continue")
+                            };
+                            if common::icon_button(ui, icon, label, intent).clicked() {
                                 confirmed = true;
                             }
                         });

@@ -1,9 +1,12 @@
 //! Shared egui widgets, search state and reusable UI helpers.
 
 use crate::textdiff::char_range_to_bytes;
+use crate::ui::icons::{self, Icon};
 use crate::ui::theme;
 use egui::text::{LayoutJob, TextFormat};
-use egui::{Color32, FontId, Frame, Key, Response, RichText, Stroke, TextEdit, Ui};
+use egui::{
+    Color32, FontId, Frame, Key, Rect, Response, RichText, Stroke, StrokeKind, TextEdit, Ui,
+};
 use std::ops::Range;
 
 #[derive(Debug, Clone, Default)]
@@ -138,15 +141,17 @@ pub fn search_bar(ui: &mut Ui, state: &mut SearchUiState) -> SearchUpdate {
             state.case_sensitive = !state.case_sensitive;
             update = SearchUpdate::Changed;
         }
-        if ui
-            .button("◀")
+        if icon_button(ui, Icon::ChevronLeft, "Prev", ButtonIntent::Ghost)
             .on_hover_text("Previous match (Shift+Enter)")
             .clicked()
         {
             state.previous();
             update = SearchUpdate::Navigate;
         }
-        if ui.button("▶").on_hover_text("Next match (Enter)").clicked() {
+        if icon_button(ui, Icon::ChevronRight, "Next", ButtonIntent::Ghost)
+            .on_hover_text("Next match (Enter)")
+            .clicked()
+        {
             state.next();
             update = SearchUpdate::Navigate;
         }
@@ -166,7 +171,10 @@ pub fn search_bar(ui: &mut Ui, state: &mut SearchUiState) -> SearchUpdate {
                 );
             }
         }
-        if ui.button("×").on_hover_text("Close search").clicked() {
+        if icon_button(ui, Icon::Close, "Close", ButtonIntent::Ghost)
+            .on_hover_text("Close search")
+            .clicked()
+        {
             state.open = false;
             state.query.clear();
             state.matches.clear();
@@ -275,16 +283,6 @@ pub fn stat_chip(ui: &mut Ui, label: impl Into<String>, value: impl Into<String>
         });
 }
 
-pub fn accent_button(ui: &mut Ui, text: impl Into<String>) -> Response {
-    ui.add(
-        egui::Button::new(RichText::new(text).color(theme::on_accent()))
-            .fill(theme::accent())
-            .stroke(Stroke::new(1.0_f32, theme::accent()))
-            .corner_radius(8.0)
-            .min_size(egui::vec2(88.0, 30.0)),
-    )
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ButtonIntent {
     Primary,
@@ -293,32 +291,27 @@ pub enum ButtonIntent {
     Danger,
 }
 
-/// Compact button built on egui's native `Button`, so hover, press and click
-/// handling are reliable. The intent decides the weight of the button:
-/// primary actions are filled, secondary actions are softly outlined, ghost
-/// actions stay quiet, and destructive actions use a muted red treatment.
-pub fn intent_button(ui: &mut Ui, text: &str, intent: ButtonIntent) -> Response {
-    let enabled = ui.is_enabled();
-    let (fill, stroke, text_color, hover_fill, hover_text) = match intent {
+fn intent_colors(intent: ButtonIntent) -> (Color32, Color32, Color32, Color32, Color32) {
+    match intent {
         ButtonIntent::Primary => (
             theme::accent(),
             theme::accent(),
             theme::on_accent(),
-            theme::accent().gamma_multiply(1.15),
+            theme::accent_dark(),
             theme::on_accent(),
         ),
         ButtonIntent::Secondary => (
             theme::widget(),
-            theme::accent().gamma_multiply(0.65),
+            theme::border(),
             theme::text(),
             theme::widget_hover(),
             theme::text(),
         ),
         ButtonIntent::Ghost => (
-            theme::panel_2(),
-            theme::border(),
-            theme::muted(),
-            theme::widget_hover(),
+            Color32::TRANSPARENT,
+            Color32::TRANSPARENT,
+            theme::text(),
+            theme::hover_bg(),
             theme::text(),
         ),
         ButtonIntent::Danger => (
@@ -328,33 +321,260 @@ pub fn intent_button(ui: &mut Ui, text: &str, intent: ButtonIntent) -> Response 
             theme::error(),
             theme::on_error(),
         ),
+    }
+}
+
+/// Crisp icon + text button. The intent decides the visual weight: primary
+/// actions are filled, secondary actions are softly outlined, ghost actions
+/// stay quiet, and destructive actions use a muted red treatment.
+pub fn icon_button(ui: &mut Ui, icon: Icon, text: &str, intent: ButtonIntent) -> Response {
+    let enabled = ui.is_enabled();
+    let (fill, stroke, text_color, hover_fill, hover_text) = intent_colors(intent);
+    let font = FontId::proportional(13.0);
+    let galley = ui.fonts(|fonts| fonts.layout_no_wrap(text.to_owned(), font.clone(), text_color));
+    let icon_size = 14.0;
+    let gap = if text.is_empty() { 0.0 } else { 7.0 };
+    let height = 30.0_f32.max(ui.spacing().interact_size.y);
+    let width = (galley.size().x + icon_size + gap + 26.0).max(36.0);
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
     };
-    ui.scope(|ui| {
-        let widgets = &mut ui.style_mut().visuals.widgets;
-        widgets.inactive.weak_bg_fill = fill;
-        widgets.inactive.bg_fill = fill;
-        widgets.inactive.bg_stroke = Stroke::new(1.0_f32, stroke);
-        widgets.inactive.fg_stroke = Stroke::new(1.0_f32, text_color);
-        widgets.hovered.weak_bg_fill = hover_fill;
-        widgets.hovered.bg_fill = hover_fill;
-        widgets.hovered.bg_stroke = Stroke::new(
-            1.0_f32,
-            if intent == ButtonIntent::Danger {
-                theme::error()
-            } else {
-                theme::accent()
-            },
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), sense);
+    let hovered = response.hovered() && enabled;
+    let pressed = response.is_pointer_button_down_on() && enabled;
+    let background = if pressed {
+        theme::accent_dim()
+    } else if hovered {
+        hover_fill
+    } else {
+        fill
+    };
+    let border = if !enabled {
+        theme::border()
+    } else if hovered || pressed {
+        theme::accent().gamma_multiply(0.72)
+    } else {
+        stroke
+    };
+    let foreground = if !enabled {
+        theme::faint()
+    } else if hovered || pressed {
+        hover_text
+    } else {
+        text_color
+    };
+    ui.painter().rect(
+        rect,
+        8.0,
+        background,
+        Stroke::new(1.0_f32, border),
+        StrokeKind::Inside,
+    );
+    let content_width = icon_size + gap + galley.size().x;
+    let start = rect.center().x - content_width / 2.0;
+    let icon_rect = Rect::from_center_size(
+        egui::pos2(start + icon_size / 2.0, rect.center().y),
+        egui::vec2(icon_size, icon_size),
+    );
+    icons::paint(ui.painter(), icon_rect, icon, foreground);
+    ui.painter().text(
+        egui::pos2(start + icon_size + gap, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        text,
+        font,
+        foreground,
+    );
+    if hovered {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, text));
+    response
+}
+
+/// Icon + text menu trigger. Uses egui's constrained popup so menus stay inside
+/// the window and close on outside clicks/Escape.
+pub fn icon_menu_button<R>(
+    ui: &mut Ui,
+    icon: Icon,
+    label: &str,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> Option<R> {
+    icon_menu_button_intent(ui, icon, label, ButtonIntent::Ghost, add_contents)
+}
+
+/// Variant of [`icon_menu_button`] with an explicit visual intent.
+pub fn icon_menu_button_intent<R>(
+    ui: &mut Ui,
+    icon: Icon,
+    label: &str,
+    intent: ButtonIntent,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> Option<R> {
+    let response = icon_button(ui, icon, label, intent);
+    let popup_id = response.id.with("icon_menu");
+    if response.clicked() {
+        ui.memory_mut(|memory| memory.toggle_popup(popup_id));
+    }
+    if !ui.memory(|memory| memory.is_popup_open(popup_id)) {
+        return None;
+    }
+    egui::containers::popup::popup_below_widget(
+        ui,
+        popup_id,
+        &response,
+        egui::containers::popup::PopupCloseBehavior::CloseOnClickOutside,
+        |ui| {
+            ui.set_min_width(250.0);
+            add_contents(ui)
+        },
+    )
+}
+
+/// Close the popup opened by [`icon_menu_button`].
+pub fn close_menu(ui: &Ui) {
+    ui.memory_mut(|memory| memory.close_popup());
+}
+
+/// A crisp card surface matching the H-Remote panel language.
+pub fn card<R>(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<R> {
+    Frame::NONE
+        .fill(theme::surface())
+        .stroke(Stroke::new(1.0_f32, theme::border()))
+        .corner_radius(14.0)
+        .inner_margin(egui::Margin::symmetric(18, 14))
+        .show(ui, add_contents)
+}
+
+/// Selectable preset list used by the single Settings menu.
+pub fn theme_picker(ui: &mut Ui, current: theme::ThemeMode) -> Option<theme::ThemeMode> {
+    let mut picked = None;
+    for preset in theme::ThemeMode::ALL {
+        let width = ui.available_width().max(200.0);
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, 34.0), egui::Sense::click());
+        if response.hovered() {
+            ui.painter().rect_filled(rect, 8.0, theme::hover_bg());
+        }
+        if preset == current {
+            ui.painter().rect_filled(rect, 8.0, theme::accent_dim());
+            ui.painter().rect_stroke(
+                rect,
+                8.0,
+                Stroke::new(1.0_f32, theme::accent()),
+                StrokeKind::Inside,
+            );
+        }
+        let swatch = Rect::from_min_size(
+            egui::pos2(rect.left() + 7.0, rect.top() + 7.0),
+            egui::vec2(48.0, 20.0),
         );
-        widgets.hovered.fg_stroke = Stroke::new(1.0_f32, hover_text);
-        widgets.active = widgets.hovered;
-        ui.add_enabled(
-            enabled,
-            egui::Button::new(RichText::new(text).color(text_color).size(13.0))
-                .corner_radius(7.0)
-                .min_size(egui::vec2(0.0, 26.0)),
-        )
-    })
-    .inner
+        let [background, primary, accent] = preset.swatch();
+        let third = swatch.width() / 3.0;
+        ui.painter().rect_filled(
+            Rect::from_min_max(
+                swatch.min,
+                egui::pos2(swatch.left() + third, swatch.bottom()),
+            ),
+            4.0,
+            background,
+        );
+        ui.painter().rect_filled(
+            Rect::from_min_max(
+                egui::pos2(swatch.left() + third, swatch.top()),
+                egui::pos2(swatch.left() + third * 2.0, swatch.bottom()),
+            ),
+            0.0,
+            primary,
+        );
+        ui.painter().rect_filled(
+            Rect::from_min_max(
+                egui::pos2(swatch.left() + third * 2.0, swatch.top()),
+                swatch.max,
+            ),
+            0.0,
+            accent,
+        );
+        ui.painter().rect_stroke(
+            swatch,
+            4.0,
+            Stroke::new(1.0_f32, theme::border()),
+            StrokeKind::Inside,
+        );
+        ui.painter().text(
+            egui::pos2(rect.left() + 64.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            preset.label(),
+            FontId::proportional(13.0),
+            theme::text(),
+        );
+        if preset == current {
+            icons::small(
+                ui.painter(),
+                egui::pos2(rect.right() - 16.0, rect.center().y),
+                14.0,
+                Icon::Check,
+                theme::accent(),
+            );
+        }
+        if response.clicked() {
+            picked = Some(preset);
+        }
+    }
+    picked
+}
+
+/// One shared merged / side-by-side control for the text and CSV views.
+pub fn view_menu<T: Copy + PartialEq>(ui: &mut Ui, current: &mut T, choices: &[(T, &str)]) -> bool {
+    let label = choices
+        .iter()
+        .find(|(value, _)| value == current)
+        .map(|(_, label)| *label)
+        .unwrap_or("View");
+    let mut changed = false;
+    let _ = icon_menu_button(ui, Icon::Layout, &format!("View: {label}"), |ui| {
+        for (value, choice_label) in choices {
+            if ui
+                .selectable_label(*current == *value, *choice_label)
+                .clicked()
+            {
+                *current = *value;
+                changed = true;
+                close_menu(ui);
+            }
+        }
+    });
+    changed
+}
+
+/// Shared previous/next change controls with an inline progress counter.
+pub fn change_nav(ui: &mut Ui, current: usize, total: usize) -> Option<bool> {
+    let mut direction = None;
+    if icon_button(ui, Icon::ChevronLeft, "Previous", ButtonIntent::Ghost)
+        .on_hover_text("Previous difference (Shift+F7)")
+        .clicked()
+    {
+        direction = Some(false);
+    }
+    change_counter(ui, current, total);
+    if icon_button(ui, Icon::ChevronRight, "Next", ButtonIntent::Ghost)
+        .on_hover_text("Next difference (F7)")
+        .clicked()
+    {
+        direction = Some(true);
+    }
+    direction
+}
+
+/// Shared find trigger so both comparison views use the same icon+label.
+pub fn find_button(ui: &mut Ui, state: &mut SearchUiState) {
+    if icon_button(ui, Icon::Search, "Find", ButtonIntent::Ghost)
+        .on_hover_text("Find (Ctrl+F)")
+        .clicked()
+    {
+        state.open_and_focus();
+    }
 }
 
 /// A shared, always-visible horizontal scrollbar. Returns the new offset when
@@ -404,8 +624,12 @@ pub fn horizontal_scroll_bar(ui: &mut Ui, offset: f32, viewport: f32, content: f
 /// Standard collapse/expand control used by the text, PDF and CSV option bars.
 /// Returns `true` when the state was toggled.
 pub fn collapse_arrow(ui: &mut Ui, collapsed: &mut bool) -> bool {
-    let label = if *collapsed { "▼" } else { "▲" };
-    let clicked = intent_button(ui, label, ButtonIntent::Ghost)
+    let icon = if *collapsed {
+        Icon::ChevronDown
+    } else {
+        Icon::ChevronUp
+    };
+    let clicked = icon_button(ui, icon, "", ButtonIntent::Ghost)
         .on_hover_text(if *collapsed {
             "Show comparison options"
         } else {
@@ -485,8 +709,8 @@ pub fn table_surface(ui: &mut Ui) {
     let painter = ui.painter();
     painter.rect(
         rect,
-        8.0,
-        theme::panel(),
+        12.0,
+        theme::surface(),
         Stroke::new(1.0_f32, theme::border()),
         egui::StrokeKind::Inside,
     );
@@ -495,7 +719,7 @@ pub fn table_surface(ui: &mut Ui) {
 /// A soft, full-width card-style button used for recent comparisons and other
 /// list-like navigation. Painted explicitly so it matches both themes.
 pub fn card_button(ui: &mut Ui, text: &str, selected: bool) -> Response {
-    let height = 30.0;
+    let height = 34.0;
     let width = ui.available_width().max(120.0);
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
     let hovered = response.hovered();
@@ -504,7 +728,7 @@ pub fn card_button(ui: &mut Ui, text: &str, selected: bool) -> Response {
     } else if hovered {
         theme::widget_hover()
     } else {
-        theme::widget()
+        theme::panel_2()
     };
     let stroke = if hovered || selected {
         theme::accent().gamma_multiply(0.65)
@@ -514,7 +738,7 @@ pub fn card_button(ui: &mut Ui, text: &str, selected: bool) -> Response {
     let painter = ui.painter();
     painter.rect(
         rect,
-        8.0,
+        10.0,
         fill,
         Stroke::new(1.0_f32, stroke),
         egui::StrokeKind::Inside,

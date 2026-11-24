@@ -5,9 +5,7 @@ use super::*;
 impl App {
     pub(super) fn top_bar(&mut self, ctx: &egui::Context) {
         let mut rescan = false;
-        let mut reload_open = false;
         let mut swap = false;
-        let mut theme_change = None;
         let mut recent_pick: Option<(String, String)> = None;
         let mut clear_recent = false;
         let scanning = self.scanning();
@@ -23,8 +21,8 @@ impl App {
                 ui.horizontal(|ui| {
                     Frame::NONE
                         .fill(theme::accent())
-                        .corner_radius(6.0)
-                        .inner_margin(Margin::symmetric(8, 3))
+                        .corner_radius(9.0)
+                        .inner_margin(Margin::symmetric(9, 4))
                         .show(ui, |ui| {
                             ui.label(
                                 RichText::new("H")
@@ -34,216 +32,226 @@ impl App {
                             );
                         });
                     ui.vertical(|ui| {
-                        ui.label(RichText::new("H-Compare").size(16.0).strong());
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("H-Compare").size(16.0).strong());
+                            Frame::NONE
+                                .fill(theme::accent_dim())
+                                .corner_radius(999.0)
+                                .inner_margin(Margin::symmetric(7, 1))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                                            .color(theme::accent())
+                                            .size(9.5),
+                                    );
+                                });
+                        });
                         ui.label(
-                            RichText::new(format!(
-                                "folder · text · csv diff · v{} build {}",
-                                env!("CARGO_PKG_VERSION"),
-                                env!("HCOMPARE_BUILD_DATE")
-                            ))
-                            .color(theme::muted())
-                            .size(10.5),
+                            RichText::new("folder · text · csv diff")
+                                .color(theme::muted())
+                                .size(10.5),
                         );
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if common::intent_button(ui, "About", common::ButtonIntent::Ghost).clicked()
+                        if common::icon_button(
+                            ui,
+                            Icon::Info,
+                            "About",
+                            common::ButtonIntent::Secondary,
+                        )
+                        .clicked()
                         {
                             self.show_about = true;
                         }
-                        ui.menu_button(format!("Theme: {}", ui::theme::mode().label()), |ui| {
-                            for mode in [ui::theme::ThemeMode::Dark, ui::theme::ThemeMode::Light] {
-                                if ui
-                                    .selectable_label(self.settings.theme == mode, mode.label())
-                                    .clicked()
-                                {
-                                    theme_change = Some(mode);
-                                    ui.close_menu();
-                                }
-                            }
-                        })
-                        .response
-                        .on_hover_text("Choose the dark or light theme");
-                        if common::intent_button(ui, "Options", common::ButtonIntent::Ghost)
-                            .clicked()
-                        {
-                            self.show_settings = true;
-                        }
-                        ui.menu_button("Recent", |ui| {
-                            ui.set_min_width(460.0);
-                            if self.settings.recent.is_empty() {
-                                common::small_muted(ui, "No recent comparisons yet.");
-                            } else {
-                                for entry in self.settings.recent.clone() {
-                                    let label = format!(
-                                        "{}   ↔   {}",
-                                        short_path(&entry.left),
-                                        short_path(&entry.right)
+                        let _ = common::icon_menu_button_intent(
+                            ui,
+                            Icon::Settings,
+                            "Settings",
+                            common::ButtonIntent::Secondary,
+                            |ui| {
+                                ui.set_min_width(280.0);
+                                ui.horizontal(|ui| {
+                                    let (rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(14.0, 14.0),
+                                        egui::Sense::hover(),
                                     );
-                                    if common::card_button(ui, &label, false)
-                                        .on_hover_text(format!("{}\n{}", entry.left, entry.right))
-                                        .clicked()
-                                    {
-                                        recent_pick = Some((entry.left, entry.right));
-                                        ui.close_menu();
-                                    }
+                                    ui::icons::paint(
+                                        ui.painter(),
+                                        rect,
+                                        Icon::Palette,
+                                        theme::accent(),
+                                    );
+                                    common::section_heading(ui, "APPEARANCE");
+                                });
+                                if let Some(theme) = egui::ScrollArea::vertical()
+                                    .id_salt("theme_picker_scroll")
+                                    .max_height(420.0)
+                                    .show(ui, |ui| common::theme_picker(ui, self.settings.theme))
+                                    .inner
+                                {
+                                    self.settings.theme = theme;
+                                    self.pending_theme = Some(theme);
+                                    self.persist();
+                                    common::close_menu(ui);
                                 }
                                 ui.separator();
-                                if common::intent_button(
+                                if common::icon_button(
                                     ui,
-                                    "Clear recent list",
-                                    common::ButtonIntent::Danger,
+                                    Icon::Sliders,
+                                    "All options…",
+                                    common::ButtonIntent::Secondary,
                                 )
                                 .clicked()
                                 {
-                                    clear_recent = true;
-                                    ui.close_menu();
+                                    self.show_settings = true;
+                                    common::close_menu(ui);
                                 }
-                            }
-                        });
+                            },
+                        );
                         if let Some(tree) = &self.tree {
                             if !tree.warnings.is_empty()
-                                && common::intent_button(
+                                && common::icon_button(
                                     ui,
+                                    Icon::Warning,
                                     &format!("Warnings ({})", tree.warnings.len()),
-                                    common::ButtonIntent::Ghost,
+                                    common::ButtonIntent::Secondary,
                                 )
+                                .on_hover_text("Review scan warnings")
                                 .clicked()
                             {
                                 self.show_warnings = true;
                             }
                         }
-                        ui.menu_button("Actions", |ui| {
-                            let left_sync = self.sync_candidates(true).len();
-                            let right_sync = self.sync_candidates(false).len();
-                            let sync_left = ui
-                                .add_enabled_ui(left_sync > 0, |ui| {
-                                    common::intent_button(
+                        let _ = common::icon_menu_button_intent(
+                            ui,
+                            Icon::More,
+                            "Actions",
+                            common::ButtonIntent::Secondary,
+                            |ui| {
+                                let left_sync = self.sync_candidates(true).len();
+                                let right_sync = self.sync_candidates(false).len();
+                                let sync_left = ui
+                                    .add_enabled_ui(left_sync > 0, |ui| {
+                                        common::icon_button(
+                                            ui,
+                                            Icon::Copy,
+                                            &format!("Copy all A → B ({left_sync})"),
+                                            common::ButtonIntent::Secondary,
+                                        )
+                                    })
+                                    .inner
+                                    .clicked();
+                                if sync_left {
+                                    self.deferred.push(UiAction::Sync { from_left: true });
+                                    common::close_menu(ui);
+                                }
+                                let sync_right = ui
+                                    .add_enabled_ui(right_sync > 0, |ui| {
+                                        common::icon_button(
+                                            ui,
+                                            Icon::Copy,
+                                            &format!("Copy all B → A ({right_sync})"),
+                                            common::ButtonIntent::Secondary,
+                                        )
+                                    })
+                                    .inner
+                                    .clicked();
+                                if sync_right {
+                                    self.deferred.push(UiAction::Sync { from_left: false });
+                                    common::close_menu(ui);
+                                }
+                                ui.separator();
+                                if common::icon_button(
+                                    ui,
+                                    Icon::Trash,
+                                    "Clear comparison",
+                                    common::ButtonIntent::Danger,
+                                )
+                                .clicked()
+                                {
+                                    self.tree = None;
+                                    self.open = None;
+                                    self.open_error = None;
+                                    self.pending_open = None;
+                                    self.load_token = self.load_token.wrapping_add(1);
+                                    common::close_menu(ui);
+                                }
+                            },
+                        );
+                        let _ = common::icon_menu_button_intent(
+                            ui,
+                            Icon::Clock,
+                            "Recent",
+                            common::ButtonIntent::Secondary,
+                            |ui| {
+                                ui.set_min_width(460.0);
+                                if self.settings.recent.is_empty() {
+                                    common::small_muted(ui, "No recent comparisons yet.");
+                                } else {
+                                    for entry in self.settings.recent.clone() {
+                                        let label = format!(
+                                            "{}   ↔   {}",
+                                            short_path(&entry.left),
+                                            short_path(&entry.right)
+                                        );
+                                        if common::card_button(ui, &label, false)
+                                            .on_hover_text(format!(
+                                                "{}\n{}",
+                                                entry.left, entry.right
+                                            ))
+                                            .clicked()
+                                        {
+                                            recent_pick = Some((entry.left, entry.right));
+                                            common::close_menu(ui);
+                                        }
+                                    }
+                                    ui.separator();
+                                    if common::icon_button(
                                         ui,
-                                        &format!("Copy all left → right ({left_sync} files)"),
-                                        common::ButtonIntent::Secondary,
+                                        Icon::Trash,
+                                        "Clear recent list",
+                                        common::ButtonIntent::Danger,
                                     )
-                                })
-                                .inner
-                                .clicked();
-                            if sync_left {
-                                self.deferred.push(UiAction::Sync { from_left: true });
-                                ui.close_menu();
-                            }
-                            let sync_right = ui
-                                .add_enabled_ui(right_sync > 0, |ui| {
-                                    common::intent_button(
-                                        ui,
-                                        &format!("Copy all right → left ({right_sync} files)"),
-                                        common::ButtonIntent::Secondary,
-                                    )
-                                })
-                                .inner
-                                .clicked();
-                            if sync_right {
-                                self.deferred.push(UiAction::Sync { from_left: false });
-                                ui.close_menu();
-                            }
-                            ui.separator();
-                            if common::intent_button(
-                                ui,
-                                "Clear comparison",
-                                common::ButtonIntent::Danger,
-                            )
-                            .clicked()
-                            {
-                                self.tree = None;
-                                self.open = None;
-                                self.open_error = None;
-                                self.pending_open = None;
-                                self.load_token = self.load_token.wrapping_add(1);
-                                ui.close_menu();
-                            }
-                        });
-                        if scanning {
-                            ui.spinner();
-                            common::small_muted(ui, "Scanning…");
-                        } else if common::accent_button(ui, "Compare")
-                            .on_hover_text("Scan and compare the two folders (F5)")
-                            .clicked()
-                        {
-                            rescan = true;
-                        }
-                        if common::intent_button(ui, "Rescan", common::ButtonIntent::Ghost)
-                            .on_hover_text("F5")
-                            .clicked()
-                        {
-                            rescan = true;
-                        }
-                        if common::intent_button(ui, "Swap", common::ButtonIntent::Ghost)
-                            .on_hover_text("Swap left and right")
-                            .clicked()
+                                    .clicked()
+                                    {
+                                        clear_recent = true;
+                                        common::close_menu(ui);
+                                    }
+                                }
+                            },
+                        );
+                        if common::icon_button(
+                            ui,
+                            Icon::Swap,
+                            "Swap",
+                            common::ButtonIntent::Secondary,
+                        )
+                        .on_hover_text("Swap left and right folders")
+                        .clicked()
                         {
                             swap = true;
                         }
-                        ui.menu_button("Quick options", |ui| {
-                            if ui
-                                .checkbox(
-                                    &mut self.settings.compare.skip_build_dirs,
-                                    "Skip common build folders",
-                                )
-                                .changed()
+                        if scanning {
+                            ui.spinner();
+                            common::small_muted(ui, "Scanning…");
+                        } else {
+                            let label = if self.tree.is_some() {
+                                "Rescan"
+                            } else {
+                                "Compare"
+                            };
+                            if common::icon_button(
+                                ui,
+                                Icon::Refresh,
+                                label,
+                                common::ButtonIntent::Primary,
+                            )
+                            .on_hover_text("Compare both folders (F5)")
+                            .clicked()
                             {
                                 rescan = true;
                             }
-                            if ui
-                                .checkbox(
-                                    &mut self.settings.compare.ignore_case,
-                                    "Text: ignore case",
-                                )
-                                .changed()
-                            {
-                                reload_open = true;
-                            }
-                            if ui
-                                .checkbox(
-                                    &mut self.settings.compare.ignore_whitespace,
-                                    "Text: ignore whitespace",
-                                )
-                                .changed()
-                            {
-                                reload_open = true;
-                            }
-                            if ui
-                                .checkbox(
-                                    &mut self.settings.compare.trim_trailing,
-                                    "Text: trim trailing",
-                                )
-                                .changed()
-                            {
-                                reload_open = true;
-                            }
-                            if ui
-                                .checkbox(
-                                    &mut self.settings.csv.has_headers,
-                                    "CSV: first row is header",
-                                )
-                                .changed()
-                            {
-                                reload_open = true;
-                            }
-                            if ui
-                                .checkbox(&mut self.settings.csv.trim_whitespace, "CSV: trim cells")
-                                .changed()
-                            {
-                                reload_open = true;
-                            }
-                            ui.separator();
-                            if common::intent_button(
-                                ui,
-                                "All options…",
-                                common::ButtonIntent::Secondary,
-                            )
-                            .clicked()
-                            {
-                                self.show_settings = true;
-                                ui.close_menu();
-                            }
-                        });
+                        }
                     });
                 });
 
@@ -293,11 +301,6 @@ impl App {
                 }
             });
 
-        if let Some(mode) = theme_change {
-            self.settings.theme = mode;
-            self.pending_theme = Some(mode);
-            self.persist();
-        }
         if clear_recent {
             self.settings.recent.clear();
             self.persist();
@@ -313,9 +316,6 @@ impl App {
                 rescan = true;
             }
         }
-        if reload_open && !rescan {
-            self.deferred.push(UiAction::ReloadOpen);
-        }
         if rescan {
             self.start_scan(ctx);
         }
@@ -324,27 +324,23 @@ impl App {
     pub(super) fn left_panel(&mut self, ctx: &egui::Context) {
         if self.settings.tree_collapsed {
             egui::SidePanel::left("hcompare_tree_collapsed")
-                .exact_width(34.0)
+                .exact_width(46.0)
                 .resizable(false)
                 .frame(
                     Frame::NONE
                         .fill(theme::panel())
-                        .inner_margin(Margin::symmetric(4, 8))
+                        .inner_margin(Margin::symmetric(5, 8))
                         .stroke(Stroke::new(1.0_f32, theme::border())),
                 )
                 .show(ctx, |ui| {
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                RichText::new("»").color(theme::on_accent()).size(16.0),
-                            )
-                            .fill(theme::accent())
-                            .stroke(Stroke::new(1.0_f32, theme::accent()))
-                            .corner_radius(8.0)
-                            .min_size(egui::vec2(26.0, 26.0)),
-                        )
-                        .on_hover_text("Show folder tree (Ctrl+B)")
-                        .clicked()
+                    if common::icon_button(
+                        ui,
+                        Icon::ChevronRight,
+                        "",
+                        common::ButtonIntent::Primary,
+                    )
+                    .on_hover_text("Show folder tree (Ctrl+B)")
+                    .clicked()
                     {
                         self.settings.tree_collapsed = false;
                         self.persist();
@@ -380,9 +376,14 @@ impl App {
                         common::small_muted(ui, "scanning…");
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if common::intent_button(ui, "«", common::ButtonIntent::Ghost)
-                            .on_hover_text("Collapse folder tree (Ctrl+B)")
-                            .clicked()
+                        if common::icon_button(
+                            ui,
+                            Icon::ChevronLeft,
+                            "Hide",
+                            common::ButtonIntent::Ghost,
+                        )
+                        .on_hover_text("Collapse folder tree (Ctrl+B)")
+                        .clicked()
                         {
                             self.settings.tree_collapsed = true;
                             self.persist();

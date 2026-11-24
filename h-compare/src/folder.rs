@@ -440,7 +440,7 @@ mod tests {
         assert_eq!(tree.counts.left_only, 1);
         assert_eq!(tree.counts.right_only, 1);
         assert_eq!(tree.counts.total(), 6);
-        assert_eq!(tree.first_difference().is_some(), true);
+        assert!(tree.first_difference().is_some());
     }
 
     #[test]
@@ -451,8 +451,10 @@ mod tests {
         left.file("src/main.ts", "same\n");
         right.file("src/main.ts", "same\n");
 
-        let mut options = CompareOptions::default();
-        options.skip_build_dirs = true;
+        let mut options = CompareOptions {
+            skip_build_dirs: true,
+            ..Default::default()
+        };
         let tree = compare_folders(&left.path, &right.path, &options).unwrap();
         assert!(tree.by_rel("node_modules/pkg/index.js").is_none());
         assert_eq!(tree.counts.total(), 1);

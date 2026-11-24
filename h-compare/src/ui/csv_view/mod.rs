@@ -5,6 +5,7 @@ use crate::csvdiff::{CsvAlign, CsvCompare, CsvIgnore, CsvOptions, CsvRowKind, De
 use crate::load::OpenData;
 use crate::textdiff::find_ranges;
 use crate::ui::common::{self, SearchUiState, SearchUpdate};
+use crate::ui::icons::Icon;
 use crate::ui::theme;
 use eframe::egui::text::{LayoutJob, TextFormat};
 use eframe::egui::{
@@ -404,27 +405,12 @@ pub fn show(
             );
         }
         ui.separator();
-        if common::intent_button(ui, "◀ Change", common::ButtonIntent::Ghost)
-            .on_hover_text("Previous difference (Shift+F7)")
-            .clicked()
-        {
-            if !state.goto_change(compare, false) {
-                actions.push(UiAction::NextFileDiff { forward: false });
+        let (current, total) = change_progress(compare, state);
+        if let Some(forward) = common::change_nav(ui, current, total) {
+            if !state.goto_change(compare, forward) {
+                actions.push(UiAction::NextFileDiff { forward });
             }
             ui.ctx().request_repaint();
-        }
-        if common::intent_button(ui, "Change ▶", common::ButtonIntent::Ghost)
-            .on_hover_text("Next difference (F7)")
-            .clicked()
-        {
-            if !state.goto_change(compare, true) {
-                actions.push(UiAction::NextFileDiff { forward: true });
-            }
-            ui.ctx().request_repaint();
-        }
-        if compare.row_change_count() > 0 {
-            let (current, total) = change_progress(compare, state);
-            common::change_counter(ui, current, total);
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             common::collapse_arrow(ui, &mut state.options_collapsed);
@@ -436,10 +422,20 @@ pub fn show(
             .num_columns(5)
             .spacing(egui::vec2(14.0, 6.0))
             .show(ui, |ui| {
-                ui.selectable_value(&mut state.mode, CsvViewMode::Merged, "Merged");
+                let mut mode = state.mode;
+                common::view_menu(
+                    ui,
+                    &mut mode,
+                    &[
+                        (CsvViewMode::Merged, "Merged"),
+                        (CsvViewMode::SideBySide, "Side by side"),
+                    ],
+                );
+                state.mode = mode;
                 ui.checkbox(&mut options.has_headers, "First row is header");
                 if data.left_path.is_some() {
-                    if common::intent_button(ui, "A → B", common::ButtonIntent::Secondary).clicked()
+                    if common::icon_button(ui, Icon::Copy, "A → B", common::ButtonIntent::Secondary)
+                        .clicked()
                     {
                         actions.push(UiAction::Copy {
                             rel: data.rel.clone(),
@@ -450,18 +446,14 @@ pub fn show(
                     ui.label("");
                 }
                 menus::columns_menu(ui, compare, state);
-                if common::intent_button(ui, "Find", common::ButtonIntent::Ghost)
-                    .on_hover_text("Find (Ctrl+F)")
-                    .clicked()
-                {
-                    state.search.open_and_focus();
-                }
+                common::find_button(ui, &mut state.search);
                 ui.end_row();
 
-                ui.selectable_value(&mut state.mode, CsvViewMode::SideBySide, "Side by side");
+                ui.label("");
                 ui.checkbox(&mut options.ignore_case, "Ignore case");
                 if data.right_path.is_some() {
-                    if common::intent_button(ui, "B → A", common::ButtonIntent::Secondary).clicked()
+                    if common::icon_button(ui, Icon::Copy, "B → A", common::ButtonIntent::Secondary)
+                        .clicked()
                     {
                         actions.push(UiAction::Copy {
                             rel: data.rel.clone(),
@@ -472,80 +464,79 @@ pub fn show(
                     ui.label("");
                 }
                 menus::restore_columns_menu(ui, data, &state.restored_backups, actions);
-                ui.menu_button("Format", |ui| {
-                    ui.menu_button(format!("Delimiter: {}", options.delimiter.label()), |ui| {
-                        for choice in DelimiterChoice::ALL {
-                            if ui
-                                .selectable_value(&mut options.delimiter, choice, choice.label())
-                                .changed()
-                            {
-                                reload = true;
-                            }
+                let _ = common::icon_menu_button(ui, Icon::Sliders, "Format", |ui| {
+                    ui.set_min_width(300.0);
+                    common::section_heading(ui, "DELIMITER");
+                    for choice in DelimiterChoice::ALL {
+                        if ui
+                            .selectable_value(&mut options.delimiter, choice, choice.label())
+                            .changed()
+                        {
+                            reload = true;
+                            common::close_menu(ui);
                         }
-                    });
-                    ui.menu_button(
-                        format!("Row alignment: {}", options.align.short_label()),
-                        |ui| {
-                            if ui
-                                .selectable_value(
-                                    &mut options.align,
-                                    CsvAlign::Auto,
-                                    "Auto (first column if unique)",
-                                )
-                                .changed()
-                            {
-                                reload = true;
-                            }
-                            if ui
-                                .selectable_value(
-                                    &mut options.align,
-                                    CsvAlign::RowOrder,
-                                    "Row order",
-                                )
-                                .changed()
-                            {
-                                reload = true;
-                            }
-                            ui.separator();
-                            for col in 0..compare.column_count.min(40) {
-                                let label = format!("Column {} (key)", col + 1);
-                                if ui
-                                    .selectable_value(&mut options.align, CsvAlign::Key(col), label)
-                                    .changed()
-                                {
-                                    reload = true;
-                                }
-                            }
-                        },
-                    );
+                    }
+                    ui.separator();
+                    common::section_heading(ui, "ROW ALIGNMENT");
+                    for (value, label) in [
+                        (CsvAlign::Auto, "Auto (first column if unique)"),
+                        (CsvAlign::RowOrder, "Row order"),
+                    ] {
+                        if ui
+                            .selectable_value(&mut options.align, value, label)
+                            .changed()
+                        {
+                            reload = true;
+                            common::close_menu(ui);
+                        }
+                    }
+                    ui.separator();
+                    for col in 0..compare.column_count.min(40) {
+                        let label = format!("Column {} (key)", col + 1);
+                        if ui
+                            .selectable_value(&mut options.align, CsvAlign::Key(col), label)
+                            .changed()
+                        {
+                            reload = true;
+                            common::close_menu(ui);
+                        }
+                    }
                 });
                 ui.end_row();
 
                 ui.checkbox(&mut state.differences_only, "Differences only");
                 ui.checkbox(&mut options.trim_whitespace, "Trim cells");
-                ui.menu_button("Export", |ui| {
-                    if common::intent_button(
+                let _ = common::icon_menu_button(ui, Icon::Download, "Export", |ui| {
+                    if common::icon_button(
                         ui,
-                        "Export differences as CSV…",
+                        Icon::Download,
+                        "Differences as CSV…",
                         common::ButtonIntent::Secondary,
                     )
                     .clicked()
                     {
                         actions.push(UiAction::Export(ExportKind::CsvDifferences));
-                        ui.close_menu();
+                        common::close_menu(ui);
                     }
-                    if common::intent_button(
+                    if common::icon_button(
                         ui,
-                        "Export HTML report…",
+                        Icon::Download,
+                        "HTML report…",
                         common::ButtonIntent::Secondary,
                     )
                     .clicked()
                     {
                         actions.push(UiAction::Export(ExportKind::CsvHtml));
-                        ui.close_menu();
+                        common::close_menu(ui);
                     }
                 });
-                if common::intent_button(ui, "Recompare", common::ButtonIntent::Secondary).clicked()
+                if common::icon_button(
+                    ui,
+                    Icon::Refresh,
+                    "Recompare",
+                    common::ButtonIntent::Secondary,
+                )
+                .clicked()
                 {
                     reload = true;
                 }
@@ -556,9 +547,14 @@ pub fn show(
                 ui.checkbox(&mut options.ignore_empty_rows, "Skip empty rows");
                 ui.label("");
                 if can_undo {
-                    if common::intent_button(ui, "Undo delete", common::ButtonIntent::Ghost)
-                        .on_hover_text("Restore the last deleted column (Ctrl+Z)")
-                        .clicked()
+                    if common::icon_button(
+                        ui,
+                        Icon::Undo,
+                        "Undo delete",
+                        common::ButtonIntent::Ghost,
+                    )
+                    .on_hover_text("Restore the last deleted column (Ctrl+Z)")
+                    .clicked()
                     {
                         actions.push(UiAction::UndoCsvColumnDelete);
                     }

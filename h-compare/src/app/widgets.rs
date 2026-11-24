@@ -27,15 +27,17 @@ pub(super) fn path_field(
             .show(ui, |ui| {
                 ui.label(RichText::new(badge).color(color).strong().size(11.0));
             });
-        let width = (ui.available_width() - 92.0).max(160.0);
+        let width = (ui.available_width() - 118.0).max(160.0);
         let response = ui.add_sized(
-            [width, 24.0],
+            [width, 26.0],
             TextEdit::singleline(value).hint_text(hint).clip_text(true),
         );
         if response.lost_focus() && ui.input(|input| input.key_pressed(Key::Enter)) {
             result.enter = true;
         }
-        if common::intent_button(ui, "Browse…", common::ButtonIntent::Ghost).clicked() {
+        if common::icon_button(ui, Icon::Folder, "Browse", common::ButtonIntent::Secondary)
+            .clicked()
+        {
             result.browse = true;
         }
     });
@@ -172,20 +174,25 @@ pub(super) fn binary_side(
                 );
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    if common::intent_button(ui, "Open", common::ButtonIntent::Ghost).clicked() {
+                    if common::icon_button(ui, Icon::External, "Open", common::ButtonIntent::Ghost)
+                        .clicked()
+                    {
                         actions.push(UiAction::OpenDefault {
                             rel: data.rel.clone(),
                             left,
                         });
                     }
-                    if common::intent_button(ui, "Reveal", common::ButtonIntent::Ghost).clicked() {
+                    if common::icon_button(ui, Icon::Folder, "Reveal", common::ButtonIntent::Ghost)
+                        .clicked()
+                    {
                         actions.push(UiAction::Reveal {
                             rel: data.rel.clone(),
                             left,
                         });
                     }
-                    if common::intent_button(
+                    if common::icon_button(
                         ui,
+                        Icon::Copy,
                         "Copy to other side",
                         common::ButtonIntent::Secondary,
                     )
@@ -220,7 +227,13 @@ pub(super) fn error_panel(ui: &mut Ui, data: &OpenData, actions: &mut Vec<UiActi
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 if data.left_path.is_some()
-                    && common::intent_button(ui, "Open A", common::ButtonIntent::Ghost).clicked()
+                    && common::icon_button(
+                        ui,
+                        Icon::External,
+                        "Open A",
+                        common::ButtonIntent::Ghost,
+                    )
+                    .clicked()
                 {
                     actions.push(UiAction::OpenDefault {
                         rel: data.rel.clone(),
@@ -228,7 +241,13 @@ pub(super) fn error_panel(ui: &mut Ui, data: &OpenData, actions: &mut Vec<UiActi
                     });
                 }
                 if data.right_path.is_some()
-                    && common::intent_button(ui, "Open B", common::ButtonIntent::Ghost).clicked()
+                    && common::icon_button(
+                        ui,
+                        Icon::External,
+                        "Open B",
+                        common::ButtonIntent::Ghost,
+                    )
+                    .clicked()
                 {
                     actions.push(UiAction::OpenDefault {
                         rel: data.rel.clone(),
@@ -257,7 +276,9 @@ pub(super) fn error_card(ui: &mut Ui, rel: &str, error: &str, actions: &mut Vec<
             ui.add_space(4.0);
             ui.label(RichText::new(error).color(theme::error()));
             ui.add_space(8.0);
-            if ui.button("Retry").clicked() {
+            if common::icon_button(ui, Icon::Refresh, "Retry", common::ButtonIntent::Secondary)
+                .clicked()
+            {
                 actions.push(UiAction::ReloadOpen);
             }
         });

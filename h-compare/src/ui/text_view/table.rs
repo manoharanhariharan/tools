@@ -602,7 +602,7 @@ fn paint_text_cell(ui: &mut Ui, cell: &TextCell<'_>) {
         });
     }
     response.context_menu(|ui| {
-        if common::intent_button(ui, "Copy line", common::ButtonIntent::Ghost).clicked() {
+        if common::icon_button(ui, Icon::Copy, "Copy line", common::ButtonIntent::Ghost).clicked() {
             ui.ctx().copy_text(text.to_string());
             ui.close_menu();
         }

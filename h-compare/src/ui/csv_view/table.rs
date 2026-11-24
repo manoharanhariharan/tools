@@ -556,6 +556,10 @@ fn paint_pane_gutter(
             theme::muted()
         },
     );
+    ui.painter().line_segment(
+        [rect.left_bottom(), rect.right_bottom()],
+        Stroke::new(1.0_f32, theme::grid()),
+    );
 }
 
 fn paint_row_gutter(ui: &mut Ui, compare: &CsvCompare, row: usize, selected: bool) {
@@ -599,6 +603,10 @@ fn paint_row_gutter(ui: &mut Ui, compare: &CsvCompare, row: usize, selected: boo
             theme::muted()
         },
     );
+    ui.painter().line_segment(
+        [rect.left_bottom(), rect.right_bottom()],
+        Stroke::new(1.0_f32, theme::grid()),
+    );
 }
 
 fn status_glyph(kind: CsvRowKind) -> (&'static str, Color32) {
@@ -613,16 +621,36 @@ fn status_glyph(kind: CsvRowKind) -> (&'static str, Color32) {
 /// Tint the header of a column that contains differing cells and draw a short
 /// underline so the column stands out while scrolling the table.
 fn paint_column_header(ui: &Ui, compare: &CsvCompare, col: usize) {
+    let rect = ui.max_rect();
+    ui.painter().line_segment(
+        [rect.left_bottom(), rect.right_bottom()],
+        Stroke::new(1.0_f32, theme::border()),
+    );
     if compare.column_change_count(col) == 0 {
         return;
     }
-    let rect = ui.max_rect();
     ui.painter().rect_filled(rect, 3.0, theme::mod_bg());
     let underline = egui::Rect::from_min_max(
         egui::pos2(rect.left() + 5.0, rect.bottom() - 3.0),
         egui::pos2(rect.right() - 5.0, rect.bottom() - 1.0),
     );
     ui.painter().rect_filled(underline, 1.0, theme::diff());
+}
+
+/// Quiet grid lines between CSV cells, drawn on top of cell backgrounds but
+/// below text so the table reads as a grid without obscuring diff colours.
+fn paint_cell_grid(ui: &Ui, rect: egui::Rect) {
+    let stroke = Stroke::new(1.0_f32, theme::grid());
+    let right = rect.right() + ui.spacing().item_spacing.x / 2.0;
+    let bottom = rect.bottom() + ui.spacing().item_spacing.y / 2.0;
+    ui.painter().line_segment(
+        [egui::pos2(rect.left(), bottom), egui::pos2(right, bottom)],
+        stroke,
+    );
+    ui.painter().line_segment(
+        [egui::pos2(right, rect.top()), egui::pos2(right, bottom)],
+        stroke,
+    );
 }
 
 fn paint_merged_cell(ui: &mut Ui, cell: &MergedCell<'_>, state: &mut CsvUiState) -> egui::Response {
@@ -655,6 +683,7 @@ fn paint_merged_cell(ui: &mut Ui, cell: &MergedCell<'_>, state: &mut CsvUiState)
             egui::StrokeKind::Inside,
         );
     }
+    paint_cell_grid(ui, rect);
 
     let cell = compare.cell_diff(row, col);
     let (left, right) = match (diff_row.left, diff_row.right) {
@@ -738,13 +767,26 @@ fn paint_merged_cell(ui: &mut Ui, cell: &MergedCell<'_>, state: &mut CsvUiState)
     }
     response.context_menu(|ui| {
         if let Some(left) = left {
-            if common::intent_button(ui, "Copy left value", common::ButtonIntent::Ghost).clicked() {
+            if common::icon_button(
+                ui,
+                Icon::Copy,
+                "Copy left value",
+                common::ButtonIntent::Ghost,
+            )
+            .clicked()
+            {
                 ui.ctx().copy_text(left.to_string());
                 ui.close_menu();
             }
         }
         if let Some(right) = right {
-            if common::intent_button(ui, "Copy right value", common::ButtonIntent::Ghost).clicked()
+            if common::icon_button(
+                ui,
+                Icon::Copy,
+                "Copy right value",
+                common::ButtonIntent::Ghost,
+            )
+            .clicked()
             {
                 ui.ctx().copy_text(right.to_string());
                 ui.close_menu();
@@ -757,7 +799,8 @@ fn paint_merged_cell(ui: &mut Ui, cell: &MergedCell<'_>, state: &mut CsvUiState)
             (None, None) => String::new(),
         };
         if !both.is_empty()
-            && common::intent_button(ui, "Copy both", common::ButtonIntent::Ghost).clicked()
+            && common::icon_button(ui, Icon::Copy, "Copy both", common::ButtonIntent::Ghost)
+                .clicked()
         {
             ui.ctx().copy_text(both);
             ui.close_menu();
@@ -853,6 +896,7 @@ fn paint_side_cell(ui: &mut Ui, cell: &SideCell<'_>, state: &mut CsvUiState) -> 
             egui::StrokeKind::Inside,
         );
     }
+    paint_cell_grid(ui, rect);
     if !present {
         return ui.interact(
             rect,
@@ -902,7 +946,8 @@ fn paint_side_cell(ui: &mut Ui, cell: &SideCell<'_>, state: &mut CsvUiState) -> 
         });
     }
     response.context_menu(|ui| {
-        if common::intent_button(ui, "Copy value", common::ButtonIntent::Ghost).clicked() {
+        if common::icon_button(ui, Icon::Copy, "Copy value", common::ButtonIntent::Ghost).clicked()
+        {
             ui.ctx().copy_text(value.to_string());
             ui.close_menu();
         }
