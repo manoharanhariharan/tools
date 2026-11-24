@@ -3,7 +3,6 @@
 // whenever a Rust DTO changes; tests assert the bootstrap fixture shape.
 
 export type ProfileMode = "portable" | "appData";
-export type CloseButtonAction = "exit" | "minimizeToTray";
 export type LogLevel = "off" | "error" | "warn" | "info" | "debug" | "trace";
 export type MatcherKind = "direct" | "initials" | "discrete" | "pinyin" | "pinyinInitials";
 export type ServerView = "card" | "list" | "tree";
@@ -571,11 +570,9 @@ export interface TabHeaderConfig {
 export interface GeneralConfig {
   language: string;
   runAtStartup: boolean;
-  closeButtonAction: CloseButtonAction;
   confirmBeforeClosingSession: boolean;
   showSessionIconInTitle: boolean;
   tabHeader: TabHeaderConfig;
-  showRecentInTray: boolean;
   showNoteInList: boolean;
   logLevel: LogLevel;
   copyPortWithAddress: boolean;
@@ -660,7 +657,6 @@ export interface Capabilities {
   nativeRdpFallback: boolean;
   embeddedRdp: boolean;
   globalHotkey: boolean;
-  tray: boolean;
   workingSetTrim: boolean;
   supportsMultipleMonitors: boolean;
 }

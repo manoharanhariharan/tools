@@ -3,6 +3,7 @@
   import { i18n } from "./lib/i18n/index.svelte";
   import { CleanupRegistry } from "./lib/ipc/events";
   import { commands } from "./lib/ipc/client";
+  import { isTauriRuntime } from "./lib/ipc/runtime";
   import { app } from "./lib/state/app.svelte";
   import BusyOverlay from "./lib/components/BusyOverlay.svelte";
   import DialogHost from "./lib/components/DialogHost.svelte";
@@ -20,8 +21,8 @@
   import { sessions } from "./lib/state/sessions.svelte";
 
   const params = new URLSearchParams(window.location.search);
-  const detachedSession = params.get("session");
   const isLauncherWindow = params.get("window") === "launcher";
+  const isSessionWindow = params.get("window") === "sessions";
   import CatalogPage from "./lib/features/catalog/CatalogPage.svelte";
   import ErrorReportDialog from "./lib/features/errors/ErrorReportDialog.svelte";
   import GuidanceWizard from "./lib/features/guidance/GuidanceWizard.svelte";
@@ -30,17 +31,8 @@
   onMount(() => {
     const instance = new CleanupRegistry();
     void app.init(instance);
-    if (!isLauncherWindow) {
-      void sessions.load().then(() => {
-        if (
-          detachedSession &&
-          !sessions.sessions.some((session) => session.id === detachedSession)
-        ) {
-          void commands
-            .dockSessionWindow(`session-${detachedSession}`)
-            .catch(() => undefined);
-        }
-      });
+    if (isSessionWindow || !isTauriRuntime) {
+      void sessions.load();
     }
     return () => {
       sessions.dispose();
@@ -78,6 +70,15 @@
   </div>
 {:else if isLauncherWindow}
   <LauncherPanel />
+{:else if isSessionWindow}
+  {#if app.bootstrap && app.config}
+    <SessionWorkspace standalone />
+    <SessionDisplayDialog />
+    <BusyOverlay />
+    <DialogHost />
+    <ErrorReportDialog />
+    <NoticeBar />
+  {/if}
 {:else if app.bootstrap && app.config}
   <div class="hr-shell">
     <TitleBar
@@ -113,9 +114,7 @@
     />
   {/if}
 
-  {#if detachedSession}
-    <SessionWorkspace detachedId={detachedSession} />
-  {:else if sessions.activeId}
+  {#if !isTauriRuntime && sessions.activeId}
     <SessionWorkspace />
   {/if}
 

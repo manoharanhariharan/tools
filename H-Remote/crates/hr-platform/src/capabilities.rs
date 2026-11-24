@@ -15,7 +15,6 @@ pub struct Capabilities {
     pub native_rdp_fallback: bool,
     pub embedded_rdp: bool,
     pub global_hotkey: bool,
-    pub tray: bool,
     pub working_set_trim: bool,
     pub supports_multiple_monitors: bool,
 }
@@ -50,7 +49,6 @@ pub fn detect_capabilities() -> Capabilities {
         native_rdp_fallback: cfg!(windows),
         embedded_rdp: true,
         global_hotkey: true,
-        tray: true,
         working_set_trim: cfg!(any(windows, target_os = "linux")),
         supports_multiple_monitors: true,
     }

@@ -14,15 +14,15 @@ represented by detach/dock commands.
   `session.sessionWindows` placements keyed by window label.
 - `update_tab_workspace` command validates and persists the layout/button
   settings.
-- `open_session_window` creates (or focuses) a `session-<id>` webview window at
-  the requested drop position, falling back to the stored placement, with a
-  centred 980×700 default. `dock_session_window` emits `session:dock` to the main
-  window and closes the detached window. `save_session_window_placement`
-  persists geometry; closing a session window saves automatically.
+- `open_session_window` creates (or focuses) the shared `sessions` webview
+  window, falling back to the stored placement, with a centred 980×700 default.
+  Every connection lands there as a tab. Closing the window saves geometry
+  automatically.
 - `set_window_title` reflects the selected session in the OS title/taskbar.
 - Session windows are included in the default capability set.
 - CLI/shortcut activation (`ULID:`, `#tag`, display name) now resolves servers
-  and starts RDP sessions instead of only showing a notice.
+  and starts every supported session type in the shared window instead of only
+  showing a notice.
 
 ### UI
 
@@ -31,7 +31,7 @@ represented by detach/dock commands.
     reconnect/close buttons, middle-click close and drag reordering;
   - per-tab context menu: focus, reconnect, close, close others/all, edit,
     duplicate, copy hostname/username/password, shortcut, `.rdp` export,
-    Ctrl+Alt+Del, display presets, tab-button customisation, detach/dock;
+    Ctrl+Alt+Del, display presets, tab-button customisation;
   - Ctrl+1…9 tab selection, Ctrl+Tab cycling, F11 full-screen with a connection
     bar/header that restores the window;
   - grid mode for 2+ tabs and a snap-layout picker with thumbnails;

@@ -56,7 +56,6 @@ Unknown top-level fields are preserved for forward compatibility.
   "general": {
     "language": "system",                 // or en-US, de-DE, ...
     "runAtStartup": false,
-    "closeButtonAction": "minimizeToTray",// or "exit"
     "confirmBeforeClosingSession": false,
     "showSessionIconInTitle": true,
     "tabHeader": {
@@ -65,7 +64,6 @@ Unknown top-level fields are preserved for forward compatibility.
       "showReconnectButton": false,
       "closeButtonOnLeft": false
     },
-    "showRecentInTray": false,
     "showNoteInList": true,
     "logLevel": "warn",                   // off|error|warn|info|debug|trace
     "copyPortWithAddress": true,
@@ -179,7 +177,7 @@ dialog. The app only opens the download URL; it never installs silently.
 
 | File | Contents |
 |---|---|
-| `.locality.json` | `ui.serverView`, `ui.serverSort`, column widths, main window placement (`x/y/width/height/maximized/monitorName/scaleFactor/layoutSignature`), `preferLastDisplay`, session fullscreen monitors, last tab tokens, tab layout/grid mode/tab-button flags, detached session-window placements, launcher window placement |
+| `.locality.json` | `ui.serverView`, `ui.serverSort`, column widths, main window placement (`x/y/width/height/maximized/monitorName/scaleFactor/layoutSignature`), `preferLastDisplay`, session fullscreen monitors, last tab tokens, tab layout/grid mode/tab-button flags, shared session-window placement, launcher window placement |
 | `.tags.json` | `pinned[]`, `order[]` (normalised lowercase, no `#`) |
 | `.connection_records.json` | `records{id: {lastConnectedAt, connectCount}}`, newest-first `quickConnect[]` (max 200) |
 | `.list_view.json` | sort, group expansion, custom server order, column widths |

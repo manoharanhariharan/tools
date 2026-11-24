@@ -54,7 +54,6 @@
     ["Registry autostart", bootstrap.capabilities.registryAutostart],
     ["Native window embedding", bootstrap.capabilities.hwndEmbedding],
     ["Working-set trimming", bootstrap.capabilities.workingSetTrim],
-    ["Tray integration", bootstrap.capabilities.tray],
     ["Global hotkeys", bootstrap.capabilities.globalHotkey],
   ] as Array<[string, boolean]>);
 </script>

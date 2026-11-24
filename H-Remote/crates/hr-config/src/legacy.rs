@@ -11,7 +11,7 @@ use hr_theme::ThemeConfig;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::config::{CloseButtonAction, Configuration, LogLevel};
+use crate::config::{Configuration, LogLevel};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -154,15 +154,6 @@ pub fn import_settings(
         imported_keys.push("general.language".to_string());
     }
 
-    if let Some(close_behaviour) = general.get("CloseButtonBehavior").and_then(Value::as_i64) {
-        target.general.close_button_action = if close_behaviour == 0 {
-            CloseButtonAction::Exit
-        } else {
-            CloseButtonAction::MinimizeToTray
-        };
-        imported_keys.push("general.closeButtonAction".to_string());
-    }
-
     import_bool(
         general,
         "ConfirmBeforeClosingSession",
@@ -175,13 +166,6 @@ pub fn import_settings(
         "ShowSessionIconInSessionWindow",
         &mut target.general.show_session_icon_in_title,
         "general.showSessionIconInTitle",
-        &mut imported_keys,
-    );
-    import_bool(
-        general,
-        "ShowRecentlySessionInTray",
-        &mut target.general.show_recent_in_tray,
-        "general.showRecentInTray",
         &mut imported_keys,
     );
     import_bool(
@@ -422,10 +406,8 @@ mod tests {
 
         assert_eq!(settings.source, config_file);
         assert_eq!(target.general.language, "de-de");
-        assert_eq!(target.general.close_button_action, CloseButtonAction::Exit);
         assert!(target.general.confirm_before_closing_session);
         assert!(!target.general.show_session_icon_in_title);
-        assert!(target.general.show_recent_in_tray);
         assert!(!target.general.show_note_in_list);
         assert!(target.general.do_not_check_for_updates);
         assert!(!target.general.tab_header.show_icon);

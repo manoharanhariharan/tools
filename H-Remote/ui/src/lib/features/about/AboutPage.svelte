@@ -134,7 +134,7 @@
         onclick={() => commands.openUrl(app.bootstrap!.feedbackUrl).catch((error) => app.reportError(error))}
       >
         <Icon name="external" size={15} />
-        {i18n.t("tray.feedback")}
+        {i18n.t("error.reportIssue")}
       </Button>
     </section>
   </div>

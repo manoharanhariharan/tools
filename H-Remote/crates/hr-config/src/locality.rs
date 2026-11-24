@@ -101,7 +101,7 @@ pub struct SessionLocality {
     pub fullscreen_monitors: BTreeMap<String, i32>,
     /// Last active tab token per window label.
     pub last_tab_tokens: BTreeMap<String, String>,
-    /// Placement of detached session windows keyed by window label.
+    /// Placement of the shared session window keyed by window label.
     pub session_windows: BTreeMap<String, WindowPlacement>,
 }
 

@@ -373,14 +373,6 @@ pub fn show_main_window(app: AppHandle) {
 }
 
 #[tauri::command]
-pub fn hide_to_tray(app: AppHandle) -> Result<(), IpcError> {
-    window::save_placement(&app);
-    window::hide_main(&app)?;
-    let _ = hr_platform::trim_working_set();
-    Ok(())
-}
-
-#[tauri::command]
 pub fn validate_hotkey(hotkey: String) -> Result<String, IpcError> {
     hr_platform::canonical_hotkey(&hotkey)
         .map_err(|error| AppError::validation(error.to_string()).into())
@@ -2221,17 +2213,6 @@ pub fn open_session_window(
 ) -> Result<String, IpcError> {
     state.sessions.snapshot(&session_id)?;
     Ok(window::open_session_window(&app, &session_id, placement)?)
-}
-
-#[tauri::command]
-pub fn dock_session_window(app: AppHandle, label: String) -> Result<(), IpcError> {
-    Ok(window::dock_session_window(&app, &label)?)
-}
-
-#[tauri::command]
-pub fn save_session_window_placement(app: AppHandle, label: String) -> Result<(), IpcError> {
-    window::save_session_placement(&app, &label);
-    Ok(())
 }
 
 #[tauri::command]

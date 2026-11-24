@@ -17,9 +17,10 @@
   import { availableLayouts, isLayoutValid, resolveLayout } from "./layouts";
 
   interface Props {
-    detachedId?: string | null;
+    /** True when this component owns a dedicated session window. */
+    standalone?: boolean;
   }
-  let { detachedId = null }: Props = $props();
+  let { standalone = false }: Props = $props();
 
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   let layoutOpen = $state(false);
@@ -29,11 +30,7 @@
   let onKeydown: ((event: KeyboardEvent) => void) | undefined;
   let onFullscreen: (() => void) | undefined;
 
-  const sessionsInWorkspace = $derived(
-    detachedId
-      ? sessions.sessions.filter((session) => session.id === detachedId)
-      : sessions.sessions.filter((session) => !sessions.detached.has(session.id)),
-  );
+  const sessionsInWorkspace = $derived(sessions.sessions);
   const active = $derived(
     sessionsInWorkspace.find((session) => session.id === sessions.activeId) ??
       sessionsInWorkspace[0] ??
@@ -203,25 +200,6 @@
         label: "Customise tab buttons",
         action: () => void customiseButtons(),
       },
-      {
-        label: "Detach to a window",
-        disabled: Boolean(detachedId),
-        action: () =>
-          void sessions.detach(session.id, {
-            x: Math.max(0, Math.round(event.screenX - 80)),
-            y: Math.max(0, Math.round(event.screenY - 40)),
-            width: 960,
-            height: 680,
-          }),
-      },
-      ...(detachedId
-        ? [
-            {
-              label: "Dock back to main window",
-              action: () => void sessions.dock(detachedId),
-            },
-          ]
-        : []),
       { separator: true },
       {
         label: i18n.t("common.close") + " all tabs",
@@ -327,7 +305,7 @@
     for (const session of [...sessionsInWorkspace]) {
       await sessions.close(session.id);
     }
-    if (detachedId) {
+    if (standalone) {
       await closeDetachedWindow();
     }
   }
@@ -521,11 +499,6 @@
           All tabs
         </Button>
       {/if}
-      {#if detachedId}
-        <Button size="sm" variant="primary" onclick={() => void sessions.dock(detachedId)}>
-          Dock
-        </Button>
-      {/if}
       {#if active && active.state === "connected"}
         <Button size="sm" variant="secondary" onclick={() => void sessions.cancel(active.id)}>
           Disconnect
@@ -570,7 +543,9 @@
     {#if sessionsInWorkspace.length === 0}
       <div class="empty">
         <h2>No sessions in this window</h2>
-        <Button variant="secondary" onclick={() => void closeDetachedWindow()}>Close window</Button>
+        {#if standalone}
+          <Button variant="secondary" onclick={() => void closeDetachedWindow()}>Close window</Button>
+        {/if}
       </div>
     {:else}
       <div

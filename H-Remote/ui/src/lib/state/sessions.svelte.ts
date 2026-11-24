@@ -1,4 +1,3 @@
-import { SvelteSet } from "svelte/reactivity";
 import type {
   AvailabilityEntry,
   Locality,
@@ -29,9 +28,10 @@ const DEFAULT_WORKSPACE: TabWorkspaceSettings = {
 };
 
 /**
- * Owns the session tab workspace: snapshots, tab order, grid layout, detached
- * windows and the frame polling loop. Frames are fetched only for visible
- * sessions (one in focus mode, all tabs in grid mode).
+ * Owns the session tab workspace: snapshots, tab order, grid layout and the
+ * frame polling loop. Every connection is hosted in the single shared session
+ * window; frames are fetched only for visible sessions (one in focus mode, all
+ * tabs in grid mode).
  */
 class SessionsStore {
   sessions = $state<SessionSnapshot[]>([]);
@@ -39,7 +39,6 @@ class SessionsStore {
   frames = $state<Record<string, string>>({});
   cursors = $state<Record<string, SessionCursor>>({});
   visibleIds = $state<string[]>([]);
-  detached = new SvelteSet<string>();
   focusedId = $state<string | null>(null);
   availability = $state<AvailabilityEntry[] | null>(null);
   layout = $state(DEFAULT_WORKSPACE.layout);
@@ -56,7 +55,6 @@ class SessionsStore {
   private cleanup = new CleanupRegistry();
   private poll: ReturnType<typeof setInterval> | undefined;
   private subscribed = false;
-  private dockSubscribed = false;
   private polling = new Set<string>();
   private frameLoops = new Set<string>();
   private queuedRefreshes = new Set<string>();
@@ -114,18 +112,6 @@ class SessionsStore {
       subscribe<SessionEvent>(
         "session:event",
         (event) => this.handleEvent(event),
-        this.cleanup,
-      );
-    }
-    if (!this.dockSubscribed) {
-      this.dockSubscribed = true;
-      subscribe<string>(
-        "session:dock",
-        (label) => {
-          const id = label.startsWith("session-") ? label.slice(8) : label;
-          this.detached.delete(id);
-          this.syncVisible();
-        },
         this.cleanup,
       );
     }
@@ -210,7 +196,9 @@ class SessionsStore {
     },
   ): Promise<void> {
     this.busy = true;
-    this.startEvents();
+    if (!isTauriRuntime) {
+      this.startEvents();
+    }
     try {
       let username = options?.username;
       let password = options?.password;
@@ -266,10 +254,15 @@ class SessionsStore {
       this.replace(snapshot);
       this.activeId = snapshot.id;
       this.focusedId = null;
-      this.detached.delete(snapshot.id);
-      this.syncVisible();
-      this.startPolling();
-      this.updateWindowTitle();
+      if (isTauriRuntime) {
+        // The shared session window owns frames, tabs and the grid. The window
+        // that initiated the connection (catalog or launcher) stays a catalog.
+        await this.hostSession(snapshot.id);
+      } else {
+        this.syncVisible();
+        this.startPolling();
+        this.updateWindowTitle();
+      }
     } catch (reason) {
       await app.reportError(reason);
     } finally {
@@ -285,16 +278,15 @@ class SessionsStore {
     this.availabilityResolve?.(proceed);
   }
 
-  async connectNewWindow(server: Server): Promise<void> {
-    await this.connect(server);
-    const snapshot = this.sessions[this.sessions.length - 1];
-    if (snapshot && snapshot.serverId === server.id) {
-      await this.detach(snapshot.id, {
-        x: 120,
-        y: 120,
-        width: 1000,
-        height: 700,
-      });
+  /** Shows (or focuses) the shared window that hosts every session tab. */
+  async hostSession(id: string): Promise<void> {
+    if (!isTauriRuntime) {
+      return;
+    }
+    try {
+      await commands.openSessionWindow(id);
+    } catch (reason) {
+      await app.reportError(reason);
     }
   }
 
@@ -326,7 +318,20 @@ class SessionsStore {
         return;
       }
       for (const server of matches) {
-        if (server.protocol === "rdp") {
+        if (
+          [
+            "rdp",
+            "vnc",
+            "ssh",
+            "telnet",
+            "serial",
+            "sftp",
+            "ftp",
+            "localApp",
+            "remoteApp",
+            "custom",
+          ].includes(server.protocol)
+        ) {
           await this.connect(server);
         }
       }
@@ -485,37 +490,6 @@ class SessionsStore {
     if (patch.showClose !== undefined) this.showClose = patch.showClose;
     if (patch.showReconnect !== undefined) this.showReconnect = patch.showReconnect;
     await this.persistWorkspace();
-  }
-
-  async detach(id: string, placement?: { x: number; y: number; width: number; height: number }): Promise<void> {
-    if (!isTauriRuntime) {
-      // The browser mock has no multi-window support; focus the session instead
-      // of losing it.
-      this.focus(id);
-      return;
-    }
-    try {
-      await commands.openSessionWindow(id, placement);
-      this.detached.add(id);
-      if (this.activeId === id) {
-        const next = this.sessions.find((session) => session.id !== id);
-        this.activeId = next?.id ?? null;
-      }
-      this.syncVisible();
-    } catch (reason) {
-      await app.reportError(reason);
-    }
-  }
-
-  async dock(id: string): Promise<void> {
-    try {
-      await commands.dockSessionWindow(`session-${id}`);
-    } catch (reason) {
-      await app.reportError(reason);
-    } finally {
-      this.detached.delete(id);
-      this.syncVisible();
-    }
   }
 
   async sendCtrlAltDel(id = this.activeId): Promise<void> {
@@ -747,7 +721,6 @@ class SessionsStore {
     this.reconnectTimers.clear();
     this.cleanup.dispose();
     this.subscribed = false;
-    this.dockSubscribed = false;
   }
 
   resetForTests(): void {
@@ -758,7 +731,6 @@ class SessionsStore {
     this.frames = {};
     this.cursors = {};
     this.visibleIds = [];
-    this.detached.clear();
     this.focusedId = null;
     this.availability = null;
     this.availabilityResolve = null;
@@ -797,18 +769,12 @@ class SessionsStore {
   }
 
   private syncVisible(): void {
-    if (this.detached.size > 0 && this.sessions.length === this.detached.size) {
-      this.visibleIds = [];
-      return;
-    }
     if (this.focusedId) {
       this.visibleIds = [this.focusedId];
       return;
     }
     if (this.gridMode && this.sessions.length >= 2) {
-      this.visibleIds = this.sessions
-        .filter((session) => !this.detached.has(session.id))
-        .map((session) => session.id);
+      this.visibleIds = this.sessions.map((session) => session.id);
       return;
     }
     this.visibleIds = this.activeId ? [this.activeId] : [];
@@ -816,7 +782,6 @@ class SessionsStore {
 
   private removeLocal(id: string): void {
     this.sessions = this.sessions.filter((session) => session.id !== id);
-    this.detached.delete(id);
     this.fitSizes.delete(id);
     this.autoReconnects.delete(id);
     const reconnect = this.reconnectTimers.get(id);

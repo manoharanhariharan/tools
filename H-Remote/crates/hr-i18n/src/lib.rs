@@ -431,8 +431,7 @@ mod tests {
         for key in [
             "guidance.title",
             "settings.general",
-            "general.closeAction.tray",
-            "tray.recent",
+            "general.startMinimized",
             "error.title",
             "capability.osKeyring",
             "logs.level.warn",

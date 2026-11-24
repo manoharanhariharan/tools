@@ -12,14 +12,6 @@ pub const DEFAULT_HOTKEY: &str = "Alt+M";
 pub const MAX_RECENT_SESSIONS: u8 = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub enum CloseButtonAction {
-    Exit,
-    #[default]
-    MinimizeToTray,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     Off,
@@ -96,11 +88,9 @@ pub struct GeneralConfig {
     /// `system` or a supported locale id such as `de-DE`.
     pub language: String,
     pub run_at_startup: bool,
-    pub close_button_action: CloseButtonAction,
     pub confirm_before_closing_session: bool,
     pub show_session_icon_in_title: bool,
     pub tab_header: TabHeaderConfig,
-    pub show_recent_in_tray: bool,
     pub show_note_in_list: bool,
     pub log_level: LogLevel,
     pub copy_port_with_address: bool,
@@ -124,11 +114,9 @@ impl Default for GeneralConfig {
         Self {
             language: "system".to_string(),
             run_at_startup: false,
-            close_button_action: CloseButtonAction::MinimizeToTray,
             confirm_before_closing_session: false,
             show_session_icon_in_title: true,
             tab_header: TabHeaderConfig::default(),
-            show_recent_in_tray: false,
             show_note_in_list: true,
             log_level: LogLevel::Warn,
             copy_port_with_address: true,
@@ -383,10 +371,6 @@ mod tests {
         let config = Configuration::default();
         assert_eq!(config.schema_version, CONFIG_SCHEMA_VERSION);
         assert_eq!(config.general.language, "system");
-        assert_eq!(
-            config.general.close_button_action,
-            CloseButtonAction::MinimizeToTray
-        );
         assert!(config.general.show_note_in_list);
         assert_eq!(config.general.log_level, LogLevel::Warn);
         assert_eq!(config.launcher.hotkey, DEFAULT_HOTKEY);

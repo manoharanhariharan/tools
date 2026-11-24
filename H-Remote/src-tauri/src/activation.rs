@@ -108,7 +108,8 @@ pub fn dispatch(app: &AppHandle, actions: &[CliAction]) {
             CliAction::ConnectById(_)
             | CliAction::ConnectByTag(_)
             | CliAction::ConnectByName(_) => {
-                window::show_main(app);
+                // Connections open in the shared session window, so the catalog
+                // window stays hidden when launched from a shortcut.
                 let _ = app.emit("activation:connect", action);
             }
         }

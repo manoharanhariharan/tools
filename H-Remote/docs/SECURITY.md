@@ -85,7 +85,7 @@ Phase 0 ships the settings and UI gates; Phase 7 adds:
 - No environment-variable dump is included (avoids leaking tokens from the
   parent environment).
 - Reports are local; nothing is uploaded automatically.
-- The log directory can be opened from the tray/settings for support.
+- The log directory can be opened from settings for support.
 
 ## 6. Platform capabilities
 

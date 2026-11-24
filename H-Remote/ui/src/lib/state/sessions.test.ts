@@ -229,6 +229,10 @@ describe("session store", () => {
 
     await sessions.setGridMode(true);
     expect(sessions.visibleIds).toEqual([first.id, second.id]);
+    expect(sessions.sessions.map((session) => session.id)).toEqual([
+      first.id,
+      second.id,
+    ]);
     expect(sessions.gridMode).toBe(true);
 
     await sessions.setLayout("2-rows");
@@ -242,15 +246,11 @@ describe("session store", () => {
     expect(locality.ui.showTabReconnect).toBe(false);
   });
 
-  it("focuses a tab instead of detaching in the browser mock", async () => {
+  it("keeps connections in the shared workspace in the browser mock", async () => {
     const snapshot = await connectRdp();
-    await sessions.detach(snapshot.id);
-    expect(sessions.detached.has(snapshot.id)).toBe(false);
-    expect(sessions.focusedId).toBe(snapshot.id);
+    await sessions.hostSession(snapshot.id);
+    expect(sessions.activeId).toBe(snapshot.id);
     expect(sessions.visibleIds).toEqual([snapshot.id]);
-
-    await sessions.dock(snapshot.id);
-    expect(sessions.detached.has(snapshot.id)).toBe(false);
   });
 
   it("closes other tabs but keeps the requested one", async () => {

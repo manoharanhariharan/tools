@@ -81,7 +81,7 @@ Rust (361 tests):
   `tests/session_flow.rs` plus an ignored live-host smoke test.
 - **hr-files** — SFTP/FTP connection, listing, rename/delete/mkdir, streaming
   upload/download with bounded copy, progress and cancellation.
-- **hremote** — profile marker replacement, tray recent rows, state bootstrap
+- **hremote** — profile marker replacement, shared session-window labels, state bootstrap
   with a temp profile and launch counters, source/rating guards, update status,
   session-script environment and pre-connect aborts, match-cache keys, shutdown.
 

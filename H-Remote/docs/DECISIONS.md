@@ -224,23 +224,24 @@ right trade-off for a remote desktop, where only the newest frame matters);
 Phase 4 can switch the consumer to a direct canvas/custom protocol without
 changing the engine API.
 
-## ADR-018 — Detached sessions are second webview windows
+## ADR-018 — One shared session window hosts every tab
 
 **Context.** The reference creates a native tab window per session and supports
 dragging tabs between windows. Our sessions render in a webview, and OS-level
 window dragging between webviews is not portable.
 
-**Decision.** One window hosts all tabs and the grid workspace. "Detach" asks
-Rust to create a `session-<id>` webview window at the drop position; the window
-loads the same SPA with `?session=<id>`, polls only that session and offers a
-Dock command that emits `session:dock` to the main window before closing.
-Window geometry is stored in `locality.session.sessionWindows`.
+**Decision.** Connections never replace the catalog with a session workspace.
+The first connection opens the single `sessions` webview window
+(`index.html?window=sessions`); later connections focus it and appear as tabs.
+That window renders the full tab strip and grid workspace, polls only its
+visible panes and stores its geometry in `locality.session.sessionWindows`.
+Closing the main catalog window exits the app because there is no tray icon.
 
-**Consequences.** Detach/dock is deterministic and testable in Rust; there is no
-native drag animation between windows. Each window is a separate JS context, so
-the session list is always read from the manager rather than shared in memory.
-The design keeps the door open for a future custom-protocol/canvas transport
-without changing the window model.
+**Consequences.** Tabs/grid always render in a window dedicated to sessions,
+and the catalog remains usable while sessions are live. The shared window is a
+separate JS context that reads the session list from the manager, so it stays
+correct after reloads. The design keeps the door open for a future
+custom-protocol/canvas transport without changing the window model.
 
 ## ADR-019 — Launcher is a persistent hidden webview
 

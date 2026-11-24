@@ -9,20 +9,12 @@ use crate::state::AppState;
 
 pub const MAIN_WINDOW: &str = "main";
 pub const LAUNCHER_WINDOW: &str = "launcher";
-pub const SESSION_WINDOW_PREFIX: &str = "session-";
+/// One shared window hosts every live session as a tab, including the grid
+/// workspace. The main window is the catalog only.
+pub const SESSION_WINDOW: &str = "sessions";
 pub const LAUNCHER_WIDTH: u32 = 720;
 pub const LAUNCHER_MIN_HEIGHT: u32 = 220;
 pub const LAUNCHER_MAX_HEIGHT: u32 = 760;
-
-pub fn session_window_label(session_id: &str) -> String {
-    format!(
-        "{SESSION_WINDOW_PREFIX}{}",
-        session_id
-            .chars()
-            .filter(|character| character.is_ascii_alphanumeric() || *character == '-')
-            .collect::<String>()
-    )
-}
 
 pub fn main_window(app: &AppHandle) -> AppResult<WebviewWindow> {
     app.get_webview_window(MAIN_WINDOW)
@@ -213,7 +205,7 @@ pub fn save_placement(app: &AppHandle) {
             .update(|locality| locality.ui.main_window = Some(placement));
     }
     for (label, window) in app.webview_windows() {
-        if label.starts_with(SESSION_WINDOW_PREFIX)
+        if label == SESSION_WINDOW
             && let Some(placement) = capture_placement(&window)
         {
             state.locality.update(|locality| {
@@ -241,14 +233,14 @@ pub fn save_session_placement(app: &AppHandle, label: &str) {
     });
 }
 
-/// Opens (or focuses) a detached session window. The size/position comes from
-/// the drop point, then the last stored placement, then a centred default.
+/// Opens (or focuses) the shared session window. The size/position comes from
+/// the last stored placement, then a centred default.
 pub fn open_session_window(
     app: &AppHandle,
-    session_id: &str,
+    _session_id: &str,
     requested: Option<WindowPlacement>,
 ) -> AppResult<String> {
-    let label = session_window_label(session_id);
+    let label = SESSION_WINDOW.to_string();
     if let Some(existing) = app.get_webview_window(&label) {
         let _ = existing.show();
         let _ = existing.unminimize();
@@ -283,29 +275,20 @@ pub fn open_session_window(
             ..WindowPlacement::default()
         })
     });
-    let url = format!("index.html?session={session_id}");
-    let window = tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::App(url.into()))
-        .title("H-Remote session")
-        .inner_size(f64::from(placement.width), f64::from(placement.height))
-        .position(f64::from(placement.x), f64::from(placement.y))
-        .min_inner_size(640.0, 480.0)
-        .build()
-        .map_err(|error| AppError::platform(format!("cannot open the session window: {error}")))?;
+    let window = tauri::WebviewWindowBuilder::new(
+        app,
+        &label,
+        tauri::WebviewUrl::App("index.html?window=sessions".into()),
+    )
+    .title("H-Remote sessions")
+    .inner_size(f64::from(placement.width), f64::from(placement.height))
+    .position(f64::from(placement.x), f64::from(placement.y))
+    .min_inner_size(640.0, 480.0)
+    .build()
+    .map_err(|error| AppError::platform(format!("cannot open the session window: {error}")))?;
     let _ = window.show();
     let _ = window.set_focus();
     Ok(label)
-}
-
-pub fn dock_session_window(app: &AppHandle, label: &str) -> AppResult<()> {
-    use tauri::Emitter;
-    let Some(window) = app.get_webview_window(label) else {
-        return Ok(());
-    };
-    if let Ok(main) = main_window(app) {
-        let _ = main.emit("session:dock", label.to_string());
-    }
-    let _ = window.close();
-    Ok(())
 }
 
 fn capture_placement(window: &WebviewWindow) -> Option<WindowPlacement> {
@@ -405,22 +388,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn session_labels_are_safe_and_prefixed() {
-        assert_eq!(
-            session_window_label("01JABCDEF"),
-            "session-01JABCDEF".to_string()
-        );
-        assert_eq!(
-            session_window_label("weird/../id with spaces"),
-            "session-weirdidwithspaces".to_string()
-        );
-    }
-
-    #[test]
-    fn session_labels_round_trip_through_the_prefix() {
-        let label = session_window_label("abc-123");
-        assert!(label.starts_with(SESSION_WINDOW_PREFIX));
-        assert_eq!(&label[SESSION_WINDOW_PREFIX.len()..], "abc-123");
+    fn session_window_is_a_single_shared_label() {
+        assert_eq!(SESSION_WINDOW, "sessions");
+        assert!(!SESSION_WINDOW.starts_with("session-"));
     }
 
     #[test]

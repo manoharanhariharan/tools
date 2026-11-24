@@ -1,4 +1,8 @@
-# Phase 0 — Foundation & application shell
+# Phase 0
+
+> Historical note: the tray icon and minimize-to-tray setting were removed on
+> request. The catalog window now exits on close; connections open in the shared
+> session window, and the launcher/settings/About paths remain. — Foundation & application shell
 
 **Status: complete (2026-11-22).** All 78 P0 feature IDs have an implementation
 and a verification path. Items whose *consumer* legitimately arrives in a later

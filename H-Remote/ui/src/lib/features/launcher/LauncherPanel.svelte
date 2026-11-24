@@ -204,7 +204,6 @@
 
   async function connect(server: Server): Promise<void> {
     await sessions.connect(server);
-    await commands.showMainWindow().catch(() => undefined);
     await commands.hideLauncher().catch(() => undefined);
     await refresh();
   }
@@ -332,7 +331,7 @@
         await refresh();
       }
       sessions.handleEvent({ kind: "state", session: outcome.session });
-      await commands.showMainWindow().catch(() => undefined);
+      await sessions.hostSession(outcome.session.id);
       await commands.hideLauncher().catch(() => undefined);
       await refresh();
     } catch (reason) {
@@ -429,7 +428,6 @@
         {#each selected.alternateCredentials ?? [] as alternate (alternate.name)}
           <Button size="sm" variant="ghost" onclick={() => void sessions.connectVia(selected, alternate.name)}>Via {alternate.name || alternate.address}</Button>
         {/each}
-        <Button size="sm" variant="secondary" onclick={() => void sessions.connectNewWindow(selected)}>New window</Button>
         <Button size="sm" variant="ghost" onclick={() => void edit(selected)}>Edit</Button>
         <Button size="sm" variant="ghost" onclick={() => void duplicate(selected)}>Duplicate</Button>
         <Button size="sm" variant="ghost" onclick={() => void createShortcut(selected)}>Shortcut</Button>

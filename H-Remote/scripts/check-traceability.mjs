@@ -13,10 +13,11 @@ try {
 } catch {
   // Standalone checkout: fall back to the known Phase 0/1/2 ID ranges.
   const ids = [];
-  for (const phase of [0, 1]) {
-    for (let index = 1; index <= 78; index += 1) {
-      ids.push(`P${phase}-${String(index).padStart(2, "0")}`);
-    }
+  for (let index = 1; index <= 78; index += 1) {
+    ids.push(`P0-${String(index).padStart(2, "0")}`);
+  }
+  for (let index = 1; index <= 45; index += 1) {
+    ids.push(`P1-${String(index).padStart(2, "0")}`);
   }
   for (let index = 1; index <= 69; index += 1) {
     ids.push(`P2-${String(index).padStart(2, "0")}`);

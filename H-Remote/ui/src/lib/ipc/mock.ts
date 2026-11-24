@@ -555,7 +555,6 @@ export function defaultConfiguration(): Configuration {  return {
     general: {
       language: "system",
       runAtStartup: false,
-      closeButtonAction: "minimizeToTray",
       confirmBeforeClosingSession: false,
       showSessionIconInTitle: true,
       tabHeader: {
@@ -564,7 +563,6 @@ export function defaultConfiguration(): Configuration {  return {
         showReconnectButton: false,
         closeButtonOnLeft: false,
       },
-      showRecentInTray: false,
       showNoteInList: true,
       logLevel: "warn",
       copyPortWithAddress: true,
@@ -814,7 +812,6 @@ function caps(): Capabilities {
     nativeRdpFallback: true,
     embeddedRdp: true,
     globalHotkey: true,
-    tray: true,
     workingSetTrim: true,
     supportsMultipleMonitors: true,
   };
@@ -1171,9 +1168,7 @@ export async function mockInvoke<T>(
       return mockLocality() as T;
     }
     case "open_session_window":
-      return `session-${String(args?.sessionId ?? "unknown")}` as T;
-    case "dock_session_window":
-    case "save_session_window_placement":
+      return "sessions" as T;
     case "set_window_title":
       return undefined as T;
     case "save_window_placement":
@@ -1182,7 +1177,6 @@ export async function mockInvoke<T>(
     case "ui_ready":
     case "flash_window":
     case "show_main_window":
-    case "hide_to_tray":
       return undefined as T;
     case "record_connection":
       recordMockConnection(String(args?.serverId ?? ""));

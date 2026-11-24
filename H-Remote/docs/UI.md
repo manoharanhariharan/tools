@@ -79,7 +79,7 @@ degradation notes.
 ```
 features/settings/
   SettingsPage.svelte       section navigation + routing
-  GeneralSettings.svelte    language, startup, tray, updates, matching, close behaviour
+  GeneralSettings.svelte    language, startup, updates, matching, close behaviour
   AppearanceSettings.svelte themes (incl. High Contrast) and font size
   LauncherSettings.svelte   hotkey and recent limit
   RunnersSettings.svelte    runner definitions (external / externalSsh / internal)
@@ -102,7 +102,8 @@ bootstrap payload.
 ```
 features/session/
   SessionWorkspace.svelte   tab strip, grid/snap layouts, focus/full-screen,
-                            context menus, detach/dock, close-all
+                            context menus, close-all; standalone in the shared
+                            `sessions` window
   SessionPane.svelte        one session surface: RDP/VNC frames, process
                             state, VNC pointer/keyboard/special keys, resize
   FileBrowser.svelte        SFTP/FTP listing, path navigation, transfers
@@ -111,7 +112,7 @@ features/session/
   layouts.ts                snap presets + auto layout + validation
   vnc.ts                    browser → X11 keycode/button/coordinate mapping
 state/sessions.svelte.ts    tabs, frames, visibility polling, layout/button
-                            settings, detach/dock, activation, teardown
+                            settings, activation, shared-window hosting, teardown
 ```
 
 Detached windows load the same SPA with `?session=<id>` and render the workspace
@@ -165,7 +166,7 @@ Rules:
 
 ## 5. Navigation and routes
 
-Routes: `servers` (catalog), `settings`, `about`. `ui:navigate` from the tray
+Routes: `servers` (catalog), `settings`, `about`. `ui:navigate` from the launcher
 selects a route. The catalog replaces the Phase 0 placeholder without changing
 the shell contracts.
 

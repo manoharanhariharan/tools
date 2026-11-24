@@ -5,9 +5,9 @@ Cross-platform remote session manager, rebuilt from the 1Remote feature inventor
 
 > **Status: Phases 0–11 complete.** The application boots, resolves a portable or
 > AppData profile, persists configuration/local state crash-safely, localises,
-> themes, runs in the tray, registers a global hotkey, writes crash reports, and
-> ships a modular settings/wizard UI. Protocols, encrypted catalog, sessions,
-> tab/grid workspace, launcher, remote files, the credential vault, multiple
+> themes, registers a global hotkey, writes crash reports, and ships a modular
+> settings/wizard UI. Protocols, encrypted catalog, sessions, a shared
+> tab/grid session window, launcher, remote files, the credential vault, multiple
 > read-only data sources, automation (CLI/scripts/updates/rating), extensibility
 > (custom protocols, configurable matching, high-contrast theme) and the
 > QA/release tooling (auditable `BUILD.txt`, CI matrix, optional signing) are
@@ -38,7 +38,7 @@ decisions: [`docs/DECISIONS.md`](docs/DECISIONS.md).
 - Node.js 24+ and npm 11+
 - Tauri prerequisites for your OS: WebView2 (Windows), `libwebkit2gtk-4.1-dev`
   and friends (Linux), Xcode command-line tools (macOS)
-- A desktop session for the tray/hotkey features
+- A desktop session for the launcher/hotkey features
 
 ## Run
 
@@ -116,7 +116,7 @@ unmounts. Rules and checklist: [`docs/MEMORY.md`](docs/MEMORY.md).
 
 ```
 crates/        Rust domain/infrastructure crates (no UI dependencies)
-src-tauri/     Tauri composition root, commands, tray, window chrome
+src-tauri/     Tauri composition root, commands, window chrome
 ui/            Svelte 5 feature modules, typed IPC, tests
 locales/       Fluent catalogs shared by both languages
 docs/          Architecture, decisions, phase plan, security, testing
@@ -132,14 +132,14 @@ Phase 0 is complete. The dependency-ordered plan continues with:
    shortcuts. ✅
 3. **Phase 3** — IronRDP engine, shared-memory frames, reconnect, `mstsc`
    fallback. ✅
-4. **Phase 4** — tab workspace, grid/snap layouts, detached windows,
+4. **Phase 4** — shared session window, tab workspace, grid/snap layouts,
    full-screen. ✅
 5. **Phase 5** — global launcher, quick connect, history. ✅
 6. **Phase 6** — VNC, terminal runners, RemoteApp, LocalApp, runner settings. ✅
 7. **Phase 6b** — SFTP/FTP browser and transfer queue. ✅
 8. **Phase 7** — credential vault, alternates, reachability, verification. ✅
 9. **Phase 8** — multiple read-only data sources, health and grouping. ✅
-10. **Phase 9** — CLI/shortcuts, scripts, imports, updates, rating, tray. ✅
+10. **Phase 9** — CLI/shortcuts, scripts, imports, updates, rating. ✅
 11. **Phase 10** — custom protocols, matcher UI, performance, accessibility. ✅
 12. **Phase 11** — QA, build matrix, CI releases, signing, upgrade paths. ✅
 
@@ -167,3 +167,15 @@ The file-transfer stage is documented in
 [`docs/PHASE-10.md`](docs/PHASE-10.md). QA/release engineering lives in
 [`docs/PHASE-11.md`](docs/PHASE-11.md), with the
 [build matrix](docs/BUILD-MATRIX.md) and [signing](docs/SIGNING.md) notes.
+
+## Release task
+
+After a feature is complete, run the publish-and-push task:
+
+```powershell
+.\scripts\release.ps1 -Message "feat(h-remote): ..."
+```
+
+It runs the quality gates, commits source, builds the bundles, publishes the
+portable executable to `publish/`, commits the release and pushes. See
+[`docs/RELEASING.md`](docs/RELEASING.md).

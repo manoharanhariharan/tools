@@ -18,7 +18,7 @@ ships in the noted phase), **Deferred** (explicitly assigned to a later phase).
 | P0-11 | Done (settings) | `legacy.rs` detect/import | legacy tests; servers → P9 |
 | P0-12 | Done | `hr-i18n` negotiation (`sys-locale`) | negotiation tests |
 | P0-13 | Done | `assets.rs`, stores, `state.rs` | asset tests; startup state test |
-| P0-14 | Done (global cache P1) | theme/tray/hotkey/SQLite in `main.rs` | state test; DB tests |
+| P0-14 | Done (global cache P1) | theme/hotkey/SQLite in `main.rs` | state test; DB tests |
 | P0-15 | Done | `hr-platform::cli`, single-instance plugin | CLI matrix |
 | P0-16 | Done | `start_minimized` in state/main | CLI + window restore |
 | P0-17 | Done | `config.rs` | config tests |
@@ -41,7 +41,7 @@ ships in the noted phase), **Deferred** (explicitly assigned to a later phase).
 | P0-34 | Done | `I18n::set_locale`, `i18n.setLocale` | runtime switch tests |
 | P0-35 | Done | `locales/*.ftl` (14) | catalog count test |
 | P0-36 | Done | missing-key tracking in Rust/JS | missing-key tests |
-| P0-37 | Done | config watcher rebuilds tray; runes labels | i18n tests; tray watcher code |
+| P0-37 | Done | config watcher; runes labels | i18n tests; watcher code |
 | P0-38 | Done | `hr-theme` ten presets (nine reference + High Contrast) | preset tests |
 | P0-39 | Done | `AppearanceSettings.svelte` | theme tests + E2E |
 | P0-40 | Done | `theme/apply.ts` CSS variables | theme tests |
@@ -58,30 +58,30 @@ ships in the noted phase), **Deferred** (explicitly assigned to a later phase).
 | P0-51 | Done (local) | `tracing` abstraction, local crash reports | logging/crash tests |
 | P0-52 | Done | `ErrorReportDialog.svelte` | app error test + E2E |
 | P0-53 | Done | panic hook + JS error/rejection handlers | app error test |
-| P0-54 | Done | `hr-platform::memory` | trim test; startup/hide calls |
+| P0-54 | Done | `hr-platform::memory` | trim test; startup call |
 | P0-55 | Done | single-instance plugin | CLI tests + wiring |
 | P0-56 | Done | `parse_cli_args` | full CLI matrix |
 | P0-57 | Done | pending queue + `ui_ready` | activation code path |
-| P0-58 | Done | `tray.rs` | recent-entry tests |
-| P0-59 | Done | recent submenu (≤20) | recent-entry tests |
-| P0-60 | Done | tray check item | menu code |
-| P0-61 | Done | reset window menu/command | placement tests |
-| P0-62 | Done | tray feedback/about/exit | menu code |
-| P0-63 | Done | config watcher rebuild | watcher + i18n tests |
+| P0-58 | Removed | tray icon removed on request | no tray process or tests |
+| P0-59 | Removed | recent tray submenu removed | launcher recents remain |
+| P0-60 | Removed | tray check item removed | no tray menu |
+| P0-61 | Done | reset window setting/command | placement tests |
+| P0-62 | Removed | tray feedback/about/exit removed | About/Settings remain |
+| P0-63 | Done | config watcher | watcher + i18n tests |
 | P0-64 | Done | language setting | E2E language test |
 | P0-65 | Done | autostart plugin | integration wiring |
-| P0-66 | Done | close action setting + window event | code path |
+| P0-66 | Removed | close always exits (no tray) | window close event |
 | P0-67 | Done (persisted; used P4) | general setting | settings E2E/persistence |
 | P0-68 | Infra (P4) | session-icon setting | settings persistence |
 | P0-69 | Infra (P4) | tab header settings | settings persistence |
-| P0-70 | Done | recent-in-tray setting/menu | tray code |
+| P0-70 | Removed | recent-in-tray setting removed | launcher recents remain |
 | P0-71 | Infra (P2) | note-in-list setting | settings persistence |
 | P0-72 | Done | log level + reload layer | logging integration test |
 | P0-73 | Infra (P2/P4) | copy-port setting | settings persistence |
 | P0-74 | Infra (P4) | close-left setting | settings persistence |
 | P0-75 | Infra (P3) | focus-local setting | settings persistence |
 | P0-76 | Infra (P9) | update-check setting | settings persistence |
-| P0-77 | Done | open log folder command/tray | code path |
+| P0-77 | Done | open log folder command/settings | code path |
 | P0-78 | Done | immediate flush in `update_config` | config/store tests |
 
 ## Verification commands

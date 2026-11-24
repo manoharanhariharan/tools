@@ -10,7 +10,7 @@
                                │ invoke() / events (typed IPC)
 ┌──────────────────────────────▼─────────────────────────────────────┐
 │ src-tauri (composition root)                                       │
-│  commands  tray  window  hotkey  activation  integrations  state   │
+│  commands  window  hotkey  activation  integrations  state       │
 └───────┬──────────┬──────────┬──────────┬──────────┬────────────────┘
         │          │          │          │          │
    hr-config   hr-crypto  hr-storage  hr-i18n   hr-observability
@@ -38,7 +38,7 @@ keeps them unit-testable and reusable by the future session-host process.
 | `hr-storage` | SQLite bootstrap, schema v3, encrypted JSON codec, repository CRUD, caches, dialect builders, read-only source manager (SQLite/MySQL/PostgreSQL) | pool closed deterministically; wrong key fails explicitly; secondary pools are single-connection, 5 s timeouts and never written |
 | `hr-session` | RDP plan, lifecycle state machine, IronRDP adapter, `mstsc` fallback, bounded frame ring | frames are bounded and tear-free; every session ends in a terminal state; secrets never logged |
 | `hr-files` | SFTP/FTP sessions, remote listing, transfers, progress/cancellation | transfers are bounded and cancellable; connections close deterministically |
-| `hremote` (`src-tauri`) | lifecycle, commands, tray, window chrome, integrations | one `AppState`, no service construction inside commands |
+| `hremote` (`src-tauri`) | lifecycle, commands, window chrome, integrations | one `AppState`, no service construction inside commands |
 
 ## 3. Composition root and state
 
@@ -50,7 +50,7 @@ receive `State<'_, AppState>` and never create duplicates.
 AppState {
   paths, config, locality, tags, connection_records, list_view, tree_view,
   i18n, capabilities, startup, preflight, db, repository, sources, assets, vault,
-  log_guard, sessions, pending_actions, data_ready, quitting, start_minimized,
+  log_guard, sessions, pending_actions, data_ready, start_minimized,
   first_run, ...
 }
 ```
@@ -68,9 +68,9 @@ Lifecycle:
    catalog repository. If the vault is ready, also load the read-only source
    manager from `hremote.dataSources.json`. Launch counters are incremented once.
 7. Parse CLI args and queue them (not processed until `ui_ready`).
-8. Build Tauri, restore the main window, build the tray, register the hotkey, and
-   start the source watcher (initial load, periodic health probe, reconnect) and
-   the update watcher (periodic manifest check).
+8. Build Tauri, restore the main window, register the hotkey, and start the
+   source watcher (initial load, periodic health probe, reconnect) and the
+   update watcher (periodic manifest check).
 9. On exit: stop the watchers, drop the repository, close every source pool, flush
    every store, close the local pool, drop the vault, stop logging.
 
@@ -120,7 +120,7 @@ Lifecycle:
 - **Debounce** — updates go to a single worker thread; the latest snapshot wins.
   `flush()` writes immediately and waits; `Drop` flushes and joins the worker.
 - **Watchers** — `tokio::sync::watch` publishes persisted snapshots. The app owns
-  exactly one watcher task that rebuilds the tray and emits `config:changed`.
+  exactly one watcher task that emits `config:changed`.
 
 ## 4a. Session pipeline
 
@@ -141,9 +141,11 @@ command (connect_server / quick_connect)
 `SharedFrameRing` is a single-slot seqlock: the sequence is odd while writing,
 readers retry, and the frame capacity is bounded at 4096×4096×4 bytes. The ring
 name is `Local\HRemoteFrame-<session id>`; non-Windows hosts use the bounded heap
-store. The workspace polls only visible panes (one in focus mode, all
-non-detached tabs in grid mode) at 150 ms; detached `session-<id>` windows load
-the same SPA and poll their own session.
+store. The shared `sessions` window loads the same SPA with
+`index.html?window=sessions` and polls only its visible panes (one in focus
+mode, all tabs in grid mode). Every connection opens or focuses that window, so
+the catalog remains a catalog and session tabs/grids always render in a window
+built for them.
 
 The launcher is a second always-on-top webview (`launcher`) loading
 `index.html?window=launcher`. The hotkey toggles it; it loads the catalog and
@@ -160,7 +162,7 @@ Events:
 
 | Event | Payload | Consumer |
 |---|---|---|
-| `config:changed` | `Configuration` | theme/locale/tray state |
+| `config:changed` | `Configuration` | theme/locale state |
 | `ui:navigate` | `"settings" \| "about"` | route |
 | `activation:connect` | `CliAction` | catalog/launcher (Phases 2/5) |
 | `cli:errors` | `string[]` | notice bar |

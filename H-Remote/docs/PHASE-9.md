@@ -1,8 +1,10 @@
 # Phase 9 — Automation & integrations
 
 **Status: complete (2026-11-22).** Shortcut/CLI activation, startup integration,
-pre/post-connect scripts, runner automation, legacy import, update checks, rating
-prompts and the tray menu are all wired and covered by tests.
+pre/post-connect scripts, runner automation, legacy import, update checks and
+rating prompts are all wired and covered by tests. (The tray menu was removed on
+request; closing the catalog window now exits and connections open in the shared
+session window.)
 
 ## What shipped
 
@@ -17,8 +19,8 @@ prompts and the tray menu are all wired and covered by tests.
 - Shortcuts per selection/tag keep the merged icon, pass `--start-minimized`, and
   activate through the same CLI path.
 - Autostart uses the registry Run key (`tauri-plugin-autostart`).
-- The tray menu now has explicit **Show** and **Hide** entries next to the recent
-  sessions, reset-window, logs, feedback, about and exit items (P9-12).
+- Tray integration was removed on request; relaunching the executable restores a
+  minimised catalog, and connections open in the shared session window.
 
 ### Pre/post-connect scripts (P9-05/P9-06)
 

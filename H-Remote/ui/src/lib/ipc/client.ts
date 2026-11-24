@@ -74,7 +74,6 @@ export const commands = {
   dismissLegacyMigration: () =>
     invokeCommand<import("./contracts").Configuration>("dismiss_legacy_migration"),
   resetMainWindow: () => invokeCommand<void>("reset_main_window"),
-  hideToTray: () => invokeCommand<void>("hide_to_tray"),
   uiReady: () => invokeCommand<void>("ui_ready"),
   installShortcut: () => invokeCommand<string>("install_desktop_shortcut"),
   uninstallShortcut: () => invokeCommand<boolean>("uninstall_desktop_shortcut"),
@@ -325,10 +324,6 @@ export const commands = {
     ),
   openSessionWindow: (sessionId: string, placement?: unknown) =>
     invokeCommand<string>("open_session_window", { sessionId, placement }),
-  dockSessionWindow: (label: string) =>
-    invokeCommand<void>("dock_session_window", { label }),
-  saveSessionWindowPlacement: (label: string) =>
-    invokeCommand<void>("save_session_window_placement", { label }),
   setWindowTitle: (title: string) =>
     invokeCommand<void>("set_window_title", { title }),
   updateTabWorkspace: (request: {

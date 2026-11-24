@@ -15,9 +15,9 @@ use std::time::Duration;
 pub use assets::{AuxiliaryAssets, ProtocolConfigAsset, load_assets};
 pub use atomic::{LoadOutcome, read_json_or_default, write_bytes_atomic, write_json_atomic};
 pub use config::{
-    CloseButtonAction, Configuration, EngagementConfig, GeneralConfig, KeywordMatchConfig,
-    LauncherConfig, LogLevel, MatcherKind, RATING_MIN_LAUNCHES, RATING_PROMPT_COOLDOWN_SECONDS,
-    TabHeaderConfig, normalize_tags, rating_prompt_due,
+    Configuration, EngagementConfig, GeneralConfig, KeywordMatchConfig, LauncherConfig, LogLevel,
+    MatcherKind, RATING_MIN_LAUNCHES, RATING_PROMPT_COOLDOWN_SECONDS, TabHeaderConfig,
+    normalize_tags, rating_prompt_due,
 };
 pub use legacy::{
     LegacyKind, LegacyProfile, LegacyScanInput, LegacySettings, detect as detect_legacy_profiles,

@@ -8,8 +8,7 @@ pub enum TrimOutcome {
     Failed,
 }
 
-/// Releases unused pages back to the operating system after startup and when
-/// the window is hidden to the tray (P0-54).
+/// Releases unused pages back to the operating system after startup (P0-54).
 pub fn trim_working_set() -> TrimOutcome {
     #[cfg(windows)]
     {

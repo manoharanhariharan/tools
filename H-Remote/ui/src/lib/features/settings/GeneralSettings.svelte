@@ -136,19 +136,6 @@
           draft.general.startMinimized = checked;
         })}
     />
-    <SelectField
-      id="settings-close-action"
-      label={i18n.t("general.closeAction")}
-      value={config.general.closeButtonAction}
-      options={[
-        { value: "exit", label: i18n.t("general.closeAction.exit") },
-        { value: "minimizeToTray", label: i18n.t("general.closeAction.tray") },
-      ]}
-      onchange={(value) =>
-        patch((draft) => {
-          draft.general.closeButtonAction = value as Configuration["general"]["closeButtonAction"];
-        })}
-    />
     <Toggle
       id="settings-confirm-close"
       label={i18n.t("general.confirmCloseSession")}
@@ -174,15 +161,6 @@
       onchange={(checked) =>
         patch((draft) => {
           draft.general.showNoteInList = checked;
-        })}
-    />
-    <Toggle
-      id="settings-show-recent"
-      label={i18n.t("general.recentInTray")}
-      checked={config.general.showRecentInTray}
-      onchange={(checked) =>
-        patch((draft) => {
-          draft.general.showRecentInTray = checked;
         })}
     />
     <Toggle

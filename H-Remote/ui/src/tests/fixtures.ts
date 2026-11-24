@@ -58,7 +58,6 @@ export function bootstrapFixture(overrides: Partial<BootstrapDto> = {}): Bootstr
       nativeRdpFallback: true,
       embeddedRdp: true,
       globalHotkey: true,
-      tray: true,
       workingSetTrim: true,
       supportsMultipleMonitors: true,
     },

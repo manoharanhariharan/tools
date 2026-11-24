@@ -32,7 +32,6 @@ explicit, documented reason it cannot be tested).
   file after `close()` to prove no handle remains (with a short retry for the
   OS release latency).
 - Vault keys are `Zeroizing`; dropping the vault zeroizes the key.
-- Tray menu rebuilds replace the menu rather than accumulating handles.
 - The configuration watcher is a single task per process; it ends when the store
   sender is dropped at shutdown.
 - Each embedded session owns one `hremote-rdp` OS thread with a current-thread
@@ -84,9 +83,9 @@ Backend
   ├── input: unbounded bridge channel to the RDP thread
   └── cancel: token + bridge shutdown; task aborted only on remove/shutdown
 UI
-  ├── polls visible panes at 150 ms and skips hidden/detached tabs
+  ├── polls visible panes at 150 ms and skips hidden tabs
   ├── stops the interval when no session is connected and on `dispose()` (tested)
-  ├── detached `session-<id>` windows poll only their own session
+  ├── one shared `sessions` window hosts every tab and the grid
   └── never retains a second copy of a frame after `frames[id]` is replaced
 ```
 

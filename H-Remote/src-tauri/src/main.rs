@@ -9,14 +9,12 @@ mod match_cache;
 mod session_scripts;
 mod state;
 mod tls;
-mod tray;
 mod updates;
 mod window;
 
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 
-use hr_config::CloseButtonAction;
 use hr_core::AppInfo;
 use hr_observability::{StartupTrace, init_logging, install_panic_hook};
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
@@ -111,7 +109,13 @@ fn main() {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             let invocation = hr_platform::parse_cli_args(argv.iter().skip(1).cloned());
-            activation::handle(app, invocation);
+            if invocation.is_empty() {
+                // Without a tray icon, relaunching the executable is the
+                // natural way to bring a minimised catalog window back.
+                window::show_main(app);
+            } else {
+                activation::handle(app, invocation);
+            }
         }))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -155,7 +159,6 @@ fn main() {
             commands::trim_working_set,
             commands::flash_window,
             commands::show_main_window,
-            commands::hide_to_tray,
             commands::validate_hotkey,
             commands::app_info,
             commands::capabilities,
@@ -239,8 +242,6 @@ fn main() {
             commands::session_frame_image,
             commands::open_session_window,
             commands::update_tab_workspace,
-            commands::dock_session_window,
-            commands::save_session_window_placement,
             commands::set_window_title,
             commands::file_list,
             commands::file_rename,
@@ -290,13 +291,6 @@ fn main() {
                 }
             }
 
-            if let Err(error) = tray::setup(&handle) {
-                tracing::error!(%error, "tray icon unavailable; disabling minimize-to-tray");
-                handle.state::<AppState>().config.update(|config| {
-                    config.general.close_button_action = CloseButtonAction::Exit;
-                });
-            }
-
             if let Err(error) =
                 hotkey::apply(&handle, config.launcher.enabled, &config.launcher.hotkey)
             {
@@ -334,7 +328,7 @@ fn main() {
                 }
                 return;
             }
-            if window.label().starts_with(window::SESSION_WINDOW_PREFIX) {
+            if window.label() == window::SESSION_WINDOW {
                 if let WindowEvent::CloseRequested { .. } = event {
                     window::save_session_placement(window.app_handle(), window.label());
                 }
@@ -343,17 +337,8 @@ fn main() {
             if window.label() != window::MAIN_WINDOW {
                 return;
             }
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                let app = window.app_handle();
-                window::save_placement(app);
-                let state = app.state::<AppState>();
-                let minimize = state.config_snapshot().general.close_button_action
-                    == CloseButtonAction::MinimizeToTray;
-                if !state.quitting.load(Ordering::SeqCst) && minimize {
-                    api.prevent_close();
-                    let _ = window.hide();
-                    let _ = hr_platform::trim_working_set();
-                }
+            if let WindowEvent::CloseRequested { .. } = event {
+                window::save_placement(window.app_handle());
             }
         })
         .build(tauri::generate_context!());
@@ -536,9 +521,6 @@ fn spawn_config_watcher(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         while receiver.changed().await.is_ok() {
             let config = receiver.borrow_and_update().clone();
-            if let Err(error) = tray::rebuild(&app, &config) {
-                tracing::warn!(%error, "cannot rebuild the tray menu");
-            }
             let _ = app.emit("config:changed", &config);
         }
         tracing::debug!("configuration watcher stopped");
