@@ -17,12 +17,19 @@
   import PasswordField from "../../components/PasswordField.svelte";
   import ServerIcon from "../../components/ServerIcon.svelte";
   import Toggle from "../../components/Toggle.svelte";
+  import {
+    STOCK_ICONS,
+    stockIconDataUrl,
+    stockIconPngBase64,
+    type StockIcon,
+  } from "./stockIcons";
 
   let section = $state("general");
   let notePreview = $state(false);
   let iconLibrary = $state<IconLibraryEntry[]>([]);
   let iconUrl = $state("");
   let libraryOpen = $state(false);
+  let stockOpen = $state(false);
 
   const editor = $derived(catalog.editor);
   const draft = $derived(editor?.draft);
@@ -185,7 +192,22 @@
 
   async function openLibrary(): Promise<void> {
     iconLibrary = await commands.listIconLibrary();
+    stockOpen = false;
     libraryOpen = true;
+  }
+
+  function toggleStockIcons(): void {
+    libraryOpen = false;
+    stockOpen = !stockOpen;
+  }
+
+  async function applyStockIcon(icon: StockIcon): Promise<void> {
+    try {
+      updateString("iconBase64", await stockIconPngBase64(icon));
+      stockOpen = false;
+    } catch (reason) {
+      await app.reportError(reason);
+    }
   }
 
   async function fetchIcon(): Promise<void> {
@@ -452,6 +474,7 @@
           <ServerIcon server={draft} size={52} />
           <div class="icon-actions">
             <Button size="sm" variant="secondary" onclick={generateIcon}>Generate</Button>
+            <Button size="sm" variant="secondary" onclick={toggleStockIcons}>Stock</Button>
             <Button size="sm" variant="secondary" onclick={() => void openLibrary()}>Library</Button>
             <label class="file-button">
               Upload
@@ -741,6 +764,28 @@
       <Button variant="primary" disabled={readOnly} onclick={() => void save()}>{i18n.t("common.save")}</Button>
     </footer>
 
+    {#if stockOpen}
+      <div class="library stock-library" role="dialog" aria-label="Stock icons">
+        <header>
+          <h3>Stock icons</h3>
+          <button type="button" aria-label="Close stock icons" onclick={() => (stockOpen = false)}>×</button>
+        </header>
+        <div class="library-grid">
+          {#each STOCK_ICONS as icon (icon.id)}
+            <button
+              type="button"
+              title={icon.name}
+              aria-label={icon.name}
+              onclick={() => void applyStockIcon(icon)}
+            >
+              <img src={stockIconDataUrl(icon)} alt="" />
+              <span>{icon.name}</span>
+            </button>
+          {/each}
+        </div>
+      </div>
+    {/if}
+
     {#if libraryOpen}
       <div class="library" role="dialog" aria-label="Icon library">
         <header><h3>Icon library</h3><button type="button" onclick={() => (libraryOpen = false)}>×</button></header>
@@ -759,15 +804,25 @@
 
 <style>
   .editor {
-    width: min(520px, 46vw);
-    min-width: 380px;
+    width: min(520px, 42vw);
+    min-width: 340px;
+    max-width: 100%;
     flex: none;
     display: flex;
     flex-direction: column;
     border-left: 1px solid var(--hr-border);
     background: color-mix(in srgb, var(--hr-primary-mid) 70%, var(--hr-background));
     min-height: 0;
+    overflow: hidden;
     position: relative;
+  }
+
+  @media (max-width: 980px) {
+    .editor {
+      flex: 1;
+      width: auto;
+      min-width: 0;
+    }
   }
 
   header {
@@ -1082,5 +1137,29 @@
     width: 100%;
     aspect-ratio: 1;
     object-fit: contain;
+  }
+
+  .stock-library {
+    inset: 14% 8% auto;
+    max-height: 62%;
+  }
+
+  .stock-library .library-grid {
+    grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+  }
+
+  .stock-library .library-grid button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 5px;
+  }
+
+  .stock-library .library-grid span {
+    font-size: 9px;
+    line-height: 1.2;
+    text-align: center;
+    color: color-mix(in srgb, var(--hr-background-text) 72%, transparent);
   }
 </style>

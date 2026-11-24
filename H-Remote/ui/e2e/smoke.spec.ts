@@ -63,6 +63,8 @@ test.describe("H-Remote shell", () => {
     await input.fill("10.0.0.55");
     await input.press("Enter");
     await expect(page.getByRole("button", { name: "10.0.0.55" })).toBeVisible();
+    // Enter confirms the inline edit; it must not also open a session.
+    await expect(page.locator(".workspace")).toHaveCount(0);
   });
 
   test("adds a server through the side editor", async ({ page }) => {
@@ -71,10 +73,28 @@ test.describe("H-Remote shell", () => {
     await page.getByRole("button", { name: /Add/ }).click();
     await expect(page.getByRole("heading", { name: "Add server" })).toBeVisible();
     await page.getByLabel("Display name", { exact: true }).fill("QA RDP");
+
+    const viewport = page.viewportSize()!;
+    const editor = await page.locator(".editor").boundingBox();
+    expect(editor).not.toBeNull();
+    expect(editor!.x).toBeGreaterThanOrEqual(0);
+    expect(editor!.x + editor!.width).toBeLessThanOrEqual(viewport.width + 1);
+
+    await page.getByRole("button", { name: "Stock", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Stock icons" })).toBeVisible();
+    await page.getByRole("button", { name: "Windows", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Stock icons" })).toHaveCount(0);
+
     await page.getByRole("button", { name: "Connection", exact: true }).click();
     await page.getByLabel("Address", { exact: true }).fill("10.0.0.77");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText("QA RDP")).toBeVisible();
+  });
+
+  test("renders the shared session window shell", async ({ page }) => {
+    await page.goto("/?window=sessions");
+    await expect(page.locator(".workspace")).toBeVisible();
+    await expect(page.getByText("No sessions in this window")).toBeVisible();
   });
 
   test("connects a session, shows frames and reconnects", async ({ page }) => {

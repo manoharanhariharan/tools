@@ -50,9 +50,13 @@ features/catalog/
   CatalogList.svelte        list rows + nested folder groups (recursive)
   CatalogCards.svelte       card grid + nested folder groups (recursive)
   CatalogTree.svelte        tree view with drag & drop and folder menus
-  ServerRow.svelte          list row: inline address edit, note, context menu
+  ServerRow.svelte          list row: inline address edit (Enter saves without
+                            connecting), note, context menu
   ServerCard.svelte         card presentation
-  ServerEditor.svelte       side panel: protocol tabs, credentials, icons, bulk
+  ServerEditor.svelte       side panel: protocol tabs, credentials, stock/library
+                            icons, bulk; bounded to the visible window width
+  stockIcons.ts             built-in Windows/Linux/macOS/server/database/cloud/
+                            web/terminal/container/firewall/VM/desktop icons
   ImportExportDialog.svelte JSON/CSV/RDP/DB import and JSON/RDP export
 ```
 

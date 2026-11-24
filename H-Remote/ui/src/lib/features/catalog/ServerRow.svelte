@@ -186,8 +186,17 @@
   style:grid-template-columns={template}
   role="row"
   tabindex="0"
-  ondblclick={() => catalog.connect([server])}
+  ondblclick={() => {
+    if (!editingAddress) {
+      void catalog.connect([server]);
+    }
+  }}
   onkeydown={(event) => {
+    // Enter belongs to the focused row only. Inputs and buttons handle their
+    // own Enter (inline IP editing must save, never connect).
+    if (event.target !== event.currentTarget) {
+      return;
+    }
     if (event.key === "Enter") {
       void catalog.connect([server]);
     }
@@ -252,9 +261,11 @@
         onkeydown={(event) => {
           if (event.key === "Enter") {
             event.preventDefault();
+            event.stopPropagation();
             void commitAddress();
           } else if (event.key === "Escape") {
             event.preventDefault();
+            event.stopPropagation();
             cancelAddress();
           }
         }}

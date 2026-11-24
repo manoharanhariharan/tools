@@ -201,6 +201,10 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
+    /* The list uses fixed column widths; without an explicit zero minimum the
+       page's min-content width pushes the editor off the right edge. */
+    min-width: 0;
+    width: 100%;
   }
 
   .page-head {
@@ -222,7 +226,9 @@
   .body {
     display: flex;
     flex: 1;
+    min-width: 0;
     min-height: 0;
+    overflow: hidden;
   }
 
   .main {

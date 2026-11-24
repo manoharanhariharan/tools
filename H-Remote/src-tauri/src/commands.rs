@@ -2135,7 +2135,7 @@ pub fn session_frame_ring(
 }
 
 #[tauri::command]
-pub fn session_frame_image(
+pub async fn session_frame_image(
     state: State<'_, AppState>,
     id: String,
     since: Option<u64>,
@@ -2148,7 +2148,12 @@ pub fn session_frame_image(
     if since == Some(frame.seq) {
         return Ok(None);
     }
-    encode_frame_image(frame).map(Some).map_err(Into::into)
+    // PNG encoding is CPU-heavy. Keep it off the Tauri main thread so a large
+    // or fast-moving remote desktop cannot make every window unresponsive.
+    let encoded = tauri::async_runtime::spawn_blocking(move || encode_frame_image(frame))
+        .await
+        .map_err(|error| AppError::internal(format!("cannot encode session frame: {error}")))?;
+    encoded.map(Some).map_err(Into::into)
 }
 
 fn encode_frame_image(frame: Frame) -> AppResult<SessionFrameImage> {

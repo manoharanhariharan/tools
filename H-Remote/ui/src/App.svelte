@@ -71,14 +71,26 @@
 {:else if isLauncherWindow}
   <LauncherPanel />
 {:else if isSessionWindow}
-  {#if app.bootstrap && app.config}
+  <svelte:boundary>
     <SessionWorkspace standalone />
-    <SessionDisplayDialog />
-    <BusyOverlay />
-    <DialogHost />
-    <ErrorReportDialog />
-    <NoticeBar />
-  {/if}
+    {#snippet failed(error, reset)}
+      <div class="fatal">
+        <div class="fatal-card">
+          <h1>{i18n.t("error.title")}</h1>
+          <p>{String(error)}</p>
+          <div class="hr-row">
+            <button type="button" class="retry" onclick={reset}>{i18n.t("common.retry")}</button>
+            <button type="button" class="logs" onclick={retry}>{i18n.t("common.refresh")}</button>
+          </div>
+        </div>
+      </div>
+    {/snippet}
+  </svelte:boundary>
+  <SessionDisplayDialog />
+  <BusyOverlay />
+  <DialogHost />
+  <ErrorReportDialog />
+  <NoticeBar />
 {:else if app.bootstrap && app.config}
   <div class="hr-shell">
     <TitleBar

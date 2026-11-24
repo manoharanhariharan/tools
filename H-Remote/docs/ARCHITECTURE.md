@@ -145,7 +145,9 @@ store. The shared `sessions` window loads the same SPA with
 `index.html?window=sessions` and polls only its visible panes (one in focus
 mode, all tabs in grid mode). Every connection opens or focuses that window, so
 the catalog remains a catalog and session tabs/grids always render in a window
-built for them.
+built for them. PNG frame encoding runs on the blocking pool, never on Tauri's
+main thread, so a busy desktop cannot prevent the session window from painting
+or responding.
 
 The launcher is a second always-on-top webview (`launcher`) loading
 `index.html?window=launcher`. The hotkey toggles it; it loads the catalog and
