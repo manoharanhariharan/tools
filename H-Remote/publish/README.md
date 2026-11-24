@@ -9,7 +9,7 @@ committed.
 
 | File | SHA-256 |
 | --- | --- |
-| `h-remote-v26.11.23.8.exe` | `3a725a40011722e0d33c9f85341dc9f9920c6691b36011182b7680feabe83bfd` |
+| `h-remote-v26.11.24.1.exe` | `a3095fad7f9fb7e10b6249ffefe2020b4f045fbd6cf5531ea1d86bd4382739ea` |
 
 `BUILD.txt` records the source commit, toolchain and build time.
 
@@ -17,12 +17,6 @@ committed.
 
 ```powershell
 .\scripts\release.ps1
-Copy-Item .\release\v<tag>\h-remote-v<tag>.exe .\publish\
-(Get-FileHash .\publish\h-remote-v<tag>.exe -Algorithm SHA256).Hash.ToLower() +
-  "  h-remote-v<tag>.exe" | Set-Content .\publish\SHA256SUMS.txt
-git add publish
-git commit -m "release(h-remote): publish v<tag>"
-git push
 ```
 
 Old executables are intentionally kept until the maintainer removes them.
