@@ -15,10 +15,11 @@ no cloud dependency.
   back on the network.
 - **Sync with explicit conflicts** — a global change cursor, idempotent retries,
   tombstones for deletes, and a review screen when two devices edit the same row.
-- **Reports** — on-screen summaries, printable HTML, server-side PDF, and CSV,
-  for any range up to 366 days.
+- **Reports** — a default Sunday ledger (previous total + Sunday earnings =
+  current total), plus on-screen summaries, printable HTML, server-side PDF, and
+  CSV for any range up to 366 days.
 - **In-house by design** — one admin password, SQLite on your machine, LAN or
-  VPN access only, ₹ / INR and IST dates.
+  VPN access only, ₹ / INR and IST dates, and light/dark/high-contrast themes.
 
 ---
 
@@ -75,6 +76,14 @@ Reset the admin password (also revokes every session):
 ```powershell
 .\target\release\daybook.exe admin set-password
 ```
+
+Signed-in admins can also change the password under **Settings → Admin account**.
+That flow verifies the current password, keeps the current device signed in, and
+signs out every other device.
+
+The **Settings** tab also selects this device's theme: System, Light, Dark, or
+High contrast. The choice is stored locally, so each phone or computer can use a
+different theme.
 
 ---
 
@@ -178,18 +187,31 @@ Every report is computed from live (non-deleted) day sheets in the requested
 range. Each report shows **business generated**, bonus, advances, deductions,
 **final money**, and a **business-by-earning-type** breakdown.
 
+The default **Sunday ledger** adds one row per employee with a prior balance or
+Sunday activity:
+
+| Column | Meaning |
+| --- | --- |
+| Previous total | Cumulative final money from all day sheets before `from` |
+| Sunday Earning | Final money earned on Sundays inside the selected range |
+| Current total | Previous total + Sunday Earning |
+
+A TOTAL row sums each money column, so the report reconciles directly with the
+screenshot-style ledger. Existing `employee`, `daily` and `entries` layouts are
+still available for downloads and print.
+
 Earning-type configuration uses `GET/POST/PATCH/DELETE /api/earning-types` and
 needs a connection; phones cache the list for offline day entry.
 
 | Output | Endpoint | Notes |
 | --- | --- | --- |
-| JSON summary | `GET /api/reports/summary?from=&to=&employee_id=` | totals, per-employee rows, per-day rows, type breakdown |
+| JSON summary | `GET /api/reports/summary?from=&to=&employee_id=` | totals, ledger, per-employee rows, per-day rows, type breakdown |
 | Printable HTML | `GET /api/reports/print.html?...&layout=` | self-contained, print CSS; open in a tab |
 | PDF | `GET /api/reports/report.pdf?...&layout=` | A4, paginated, totals, ₹ via embedded font |
 | CSV | `GET /api/reports/export.csv?...&layout=` | UTF-8 BOM, CRLF, plain decimals |
 
-Layouts: `employee` (default), `daily`, `entries` (one row per employee-day with
-its earning detail).
+Layouts: `sunday` (default), `employee`, `daily`, `entries` (one row per
+employee-day with its earning detail).
 
 - The Reports tab offers **From/To date fields** for any range plus a month
   quick-pick; changing either field refreshes the on-screen summary.
@@ -238,6 +260,8 @@ re-trust a new CA only if you generate a new one.
 
 - **Single admin account.** The password is hashed with Argon2id and stored
   server-side. Login is throttled per IP (5 failures / 5 minutes, bounded memory).
+  The password can be changed from Settings; the current session survives and
+  every other session is revoked.
 - **Sessions** are 256-bit opaque tokens; only their SHA-256 hashes are stored.
   Cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` when TLS is enabled.
 - **CSRF** is blocked by requiring an `X-Daybook-Client` header on every mutating

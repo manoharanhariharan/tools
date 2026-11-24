@@ -82,6 +82,17 @@ async fn ensure_admin_password(pool: &SqlitePool) -> anyhow::Result<Option<Strin
 }
 
 pub async fn set_admin_password(pool: &SqlitePool, password: &str) -> anyhow::Result<()> {
+    set_admin_password_keep_session(pool, password, None).await
+}
+
+/// Update the admin password. When `keep_session_token_hash` is supplied, that
+/// one session survives (the device that made the change); every other session
+/// is revoked so a lost phone cannot keep using the old credential.
+pub async fn set_admin_password_keep_session(
+    pool: &SqlitePool,
+    password: &str,
+    keep_session_token_hash: Option<&str>,
+) -> anyhow::Result<()> {
     auth::validate_password_policy(password).map_err(|msg| anyhow::anyhow!(msg))?;
     let hash = auth::hash_password(password)?;
     let mut tx = pool.begin().await?;
@@ -92,9 +103,19 @@ pub async fn set_admin_password(pool: &SqlitePool, password: &str) -> anyhow::Re
     .bind(hash)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("DELETE FROM sessions")
-        .execute(&mut *tx)
-        .await?;
+    match keep_session_token_hash {
+        Some(token_hash) => {
+            sqlx::query("DELETE FROM sessions WHERE token_hash <> ?")
+                .bind(token_hash)
+                .execute(&mut *tx)
+                .await?;
+        }
+        None => {
+            sqlx::query("DELETE FROM sessions")
+                .execute(&mut *tx)
+                .await?;
+        }
+    }
     tx.commit().await?;
     Ok(())
 }

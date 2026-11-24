@@ -8,7 +8,7 @@ use crate::AppState;
 use crate::api::{AppQuery, resolve_range};
 use crate::error::{AppError, AppResult, FieldError};
 use crate::reports::summary::{
-    self, DayTotals, EmployeeTotals, MoneyTotals, ReportData, ReportLayout, TypeTotals,
+    self, DayTotals, EmployeeTotals, LedgerRow, MoneyTotals, ReportData, ReportLayout, TypeTotals,
 };
 use crate::reports::{csv, html, pdf};
 
@@ -29,6 +29,10 @@ pub struct SummaryResponse {
     pub employees: Vec<EmployeeTotals>,
     pub days: Vec<DayTotals>,
     pub types: Vec<TypeTotals>,
+    pub ledger: Vec<LedgerRow>,
+    pub previous_total_minor: i64,
+    pub sunday_total_minor: i64,
+    pub current_total_minor: i64,
 }
 
 impl From<ReportData> for SummaryResponse {
@@ -41,6 +45,10 @@ impl From<ReportData> for SummaryResponse {
             employees: data.employees,
             days: data.days,
             types: data.types,
+            ledger: data.ledger,
+            previous_total_minor: data.previous_total_minor,
+            sunday_total_minor: data.sunday_total_minor,
+            current_total_minor: data.current_total_minor,
         }
     }
 }
@@ -80,7 +88,7 @@ fn layout_or_default(value: Option<&str>, default: ReportLayout) -> AppResult<Re
         Some(value) => ReportLayout::parse(value).ok_or_else(|| {
             AppError::Validation(vec![FieldError::new(
                 "layout",
-                "must be one of employee, daily, entries",
+                "must be one of sunday, employee, daily, entries",
             )])
         }),
     }
@@ -106,7 +114,7 @@ pub async fn export_csv(
     AppQuery(query): AppQuery<ReportQuery>,
 ) -> AppResult<Response> {
     let request = parse_request(&query)?;
-    let layout = layout_or_default(query.layout.as_deref(), ReportLayout::Employee)?;
+    let layout = layout_or_default(query.layout.as_deref(), ReportLayout::Sunday)?;
     let data = summary::load(
         &state.pool,
         &request.from,
@@ -133,7 +141,7 @@ pub async fn print_html(
     AppQuery(query): AppQuery<ReportQuery>,
 ) -> AppResult<Response> {
     let request = parse_request(&query)?;
-    let layout = layout_or_default(query.layout.as_deref(), ReportLayout::Employee)?;
+    let layout = layout_or_default(query.layout.as_deref(), ReportLayout::Sunday)?;
     let data = summary::load(
         &state.pool,
         &request.from,
@@ -160,7 +168,7 @@ pub async fn report_pdf(
     AppQuery(query): AppQuery<ReportQuery>,
 ) -> AppResult<Response> {
     let request = parse_request(&query)?;
-    let layout = layout_or_default(query.layout.as_deref(), ReportLayout::Employee)?;
+    let layout = layout_or_default(query.layout.as_deref(), ReportLayout::Sunday)?;
     let data = summary::load(
         &state.pool,
         &request.from,

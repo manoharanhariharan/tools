@@ -112,6 +112,7 @@ pub fn render(data: &ReportData, layout: ReportLayout) -> String {
 
     html.push_str("<main>\n");
     match layout {
+        ReportLayout::Sunday => sunday_table(&mut html, data),
         ReportLayout::Employee => employee_table(&mut html, data),
         ReportLayout::Daily => daily_table(&mut html, data),
         ReportLayout::Entries => entries_table(&mut html, data),
@@ -152,6 +153,45 @@ fn money_cells(html: &mut String, totals: &MoneyTotals) {
     money_cell(html, totals.advance_minor, "");
     money_cell(html, totals.deduction_minor, "");
     money_cell(html, totals.net_minor, "net");
+}
+
+fn sunday_table(html: &mut String, data: &ReportData) {
+    html.push_str("<h2>Sunday ledger</h2>\n");
+    html.push_str("<table class=\"ledger\">\n<thead><tr>");
+    for (header, numeric) in [
+        ("Sl no", true),
+        ("Name", false),
+        ("Previous total", true),
+        ("Sunday Earning", true),
+        ("Current total", true),
+    ] {
+        html.push_str(&format!(
+            "<th scope=\"col\"{}>{header}</th>",
+            if numeric { " class=\"num\"" } else { "" }
+        ));
+    }
+    html.push_str("</tr></thead>\n<tbody>\n");
+
+    if data.ledger.is_empty() {
+        empty_row(html, 5, "No balances or Sunday earnings in this period.");
+    }
+    for (index, row) in data.ledger.iter().enumerate() {
+        html.push_str("<tr>");
+        html.push_str(&format!("<td class=\"num\">{}</td>", index + 1));
+        html.push_str(&format!("<th scope=\"row\">{}</th>", escape(&row.name)));
+        money_cell(html, row.previous_minor, "");
+        money_cell(html, row.sunday_minor, "");
+        money_cell(html, row.current_minor, "net");
+        html.push_str("</tr>\n");
+    }
+
+    html.push_str("<tr class=\"total-row\">");
+    html.push_str("<td></td><th scope=\"row\">TOTAL</th>");
+    money_cell(html, data.previous_total_minor, "");
+    money_cell(html, data.sunday_total_minor, "");
+    money_cell(html, data.current_total_minor, "net");
+    html.push_str("</tr>");
+    html.push_str("</tbody>\n</table>\n");
 }
 
 fn employee_table(html: &mut String, data: &ReportData) {
@@ -454,9 +494,32 @@ mod tests {
     #[test]
     fn each_layout_renders_its_own_table() {
         let data = data("Asha", "3 jobs");
+        assert!(render(&data, ReportLayout::Sunday).contains("Sunday ledger"));
         assert!(render(&data, ReportLayout::Employee).contains("By employee"));
         assert!(render(&data, ReportLayout::Daily).contains("By day"));
         assert!(render(&data, ReportLayout::Entries).contains("Day sheets"));
+    }
+
+    #[test]
+    fn sunday_ledger_renders_all_five_columns_and_totals() {
+        let html = render(&data("Asha", "3 jobs"), ReportLayout::Sunday);
+        for header in [
+            "Sl no",
+            "Name",
+            "Previous total",
+            "Sunday Earning",
+            "Current total",
+        ] {
+            assert!(html.contains(header), "missing {header}");
+        }
+        let totals = html
+            .split("<tr class=\"total-row\">")
+            .nth(1)
+            .expect("totals row");
+        let row = totals.split("</tr>").next().unwrap();
+        assert_eq!(row.matches("<td").count(), 4);
+        assert!(row.contains("TOTAL"));
+        assert!(row.contains("₹600.00"));
     }
 
     #[test]

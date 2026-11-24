@@ -14,6 +14,129 @@ async fn entry(server: &TestServer, cookie: &str, body: Value) -> Value {
 }
 
 #[tokio::test]
+async fn sunday_ledger_carries_prior_balances_and_is_the_default_export() {
+    let server = TestServer::start().await;
+    let (cookie, asha) = server.employee("Asha").await;
+    let (_, ravi) = server.employee("Ravi").await;
+    let (_, rekha) = server.employee("Rekha").await;
+    let asha_id = asha["id"].as_str().unwrap().to_string();
+    let ravi_id = ravi["id"].as_str().unwrap().to_string();
+    let rekha_id = rekha["id"].as_str().unwrap().to_string();
+
+    // Carried-forward balances recorded before the report range.
+    entry(
+        &server,
+        &cookie,
+        json!({
+            "employee_id": asha_id,
+            "work_date": "2026-10-25",
+            "lines": lines(&[(SALES_TYPE, "prior", 100_000)])
+        }),
+    )
+    .await;
+    entry(
+        &server,
+        &cookie,
+        json!({
+            "employee_id": rekha_id,
+            "work_date": "2026-10-25",
+            "lines": lines(&[(SALES_TYPE, "prior", 110_000)])
+        }),
+    )
+    .await;
+
+    // 2026-11-01 is a Sunday; 2026-11-02 is a Monday.
+    entry(
+        &server,
+        &cookie,
+        json!({
+            "employee_id": asha_id,
+            "work_date": "2026-11-01",
+            "lines": lines(&[(SALES_TYPE, "", 40_000)]),
+            "bonus_minor": 5_000,
+            "advance_minor": 5_000
+        }),
+    )
+    .await;
+    entry(
+        &server,
+        &cookie,
+        json!({
+            "employee_id": asha_id,
+            "work_date": "2026-11-02",
+            "lines": lines(&[(SALES_TYPE, "", 10_000)])
+        }),
+    )
+    .await;
+    entry(
+        &server,
+        &cookie,
+        json!({
+            "employee_id": ravi_id,
+            "work_date": "2026-11-01",
+            "lines": lines(&[(SERVICE_TYPE, "", 60_000)])
+        }),
+    )
+    .await;
+
+    let report = server
+        .call(
+            Method::GET,
+            "/api/reports/summary?from=2026-11-01&to=2026-11-30",
+            None,
+            Some(&cookie),
+        )
+        .await
+        .json();
+    assert_eq!(report["previous_total_minor"], 210_000);
+    assert_eq!(report["sunday_total_minor"], 100_000);
+    assert_eq!(report["current_total_minor"], 310_000);
+
+    let ledger = report["ledger"].as_array().unwrap();
+    assert_eq!(ledger.len(), 3);
+    assert_eq!(ledger[0]["name"], "Asha");
+    assert_eq!(ledger[0]["previous_minor"], 100_000);
+    assert_eq!(ledger[0]["sunday_minor"], 40_000);
+    assert_eq!(ledger[0]["current_minor"], 140_000);
+    assert_eq!(ledger[1]["name"], "Ravi");
+    assert_eq!(ledger[1]["previous_minor"], 0);
+    assert_eq!(ledger[1]["sunday_minor"], 60_000);
+    assert_eq!(ledger[2]["name"], "Rekha");
+    assert_eq!(ledger[2]["previous_minor"], 110_000);
+    assert_eq!(ledger[2]["sunday_minor"], 0);
+    assert_eq!(ledger[2]["current_minor"], 110_000);
+
+    // Sunday exports are the default for downloads and the printable page.
+    let csv = server
+        .call(
+            Method::GET,
+            "/api/reports/export.csv?from=2026-11-01&to=2026-11-30",
+            None,
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(csv.status, StatusCode::OK);
+    let text = String::from_utf8(csv.body[3..].to_vec()).unwrap();
+    assert!(text.starts_with("sl_no,name,previous_total,sunday_earning,current_total"));
+    assert!(text.contains("1,Asha,1000.00,400.00,1400.00"));
+    assert!(text.contains(",TOTAL,2100.00,1000.00,3100.00"));
+
+    let html = server
+        .call(
+            Method::GET,
+            "/api/reports/print.html?from=2026-11-01&to=2026-11-30",
+            None,
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(html.status, StatusCode::OK);
+    let page = html.text();
+    assert!(page.contains("Sunday ledger"));
+    assert!(page.contains("Previous total"));
+    assert!(page.contains("₹1,400.00"));
+}
+
+#[tokio::test]
 async fn summary_matches_line_totals_groupings_and_types() {
     let server = TestServer::start().await;
     let (cookie, asha) = server.employee("Asha").await;
@@ -292,7 +415,7 @@ async fn pdf_endpoints_produce_valid_documents_for_every_layout() {
     )
     .await;
 
-    for layout in ["employee", "daily", "entries"] {
+    for layout in ["sunday", "employee", "daily", "entries"] {
         let response = server
             .call(
                 Method::GET,

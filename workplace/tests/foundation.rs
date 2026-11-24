@@ -165,6 +165,88 @@ async fn expired_sessions_are_rejected() {
 }
 
 #[tokio::test]
+async fn changing_password_verifies_current_and_revokes_other_sessions() {
+    let server = TestServer::start().await;
+    let current = server.login().await;
+    let other = server.login().await;
+
+    let wrong = server
+        .call(
+            Method::POST,
+            "/api/auth/password",
+            Some(json!({
+                "current_password": "not-the-password",
+                "new_password": "new-password-789"
+            })),
+            Some(&current),
+        )
+        .await;
+    assert_eq!(wrong.status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        wrong.json()["error"]["fields"][0]["field"],
+        "current_password"
+    );
+
+    let short = server
+        .call(
+            Method::POST,
+            "/api/auth/password",
+            Some(json!({
+                "current_password": TEST_PASSWORD,
+                "new_password": "short"
+            })),
+            Some(&current),
+        )
+        .await;
+    assert_eq!(short.status, StatusCode::BAD_REQUEST);
+    assert_eq!(short.json()["error"]["fields"][0]["field"], "new_password");
+
+    let changed = server
+        .call(
+            Method::POST,
+            "/api/auth/password",
+            Some(json!({
+                "current_password": TEST_PASSWORD,
+                "new_password": "new-password-789"
+            })),
+            Some(&current),
+        )
+        .await;
+    assert_eq!(changed.status, StatusCode::OK, "{}", changed.text());
+    assert_eq!(changed.json()["updated"], true);
+
+    // The device that made the change stays signed in, other devices do not.
+    let still = server
+        .call(Method::GET, "/api/employees", None, Some(&current))
+        .await;
+    assert_eq!(still.status, StatusCode::OK);
+    let revoked = server
+        .call(Method::GET, "/api/employees", None, Some(&other))
+        .await;
+    assert_eq!(revoked.status, StatusCode::UNAUTHORIZED);
+
+    let old_login = server
+        .call(
+            Method::POST,
+            "/api/auth/login",
+            Some(json!({ "password": TEST_PASSWORD })),
+            None,
+        )
+        .await;
+    assert_eq!(old_login.status, StatusCode::UNAUTHORIZED);
+
+    let new_login = server
+        .call(
+            Method::POST,
+            "/api/auth/login",
+            Some(json!({ "password": "new-password-789" })),
+            None,
+        )
+        .await;
+    assert_eq!(new_login.status, StatusCode::OK);
+}
+
+#[tokio::test]
 async fn admin_password_reset_revokes_sessions() {
     let server = TestServer::start().await;
     let cookie = server.login().await;

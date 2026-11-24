@@ -11,6 +11,8 @@ import { renderToday } from './views/today.js';
 import { renderEmployees } from './views/employees.js';
 import { renderReports } from './views/reports.js';
 import { renderSync } from './views/sync.js';
+import { renderSettings } from './views/settings.js';
+import { THEMES, applyTheme, readStoredTheme } from './theme.js';
 
 const store = createStore({
   booting: true,
@@ -166,12 +168,20 @@ function buildShell() {
   const root = document.getElementById('root');
   statusChip = h('span', { class: 'status-chip', 'aria-live': 'polite' }, 'Starting…');
   syncBadge = h('span', { class: 'nav-badge', hidden: true });
+  const themeSelect = h(
+    'select',
+    { class: 'theme-select', 'aria-label': 'Theme', 'data-theme-select': '' },
+    THEMES.map((theme) => h('option', { value: theme.value }, theme.label)),
+  );
+  themeSelect.value = readStoredTheme();
+  themeSelect.addEventListener('change', () => applyTheme(themeSelect.value));
 
   const items = [
     { path: '/today', label: 'Today' },
     { path: '/employees', label: 'Employees' },
     { path: '/reports', label: 'Reports' },
     { path: '/sync', label: 'Sync', badge: syncBadge },
+    { path: '/settings', label: 'Settings' },
   ];
   navLinks = new Map(
     items.map((item) => {
@@ -199,6 +209,7 @@ function buildShell() {
       'div',
       { class: 'topbar-actions' },
       statusChip,
+      themeSelect,
       h(
         'button',
         { class: 'btn btn-ghost btn-small', type: 'button', on: { click: () => ctx.logout() } },
@@ -285,6 +296,7 @@ function mountView(path) {
     '/employees': renderEmployees,
     '/reports': renderReports,
     '/sync': renderSync,
+    '/settings': renderSettings,
   };
   const render = renderers[path] ?? renderToday;
   const viewRoot = document.getElementById('view');
@@ -441,6 +453,16 @@ function registerServiceWorker() {
 /* ------------------------------------------------------------------- boot */
 
 api.setUnauthorizedHandler(handleUnauthorized);
+applyTheme(readStoredTheme(), { persist: false });
+try {
+  window
+    .matchMedia('(prefers-color-scheme: dark)')
+    .addEventListener('change', () => {
+      if (readStoredTheme() === 'system') applyTheme('system', { persist: false });
+    });
+} catch {
+  // MatchMedia is unavailable in a few embedded webviews; CSS still adapts.
+}
 store.subscribe(updateShell);
 window.addEventListener('hashchange', () => {
   if (store.get().auth) route();

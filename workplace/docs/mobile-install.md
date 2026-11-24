@@ -142,5 +142,6 @@ Do not expose port 8787 directly to the public internet.
 - **Update:** replace the server binary, bump `VERSION` in `web/sw.js`, restart.
   Installed apps show a “new version is ready” prompt; reload.
 - **Remove a phone:** delete the home-screen app (clears its IndexedDB copy) and,
-  if desired, remove the CA profile. Revoke server sessions by resetting the
-  admin password: `daybook admin set-password`.
+  if desired, remove the CA profile. Revoke server sessions by changing the
+  admin password in **Settings → Admin account** (other devices are signed out)
+  or from the server with `daybook admin set-password`.

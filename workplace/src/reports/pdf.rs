@@ -286,6 +286,7 @@ fn money(font: Option<&PdfFont>, minor: i64) -> String {
 fn build_table(data: &ReportData, layout: ReportLayout, font: Option<&PdfFont>) -> RenderedTable {
     let mut rows: Vec<Vec<String>> = Vec::new();
     let totals = match layout {
+        ReportLayout::Sunday => sunday_totals_row(data, font),
         ReportLayout::Entries => entries_totals_row(&data.totals, font),
         ReportLayout::Daily => daily_totals_row(&data.totals, font),
         ReportLayout::Employee => totals_row(&data.totals, font),
@@ -294,6 +295,45 @@ fn build_table(data: &ReportData, layout: ReportLayout, font: Option<&PdfFont>) 
     let columns;
 
     match layout {
+        ReportLayout::Sunday => {
+            landscape = false;
+            columns = vec![
+                Column {
+                    header: "Sl no",
+                    width_pct: 8.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Name",
+                    width_pct: 40.0,
+                    align: Align::Left,
+                },
+                Column {
+                    header: "Previous total",
+                    width_pct: 17.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Sunday Earning",
+                    width_pct: 17.0,
+                    align: Align::Right,
+                },
+                Column {
+                    header: "Current total",
+                    width_pct: 18.0,
+                    align: Align::Right,
+                },
+            ];
+            for (index, row) in data.ledger.iter().enumerate() {
+                rows.push(vec![
+                    (index + 1).to_string(),
+                    row.name.clone(),
+                    money(font, row.previous_minor),
+                    money(font, row.sunday_minor),
+                    money(font, row.current_minor),
+                ]);
+            }
+        }
         ReportLayout::Employee => {
             landscape = false;
             columns = vec![
@@ -501,6 +541,16 @@ fn totals_row(totals: &MoneyTotals, font: Option<&PdfFont>) -> Vec<String> {
         money(font, totals.advance_minor),
         money(font, totals.deduction_minor),
         money(font, totals.net_minor),
+    ]
+}
+
+fn sunday_totals_row(data: &ReportData, font: Option<&PdfFont>) -> Vec<String> {
+    vec![
+        String::new(),
+        "TOTAL".to_string(),
+        money(font, data.previous_total_minor),
+        money(font, data.sunday_total_minor),
+        money(font, data.current_total_minor),
     ]
 }
 
@@ -856,6 +906,7 @@ mod tests {
     #[test]
     fn handles_empty_period_and_all_layouts() {
         for layout in [
+            ReportLayout::Sunday,
             ReportLayout::Employee,
             ReportLayout::Daily,
             ReportLayout::Entries,
@@ -883,6 +934,7 @@ mod tests {
     #[test]
     fn every_table_row_has_one_cell_per_column() {
         for layout in [
+            ReportLayout::Sunday,
             ReportLayout::Employee,
             ReportLayout::Daily,
             ReportLayout::Entries,

@@ -70,6 +70,7 @@ fn index_references_only_shipped_assets() {
         "/css/app.css",
         "/manifest.webmanifest",
         "/js/app.js",
+        "/js/theme-boot.js",
         "/icons/apple-touch-icon.png",
         "/favicon.png",
     ] {
@@ -87,7 +88,7 @@ fn index_references_only_shipped_assets() {
 #[test]
 fn every_view_module_is_referenced_by_the_app() {
     let app = std::fs::read_to_string("web/js/app.js").expect("app.js");
-    for module in ["today", "employees", "reports", "sync", "login"] {
+    for module in ["today", "employees", "reports", "sync", "settings", "login"] {
         assert!(
             app.contains(&format!("./views/{module}.js")),
             "app.js does not import views/{module}.js"

@@ -61,6 +61,15 @@ impl EntryRow {
     }
 }
 
+/// Carried-forward net balance for one employee before a report range. The
+/// Sunday ledger adds the range's Sunday earnings to this value.
+#[derive(Debug, Clone, FromRow)]
+pub struct PriorTotal {
+    pub employee_id: String,
+    pub name: String,
+    pub net_minor: i64,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct EntryLineInput {
     pub type_id: String,
@@ -279,6 +288,31 @@ pub async fn list_live(
     .await?;
     attach_lines(&mut conn, &mut rows).await?;
     Ok(rows)
+}
+
+/// Net money per employee for every live day sheet strictly before `before`.
+/// This is the "previous total" carried into a Sunday ledger report.
+pub async fn totals_before(
+    pool: &SqlitePool,
+    before: &str,
+    employee_id: Option<&str>,
+) -> Result<Vec<PriorTotal>, sqlx::Error> {
+    sqlx::query_as::<_, PriorTotal>(
+        "SELECT e.employee_id,
+                emp.name AS name,
+                COALESCE(SUM(e.net_minor), 0) AS net_minor
+           FROM entries e
+           JOIN employees emp ON emp.id = e.employee_id
+          WHERE e.deleted_at IS NULL
+            AND e.work_date < ?
+            AND (? IS NULL OR e.employee_id = ?)
+          GROUP BY e.employee_id, emp.name",
+    )
+    .bind(before)
+    .bind(employee_id)
+    .bind(employee_id)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn find(conn: &mut SqliteConnection, id: &str) -> Result<Option<EntryRow>, sqlx::Error> {

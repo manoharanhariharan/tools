@@ -12,6 +12,38 @@ pub fn render(data: &ReportData, layout: ReportLayout) -> anyhow::Result<Vec<u8>
         .from_writer(Vec::new());
 
     match layout {
+        ReportLayout::Sunday => {
+            writer.write_record([
+                "sl_no",
+                "name",
+                "previous_total",
+                "sunday_earning",
+                "current_total",
+            ])?;
+            for (index, row) in data.ledger.iter().enumerate() {
+                let sl_no = (index + 1).to_string();
+                let previous = format_decimal(row.previous_minor);
+                let sunday = format_decimal(row.sunday_minor);
+                let current = format_decimal(row.current_minor);
+                writer.write_record([
+                    sl_no.as_str(),
+                    row.name.as_str(),
+                    previous.as_str(),
+                    sunday.as_str(),
+                    current.as_str(),
+                ])?;
+            }
+            let previous = format_decimal(data.previous_total_minor);
+            let sunday = format_decimal(data.sunday_total_minor);
+            let current = format_decimal(data.current_total_minor);
+            writer.write_record([
+                "",
+                "TOTAL",
+                previous.as_str(),
+                sunday.as_str(),
+                current.as_str(),
+            ])?;
+        }
         ReportLayout::Employee => {
             writer.write_record([
                 "employee",
@@ -241,6 +273,21 @@ mod tests {
         assert_eq!(rows[1][0], "2026-11-01");
         assert_eq!(rows[1][1], "1");
         assert_eq!(rows[1][7], "850.00");
+    }
+
+    #[test]
+    fn sunday_csv_uses_ledger_columns_and_totals() {
+        let bytes = render(&sample_data(), ReportLayout::Sunday).unwrap();
+        let rows = parse(&bytes);
+        assert_eq!(rows[0][0], "sl_no");
+        assert_eq!(rows[0][3], "sunday_earning");
+        assert_eq!(rows[1][0], "1");
+        assert_eq!(rows[1][1], "Asha, Kumari");
+        assert_eq!(rows[1][2], "0.00");
+        assert_eq!(rows[1][3], "850.00");
+        assert_eq!(rows[1][4], "850.00");
+        assert_eq!(rows[2][1], "TOTAL");
+        assert_eq!(rows[2][4], "850.00");
     }
 
     #[test]

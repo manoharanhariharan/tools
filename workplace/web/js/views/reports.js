@@ -11,10 +11,15 @@ import {
 } from '../format.js';
 
 const LAYOUTS = [
+  ['sunday', 'Sunday ledger'],
   ['employee', 'By employee'],
   ['daily', 'By day'],
   ['entries', 'Entry detail'],
 ];
+
+function emptyRow(columns, message) {
+  return h('tr', {}, h('td', { colspan: String(columns), class: 'muted' }, message));
+}
 
 export function renderReports(root, ctx) {
   const container = h('section', { class: 'view' });
@@ -23,7 +28,7 @@ export function renderReports(root, ctx) {
   const initialRange = monthBounds(month);
   let from = initialRange.from;
   let to = initialRange.to;
-  let layout = 'employee';
+  let layout = 'sunday';
   let requestController = null;
   let requestToken = 0;
 
@@ -47,6 +52,7 @@ export function renderReports(root, ctx) {
     { 'aria-label': 'Download layout' },
     LAYOUTS.map(([value, label]) => h('option', { value }, label)),
   );
+  layoutSelect.value = layout;
   const rangeError = h('p', { class: 'field-error', role: 'alert' });
   const region = h('div', { class: 'report-region', 'aria-live': 'polite' });
 
@@ -179,7 +185,8 @@ export function renderReports(root, ctx) {
   }
 
   function renderReport(data, range) {
-    if (!data.totals.entries) {
+    const ledger = data.ledger ?? [];
+    if (!data.totals.entries && !ledger.length) {
       region.replaceChildren(
         emptyState(
           'No entries in this period',
@@ -198,6 +205,62 @@ export function renderReports(root, ctx) {
       stat('Advances', formatPaise(totals.advance_minor), 'deducted'),
       stat('Deductions', formatPaise(totals.deduction_minor), 'deducted'),
       stat('Final money', formatPaise(totals.net_minor), 'to present'),
+    );
+
+    const previousTotal = Number.isSafeInteger(data.previous_total_minor)
+      ? data.previous_total_minor
+      : ledger.reduce((sum, row) => sum + row.previous_minor, 0);
+    const sundayTotal = Number.isSafeInteger(data.sunday_total_minor)
+      ? data.sunday_total_minor
+      : ledger.reduce((sum, row) => sum + row.sunday_minor, 0);
+    const currentTotal = Number.isSafeInteger(data.current_total_minor)
+      ? data.current_total_minor
+      : ledger.reduce((sum, row) => sum + row.current_minor, 0);
+
+    const ledgerTable = h(
+      'div',
+      { class: 'table-wrap' },
+      h(
+        'table',
+        { class: 'data-table ledger-table' },
+        h(
+          'thead',
+          {},
+          h(
+            'tr',
+            {},
+            h('th', { scope: 'col', class: 'num' }, 'Sl no'),
+            h('th', { scope: 'col' }, 'Name'),
+            h('th', { scope: 'col', class: 'num' }, 'Previous total'),
+            h('th', { scope: 'col', class: 'num' }, 'Sunday Earning'),
+            h('th', { scope: 'col', class: 'num' }, 'Current total'),
+          ),
+        ),
+        h(
+          'tbody',
+          {},
+          ledger.map((row, index) =>
+            h(
+              'tr',
+              {},
+              h('td', { class: 'num' }, String(index + 1)),
+              h('th', { scope: 'row' }, row.name),
+              h('td', { class: 'num' }, formatPaise(row.previous_minor)),
+              h('td', { class: 'num' }, formatPaise(row.sunday_minor)),
+              h('td', { class: 'num strong' }, formatPaise(row.current_minor)),
+            ),
+          ),
+          h(
+            'tr',
+            { class: 'total-row' },
+            h('td'),
+            h('th', { scope: 'row' }, 'TOTAL'),
+            h('td', { class: 'num' }, formatPaise(previousTotal)),
+            h('td', { class: 'num' }, formatPaise(sundayTotal)),
+            h('td', { class: 'num strong' }, formatPaise(currentTotal)),
+          ),
+        ),
+      ),
     );
 
     const employeeTable = h(
@@ -221,16 +284,18 @@ export function renderReports(root, ctx) {
         h(
           'tbody',
           {},
-          data.employees.map((employee) =>
-            h(
-              'tr',
-              {},
-              h('th', { scope: 'row' }, employee.name),
-              h('td', { class: 'num' }, String(employee.totals.entries)),
-              h('td', { class: 'num' }, formatPaise(employee.totals.business_minor)),
-              h('td', { class: 'num strong' }, formatPaise(employee.totals.net_minor)),
-            ),
-          ),
+          data.employees.length
+            ? data.employees.map((employee) =>
+                h(
+                  'tr',
+                  {},
+                  h('th', { scope: 'row' }, employee.name),
+                  h('td', { class: 'num' }, String(employee.totals.entries)),
+                  h('td', { class: 'num' }, formatPaise(employee.totals.business_minor)),
+                  h('td', { class: 'num strong' }, formatPaise(employee.totals.net_minor)),
+                ),
+              )
+            : emptyRow(4, 'No day sheets in this period.'),
         ),
       ),
     );
@@ -256,16 +321,18 @@ export function renderReports(root, ctx) {
         h(
           'tbody',
           {},
-          data.days.map((day) =>
-            h(
-              'tr',
-              {},
-              h('th', { scope: 'row' }, displayDate(day.work_date)),
-              h('td', { class: 'num' }, String(day.totals.entries)),
-              h('td', { class: 'num' }, formatPaise(day.totals.business_minor)),
-              h('td', { class: 'num strong' }, formatPaise(day.totals.net_minor)),
-            ),
-          ),
+          data.days.length
+            ? data.days.map((day) =>
+                h(
+                  'tr',
+                  {},
+                  h('th', { scope: 'row' }, displayDate(day.work_date)),
+                  h('td', { class: 'num' }, String(day.totals.entries)),
+                  h('td', { class: 'num' }, formatPaise(day.totals.business_minor)),
+                  h('td', { class: 'num strong' }, formatPaise(day.totals.net_minor)),
+                ),
+              )
+            : emptyRow(4, 'No day sheets in this period.'),
         ),
       ),
     );
@@ -289,20 +356,24 @@ export function renderReports(root, ctx) {
         h(
           'tbody',
           {},
-          (data.types ?? []).map((entryType) =>
-            h(
-              'tr',
-              {},
-              h('th', { scope: 'row' }, entryType.type_name),
-              h('td', { class: 'num strong' }, formatPaise(entryType.amount_minor)),
-            ),
-          ),
+          (data.types ?? []).length
+            ? (data.types ?? []).map((entryType) =>
+                h(
+                  'tr',
+                  {},
+                  h('th', { scope: 'row' }, entryType.type_name),
+                  h('td', { class: 'num strong' }, formatPaise(entryType.amount_minor)),
+                ),
+              )
+            : emptyRow(2, 'No business recorded in this period.'),
         ),
       ),
     );
 
     region.replaceChildren(
       stats,
+      h('h2', { class: 'section-title' }, 'Sunday ledger'),
+      ledgerTable,
       h('h2', { class: 'section-title' }, 'By employee'),
       employeeTable,
       h('h2', { class: 'section-title' }, 'By day'),

@@ -92,6 +92,10 @@ export function logout() {
   return request('/api/auth/logout', { method: 'POST' });
 }
 
+export function changePassword(body) {
+  return request('/api/auth/password', { method: 'POST', body });
+}
+
 export function me(signal) {
   return request('/api/auth/me', { signal });
 }

@@ -12,7 +12,9 @@ use crate::repo::entries::{self, EntryRow};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReportLayout {
-    /// One row per employee (default printable summary).
+    /// One row per employee with carried-forward and Sunday earnings (default).
+    Sunday,
+    /// One row per employee (detailed printable summary).
     Employee,
     /// One row per calendar day.
     Daily,
@@ -23,6 +25,7 @@ pub enum ReportLayout {
 impl ReportLayout {
     pub fn parse(value: &str) -> Option<Self> {
         match value {
+            "sunday" => Some(ReportLayout::Sunday),
             "employee" => Some(ReportLayout::Employee),
             "daily" => Some(ReportLayout::Daily),
             "entries" => Some(ReportLayout::Entries),
@@ -32,6 +35,7 @@ impl ReportLayout {
 
     pub const fn as_str(self) -> &'static str {
         match self {
+            ReportLayout::Sunday => "sunday",
             ReportLayout::Employee => "employee",
             ReportLayout::Daily => "daily",
             ReportLayout::Entries => "entries",
@@ -83,6 +87,16 @@ pub struct TypeTotals {
     pub amount_minor: i64,
 }
 
+/// Carried-forward balance plus Sunday earnings for one employee.
+#[derive(Debug, Clone, Serialize)]
+pub struct LedgerRow {
+    pub employee_id: String,
+    pub name: String,
+    pub previous_minor: i64,
+    pub sunday_minor: i64,
+    pub current_minor: i64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ReportData {
     pub from: String,
@@ -93,6 +107,11 @@ pub struct ReportData {
     pub days: Vec<DayTotals>,
     /// Business generated per earning type across the whole range.
     pub types: Vec<TypeTotals>,
+    /// Carried-forward totals and Sunday earnings per employee.
+    pub ledger: Vec<LedgerRow>,
+    pub previous_total_minor: i64,
+    pub sunday_total_minor: i64,
+    pub current_total_minor: i64,
     /// Detail rows, ordered by date then employee name.
     pub lines: Vec<EntryRow>,
 }
@@ -104,6 +123,7 @@ pub fn build(from: &str, to: &str, generated_at: i64, lines: Vec<EntryRow>) -> R
     let mut employee_index: HashMap<String, usize> = HashMap::new();
     let mut days: BTreeMap<String, MoneyTotals> = BTreeMap::new();
     let mut types: BTreeMap<String, TypeTotals> = BTreeMap::new();
+    let mut sunday_by_employee: HashMap<String, i64> = HashMap::new();
 
     for line in &lines {
         totals.add_entry(line);
@@ -120,6 +140,13 @@ pub fn build(from: &str, to: &str, generated_at: i64, lines: Vec<EntryRow>) -> R
                 employees.len() - 1
             });
         employees[index].totals.add_entry(line);
+
+        if crate::domain::date::is_sunday(&line.work_date) {
+            let sunday = sunday_by_employee
+                .entry(line.employee_id.clone())
+                .or_default();
+            *sunday = sunday.saturating_add(line.net_minor);
+        }
 
         days.entry(line.work_date.clone())
             .or_default()
@@ -153,6 +180,27 @@ pub fn build(from: &str, to: &str, generated_at: i64, lines: Vec<EntryRow>) -> R
             .then_with(|| a.type_name.to_lowercase().cmp(&b.type_name.to_lowercase()))
     });
 
+    let ledger: Vec<LedgerRow> = employees
+        .iter()
+        .map(|employee| {
+            let sunday_minor = sunday_by_employee
+                .get(&employee.employee_id)
+                .copied()
+                .unwrap_or(0);
+            LedgerRow {
+                employee_id: employee.employee_id.clone(),
+                name: employee.name.clone(),
+                previous_minor: 0,
+                sunday_minor,
+                current_minor: sunday_minor,
+            }
+        })
+        .collect();
+    let sunday_total_minor = ledger
+        .iter()
+        .map(|row| row.sunday_minor)
+        .fold(0i64, i64::saturating_add);
+
     ReportData {
         from: from.to_string(),
         to: to.to_string(),
@@ -164,7 +212,61 @@ pub fn build(from: &str, to: &str, generated_at: i64, lines: Vec<EntryRow>) -> R
             .map(|(work_date, totals)| DayTotals { work_date, totals })
             .collect(),
         types,
+        ledger,
+        previous_total_minor: 0,
+        sunday_total_minor,
+        current_total_minor: sunday_total_minor,
         lines,
+    }
+}
+
+impl ReportData {
+    /// Merge balances carried in from before the report range. Pure apart from
+    /// the supplied data, so the ledger rules are unit-testable without SQL.
+    pub fn apply_previous(&mut self, prior: Vec<crate::repo::entries::PriorTotal>) {
+        let mut remaining: HashMap<String, crate::repo::entries::PriorTotal> = prior
+            .into_iter()
+            .map(|row| (row.employee_id.clone(), row))
+            .collect();
+
+        for row in &mut self.ledger {
+            if let Some(previous) = remaining.remove(&row.employee_id) {
+                row.previous_minor = previous.net_minor;
+            }
+            row.current_minor = row.previous_minor.saturating_add(row.sunday_minor);
+        }
+
+        for previous in remaining.into_values() {
+            self.ledger.push(LedgerRow {
+                employee_id: previous.employee_id,
+                name: previous.name,
+                previous_minor: previous.net_minor,
+                sunday_minor: 0,
+                current_minor: previous.net_minor,
+            });
+        }
+
+        self.ledger.sort_by(|a, b| {
+            a.name
+                .to_lowercase()
+                .cmp(&b.name.to_lowercase())
+                .then_with(|| a.employee_id.cmp(&b.employee_id))
+        });
+        self.previous_total_minor = self
+            .ledger
+            .iter()
+            .map(|row| row.previous_minor)
+            .fold(0i64, i64::saturating_add);
+        self.sunday_total_minor = self
+            .ledger
+            .iter()
+            .map(|row| row.sunday_minor)
+            .fold(0i64, i64::saturating_add);
+        self.current_total_minor = self
+            .ledger
+            .iter()
+            .map(|row| row.current_minor)
+            .fold(0i64, i64::saturating_add);
     }
 }
 
@@ -176,7 +278,10 @@ pub async fn load(
     employee_id: Option<&str>,
 ) -> Result<ReportData, sqlx::Error> {
     let lines = entries::list_live(pool, from, to, employee_id).await?;
-    Ok(build(from, to, crate::domain::now_millis(), lines))
+    let prior = entries::totals_before(pool, from, employee_id).await?;
+    let mut data = build(from, to, crate::domain::now_millis(), lines);
+    data.apply_previous(prior);
+    Ok(data)
 }
 
 #[cfg(test)]
@@ -331,8 +436,57 @@ mod tests {
 
     #[test]
     fn layouts_parse_strictly() {
+        assert_eq!(ReportLayout::parse("sunday"), Some(ReportLayout::Sunday));
         assert_eq!(ReportLayout::parse("entries"), Some(ReportLayout::Entries));
         assert_eq!(ReportLayout::parse("EMPLOYEE"), None);
         assert_eq!(ReportLayout::parse("x"), None);
+    }
+
+    #[test]
+    fn sunday_ledger_adds_prior_balances_to_sunday_earnings_only() {
+        let lines = vec![
+            day("1", "e1", "Asha", "2026-11-01", 40_000, 0, 0, 0, 0),
+            day("2", "e1", "Asha", "2026-11-02", 10_000, 0, 0, 0, 0),
+            day("3", "e2", "Ravi", "2026-11-01", 0, 60_000, 0, 0, 0),
+        ];
+        let mut report = build("2026-11-01", "2026-11-30", 0, lines);
+        report.apply_previous(vec![
+            crate::repo::entries::PriorTotal {
+                employee_id: "e1".into(),
+                name: "Asha".into(),
+                net_minor: 100_000,
+            },
+            crate::repo::entries::PriorTotal {
+                employee_id: "e3".into(),
+                name: "Rekha".into(),
+                net_minor: 110_000,
+            },
+        ]);
+
+        assert_eq!(report.ledger.len(), 3);
+        assert_eq!(report.ledger[0].name, "Asha");
+        assert_eq!(report.ledger[0].previous_minor, 100_000);
+        assert_eq!(report.ledger[0].sunday_minor, 40_000);
+        assert_eq!(report.ledger[0].current_minor, 140_000);
+        assert_eq!(report.ledger[1].name, "Ravi");
+        assert_eq!(report.ledger[1].previous_minor, 0);
+        assert_eq!(report.ledger[1].current_minor, 60_000);
+        assert_eq!(report.ledger[2].name, "Rekha");
+        assert_eq!(report.ledger[2].previous_minor, 110_000);
+        assert_eq!(report.ledger[2].sunday_minor, 0);
+
+        assert_eq!(report.previous_total_minor, 210_000);
+        assert_eq!(report.sunday_total_minor, 100_000);
+        assert_eq!(report.current_total_minor, 310_000);
+    }
+
+    #[test]
+    fn ledger_skips_non_sunday_range_earnings() {
+        let lines = vec![day("1", "e1", "Asha", "2026-11-02", 50_000, 0, 0, 0, 0)];
+        let report = build("2026-11-01", "2026-11-30", 0, lines);
+        assert_eq!(report.ledger.len(), 1);
+        assert_eq!(report.ledger[0].sunday_minor, 0);
+        assert_eq!(report.ledger[0].current_minor, 0);
+        assert_eq!(report.sunday_total_minor, 0);
     }
 }

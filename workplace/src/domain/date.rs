@@ -49,6 +49,12 @@ pub fn days_inclusive(from: Date, to: Date) -> i64 {
     (to.to_julian_day() as i64) - (from.to_julian_day() as i64) + 1
 }
 
+/// True when an ISO civil date falls on a Sunday. The Sunday ledger uses this
+/// to separate the week's earning day from the carried-forward balance.
+pub fn is_sunday(iso_date: &str) -> bool {
+    parse_iso(iso_date).is_some_and(|date| date.weekday() == time::Weekday::Sunday)
+}
+
 /// Format a Unix-millisecond timestamp as an IST `dd-mm-yyyy HH:MM` string for
 /// report headers.
 pub fn format_datetime_ist(ms: i64) -> String {
@@ -121,5 +127,14 @@ mod tests {
         assert!(validate_range("2026-11-01", "2026-11-30").is_ok());
         assert!(validate_range("2026-11-30", "2026-11-01").is_err());
         assert!(validate_range("2025-01-01", "2026-12-31").is_err());
+    }
+
+    #[test]
+    fn identifies_sundays_only() {
+        assert!(is_sunday("2026-11-01"));
+        assert!(is_sunday("2026-11-22"));
+        assert!(!is_sunday("2026-11-23"));
+        assert!(!is_sunday("2026-11-24"));
+        assert!(!is_sunday("not-a-date"));
     }
 }

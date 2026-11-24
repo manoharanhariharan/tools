@@ -40,7 +40,7 @@ async fn embedded_static_assets_are_served_with_correct_types() {
         worker.headers.get(header::CACHE_CONTROL).unwrap(),
         "no-cache"
     );
-    assert!(worker.text().contains("daybook-v2"));
+    assert!(worker.text().contains("daybook-v3"));
 
     // Guards against a UI regression in the shipped view module.
     let today = server

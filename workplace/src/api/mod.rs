@@ -91,6 +91,10 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/health", get(health::health))
         .route("/auth/login", axum::routing::post(auth_routes::login))
+        .route(
+            "/auth/password",
+            axum::routing::post(auth_routes::change_password),
+        )
         .route("/auth/logout", axum::routing::post(auth_routes::logout))
         .route("/auth/me", get(auth_routes::me))
         .route("/employees", get(employees::list).post(employees::create))
