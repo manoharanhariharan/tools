@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod auth_routes;
 pub mod employees;
 pub mod entries;
@@ -133,4 +134,5 @@ pub fn router() -> Router<AppState> {
         .route("/reports/export.csv", get(reports::export_csv))
         .route("/reports/print.html", get(reports::print_html))
         .route("/reports/report.pdf", get(reports::report_pdf))
+        .route("/audit", get(audit::list))
 }

@@ -177,6 +177,10 @@ export function reportSummary({ from, to, employeeId } = {}, signal) {
   });
 }
 
+export function listAudit({ limit = 100, before = null } = {}, signal) {
+  return request(`/api/audit?${query({ limit, before })}`, { signal });
+}
+
 export function openPrintReport({ from, to, employeeId, layout }) {
   const url = `/api/reports/print.html?${query({
     from,

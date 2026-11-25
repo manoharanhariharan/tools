@@ -1,6 +1,7 @@
 // Settings: per-device appearance and the admin password change form.
 
 import { h, spinner, toast } from '../dom.js';
+import { formatTimestamp } from '../format.js';
 import { THEMES, applyTheme, readStoredTheme, themeLabel } from '../theme.js';
 
 export function renderSettings(root, ctx) {
@@ -217,5 +218,84 @@ export function renderSettings(root, ctx) {
   );
 
   container.append(appearance, account);
+
+  /* ------------------------------------------------------------- audit log */
+
+  const auditList = h('div', { class: 'audit-list' });
+  const auditError = h('p', { class: 'field-error', role: 'alert' });
+  const auditLoadMore = h(
+    'button',
+    { class: 'btn btn-small', type: 'button', hidden: true },
+    'Load more',
+  );
+
+  const auditSection = h(
+    'section',
+    { class: 'settings-card', 'aria-labelledby': 'settings-audit' },
+    h('h2', { id: 'settings-audit' }, 'Audit log'),
+    h(
+      'p',
+      { class: 'field-hint' },
+      'Every change to employees, day sheets, earning types, login PINs and the admin password.',
+    ),
+    auditList,
+    auditError,
+    auditLoadMore,
+  );
+  container.append(auditSection);
+
+  let auditLastId = null;
+  const ACTION_KIND = { create: 'neutral', update: 'pending', delete: 'warn', set: 'pending', clear: 'neutral', change: 'pending' };
+
+  function renderAuditRow(row) {
+    return h(
+      'div',
+      { class: 'audit-row' },
+      h(
+        'div',
+        { class: 'audit-main' },
+        h('span', { class: 'audit-summary' }, row.summary),
+        h(
+          'span',
+          { class: 'audit-meta' },
+          `${row.actor_name || row.actor_role} · ${formatTimestamp(row.created_at)} · ${row.entity}`,
+        ),
+      ),
+      h('span', { class: `badge badge-${ACTION_KIND[row.action] ?? 'neutral'}` }, row.action),
+    );
+  }
+
+  async function loadAudit(before = null, append = false) {
+    auditLoadMore.disabled = true;
+    auditError.textContent = '';
+    try {
+      const rows = await ctx.api.listAudit({ limit: 50, before });
+      if (!append) auditList.replaceChildren();
+      if (!rows?.length) {
+        if (!append) auditList.append(h('p', { class: 'muted' }, 'No changes recorded yet.'));
+        auditLoadMore.hidden = true;
+        return;
+      }
+      for (const row of rows) auditList.append(renderAuditRow(row));
+      if (rows.length === 50) {
+        auditLastId = rows[rows.length - 1].id;
+        auditLoadMore.hidden = false;
+      } else {
+        auditLoadMore.hidden = true;
+      }
+    } catch (error) {
+      auditError.textContent = error?.message ?? 'Could not load the audit log';
+    } finally {
+      auditLoadMore.disabled = false;
+    }
+  }
+
+  auditLoadMore.addEventListener(
+    'click',
+    () => void loadAudit(auditLastId, true),
+    { signal: abort.signal },
+  );
+  void loadAudit();
+
   return () => abort.abort();
 }

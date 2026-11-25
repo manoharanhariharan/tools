@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod employees;
 pub mod entries;
 pub mod sync;

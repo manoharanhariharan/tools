@@ -11,6 +11,7 @@ use crate::auth::{self, Auth};
 use crate::db;
 use crate::domain::now_millis;
 use crate::error::{AppError, AppResult, FieldError};
+use crate::repo::audit;
 use crate::repo::employees::{self, EmployeeInput, EmployeeRow};
 
 fn is_unique_violation(err: &sqlx::Error) -> bool {
@@ -48,6 +49,7 @@ pub async fn create(
     AppJson(input): AppJson<EmployeeInput>,
 ) -> AppResult<(StatusCode, Json<EmployeeRow>)> {
     auth.require_admin()?;
+    let (actor_role, actor_id, actor_name) = auth.actor();
     let validated = employees::validate_input(&input).map_err(AppError::Validation)?;
     let id = Uuid::now_v7().to_string();
     let now = now_millis();
@@ -71,6 +73,18 @@ pub async fn create(
         }
         Err(err) => return Err(err.into()),
     };
+    audit::record(
+        &mut tx,
+        now,
+        actor_role,
+        actor_id,
+        actor_name,
+        "employee",
+        &id,
+        "create",
+        &format!("Employee \"{}\" created", row.name),
+    )
+    .await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(row)))
 }
@@ -82,6 +96,7 @@ pub async fn update(
     AppJson(input): AppJson<EmployeeInput>,
 ) -> AppResult<Json<EmployeeRow>> {
     auth.require_admin()?;
+    let (actor_role, actor_id, actor_name) = auth.actor();
     let validated = employees::validate_input(&input).map_err(AppError::Validation)?;
 
     // Reject unknown/deleted ids before opening a write transaction.
@@ -110,6 +125,18 @@ pub async fn update(
         }
         Err(err) => return Err(err.into()),
     };
+    audit::record(
+        &mut tx,
+        now,
+        actor_role,
+        actor_id,
+        actor_name,
+        "employee",
+        &id,
+        "update",
+        &format!("Employee \"{}\" updated", row.name),
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(row))
 }
@@ -120,6 +147,7 @@ pub async fn delete(
     Path(id): Path<String>,
 ) -> AppResult<Json<EmployeeRow>> {
     auth.require_admin()?;
+    let (actor_role, actor_id, actor_name) = auth.actor();
     employees::get_live(&state.pool, &id)
         .await?
         .ok_or(AppError::NotFound("employee"))?;
@@ -133,6 +161,18 @@ pub async fn delete(
         Err(sqlx::Error::RowNotFound) => return Err(AppError::NotFound("employee")),
         Err(err) => return Err(err.into()),
     };
+    audit::record(
+        &mut tx,
+        now,
+        actor_role,
+        actor_id,
+        actor_name,
+        "employee",
+        &id,
+        "delete",
+        &format!("Employee \"{}\" deleted", row.name),
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(row))
 }
@@ -165,7 +205,8 @@ pub async fn set_pin(
     AppJson(body): AppJson<PinBody>,
 ) -> AppResult<Json<Value>> {
     auth.require_admin()?;
-    employees::get_live(&state.pool, &id)
+    let (actor_role, actor_id, actor_name) = auth.actor();
+    let employee = employees::get_live(&state.pool, &id)
         .await?
         .ok_or(AppError::NotFound("employee"))?;
     auth::validate_pin_policy(&body.pin)
@@ -180,6 +221,18 @@ pub async fn set_pin(
     let _gate = state.write_gate.lock().await;
     let mut tx = state.pool.begin().await?;
     employees::set_pin(&mut tx, &id, &hash, now).await?;
+    audit::record(
+        &mut tx,
+        now,
+        actor_role,
+        actor_id,
+        actor_name,
+        "employee_pin",
+        &id,
+        "set",
+        &format!("Login PIN set for \"{}\"", employee.name),
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(serde_json::json!({ "updated": true })))
 }
@@ -191,7 +244,8 @@ pub async fn clear_pin(
     Path(id): Path<String>,
 ) -> AppResult<Json<Value>> {
     auth.require_admin()?;
-    employees::get_live(&state.pool, &id)
+    let (actor_role, actor_id, actor_name) = auth.actor();
+    let employee = employees::get_live(&state.pool, &id)
         .await?
         .ok_or(AppError::NotFound("employee"))?;
 
@@ -199,6 +253,18 @@ pub async fn clear_pin(
     let _gate = state.write_gate.lock().await;
     let mut tx = state.pool.begin().await?;
     employees::clear_pin(&mut tx, &id, now).await?;
+    audit::record(
+        &mut tx,
+        now,
+        actor_role,
+        actor_id,
+        actor_name,
+        "employee_pin",
+        &id,
+        "clear",
+        &format!("Login PIN cleared for \"{}\"", employee.name),
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(serde_json::json!({ "updated": true })))
 }

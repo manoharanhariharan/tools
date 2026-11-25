@@ -11,7 +11,9 @@ use crate::AppState;
 use crate::api::AppJson;
 use crate::auth::{self, Auth, SessionRole};
 use crate::db;
+use crate::domain::now_millis;
 use crate::error::{AppError, AppResult, FieldError};
+use crate::repo::audit;
 use crate::repo::employees;
 
 #[derive(Debug, Deserialize)]
@@ -229,6 +231,19 @@ pub async fn change_password(
 
     let keep = auth::hash_token(&token);
     db::set_admin_password_keep_session(&state.pool, &body.new_password, Some(&keep)).await?;
+    let (actor_role, actor_id, actor_name) = auth.actor();
+    audit::record_standalone(
+        &state.pool,
+        now_millis(),
+        actor_role,
+        actor_id,
+        actor_name,
+        "password",
+        "",
+        "change",
+        "Admin password changed",
+    )
+    .await?;
     Ok(Json(json!({ "updated": true })))
 }
 

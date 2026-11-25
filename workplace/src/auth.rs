@@ -277,6 +277,11 @@ impl Identity {
             self.employee_id.as_deref()
         }
     }
+
+    /// Audit-trail actor tuple: (role, employee id, display name).
+    pub fn actor(&self) -> (&'static str, Option<&str>, &str) {
+        (self.role.as_str(), self.employee_id.as_deref(), &self.name)
+    }
 }
 
 /// Extractor for the identity inserted by `require_auth`.

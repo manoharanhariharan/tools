@@ -17,6 +17,7 @@ use crate::auth::Auth;
 use crate::db;
 use crate::domain::now_millis;
 use crate::error::{AppError, AppResult, FieldError};
+use crate::repo::audit;
 use crate::repo::employees::{self, EmployeeInput, EmployeeRow};
 use crate::repo::entries::{self, EntryInput, EntryRow};
 use crate::repo::sync::{self, Decision, ExistingState};
@@ -232,6 +233,14 @@ fn row_json<T: Serialize>(row: &T) -> Value {
     serde_json::to_value(row).unwrap_or(Value::Null)
 }
 
+fn entry_audit_summary(action: &str, work_date: &str, name: Option<&str>) -> String {
+    let date = crate::domain::date::parse_iso(work_date)
+        .map(crate::domain::date::display)
+        .unwrap_or_else(|| work_date.to_string());
+    let who = name.unwrap_or("unknown employee");
+    format!("Day sheet \"{who}\" {date} {action}")
+}
+
 pub async fn push(
     State(state): State<AppState>,
     Auth(auth): Auth,
@@ -257,10 +266,10 @@ pub async fn push(
     // Employees are applied first so an offline bundle can contain an employee
     // and their first entry in any order.
     for change in body.changes.iter().filter(|c| c.entity == "employee") {
-        results.push(apply_employee(&mut tx, change, now).await?);
+        results.push(apply_employee(&mut tx, change, now, &auth).await?);
     }
     for change in body.changes.iter().filter(|c| c.entity == "entry") {
-        results.push(apply_entry(&mut tx, change, now).await?);
+        results.push(apply_entry(&mut tx, change, now, &auth).await?);
     }
     for change in body
         .changes
@@ -285,7 +294,9 @@ async fn apply_employee(
     tx: &mut Transaction<'_, Sqlite>,
     change: &Change,
     now: i64,
+    actor: &crate::auth::Identity,
 ) -> AppResult<ChangeResult> {
+    let (actor_role, actor_id, actor_name) = actor.actor();
     let id = change.id.trim();
     if Uuid::parse_str(id).is_err() {
         return Ok(invalid(
@@ -317,7 +328,21 @@ async fn apply_employee(
             Decision::Apply => {
                 let seq = db::next_seq(tx).await?;
                 match employees::mark_deleted(tx, id, now, seq).await? {
-                    Some(row) => Ok(applied("employee", id, row_json(&row))),
+                    Some(row) => {
+                        audit::record(
+                            tx,
+                            now,
+                            actor_role,
+                            actor_id,
+                            actor_name,
+                            "employee",
+                            id,
+                            "delete",
+                            &format!("Employee \"{}\" deleted", row.name),
+                        )
+                        .await?;
+                        Ok(applied("employee", id, row_json(&row)))
+                    }
                     None => Ok(noop("employee", id, existing.as_ref().map(row_json))),
                 }
             }
@@ -371,7 +396,18 @@ async fn apply_employee(
             let created_at = existing.as_ref().map(|row| row.created_at).unwrap_or(now);
             let seq = db::next_seq(tx).await?;
             match employees::upsert(tx, id, &validated, created_at, now, None, seq).await {
-                Ok(row) => Ok(applied("employee", id, row_json(&row))),
+                Ok(row) => {
+                    let (action, summary) = if existing.is_some() {
+                        ("update", format!("Employee \"{}\" updated", row.name))
+                    } else {
+                        ("create", format!("Employee \"{}\" created", row.name))
+                    };
+                    audit::record(
+                        tx, now, actor_role, actor_id, actor_name, "employee", id, action, &summary,
+                    )
+                    .await?;
+                    Ok(applied("employee", id, row_json(&row)))
+                }
                 Err(err) if is_unique_violation(&err) => {
                     let existing = match &validated.code {
                         Some(code) => employees::find_live_by_code(tx, code).await?,
@@ -394,7 +430,9 @@ async fn apply_entry(
     tx: &mut Transaction<'_, Sqlite>,
     change: &Change,
     now: i64,
+    actor: &crate::auth::Identity,
 ) -> AppResult<ChangeResult> {
+    let (actor_role, actor_id, actor_name) = actor.actor();
     let id = change.id.trim();
     if Uuid::parse_str(id).is_err() {
         return Ok(invalid(
@@ -423,7 +461,29 @@ async fn apply_entry(
             Decision::Apply => {
                 let seq = db::next_seq(tx).await?;
                 match entries::mark_deleted(tx, id, now, seq).await? {
-                    Some(row) => Ok(applied("entry", id, row_json(&row))),
+                    Some(row) => {
+                        let existing_row = existing.as_ref().expect("delete apply implies a row");
+                        let name = employees::find(tx, &existing_row.employee_id)
+                            .await?
+                            .map(|employee| employee.name);
+                        audit::record(
+                            tx,
+                            now,
+                            actor_role,
+                            actor_id,
+                            actor_name,
+                            "entry",
+                            id,
+                            "delete",
+                            &entry_audit_summary(
+                                "deleted",
+                                &existing_row.work_date,
+                                name.as_deref(),
+                            ),
+                        )
+                        .await?;
+                        Ok(applied("entry", id, row_json(&row)))
+                    }
                     None => Ok(noop("entry", id, existing.as_ref().map(row_json))),
                 }
             }
@@ -450,8 +510,9 @@ async fn apply_entry(
         }
     };
 
-    if employees::find(tx, input.employee_id.trim())
-        .await?
+    let employee = employees::find(tx, input.employee_id.trim()).await?;
+    if employee
+        .as_ref()
         .is_none_or(|employee| employee.deleted_at.is_some())
     {
         return Ok(invalid(
@@ -464,6 +525,7 @@ async fn apply_entry(
             )],
         ));
     }
+    let entry_employee_name = employee.as_ref().map(|employee| employee.name.as_str());
 
     let prepared = match entries::prepare(tx, &input).await {
         Ok(prepared) => prepared,
@@ -507,7 +569,26 @@ async fn apply_entry(
             let created_at = existing.as_ref().map(|row| row.created_at).unwrap_or(now);
             let seq = db::next_seq(tx).await?;
             match entries::upsert(tx, id, &prepared, created_at, now, None, seq).await {
-                Ok(row) => Ok(applied("entry", id, row_json(&row))),
+                Ok(row) => {
+                    let (action, verb) = if existing.is_some() {
+                        ("update", "updated")
+                    } else {
+                        ("create", "created")
+                    };
+                    audit::record(
+                        tx,
+                        now,
+                        actor_role,
+                        actor_id,
+                        actor_name,
+                        "entry",
+                        id,
+                        action,
+                        &entry_audit_summary(verb, &prepared.work_date, entry_employee_name),
+                    )
+                    .await?;
+                    Ok(applied("entry", id, row_json(&row)))
+                }
                 Err(err) if is_unique_violation(&err) => {
                     let other = entries::find_live_by_employee_date(
                         tx,

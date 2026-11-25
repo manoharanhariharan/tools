@@ -8,6 +8,7 @@ use crate::api::{AppJson, is_unique_violation};
 use crate::auth::Auth;
 use crate::domain::now_millis;
 use crate::error::{AppError, AppResult};
+use crate::repo::audit;
 use crate::repo::types::{self, EarningTypeInput, EarningTypeRow};
 
 pub async fn list(
@@ -23,6 +24,7 @@ pub async fn create(
     AppJson(input): AppJson<EarningTypeInput>,
 ) -> AppResult<(StatusCode, Json<EarningTypeRow>)> {
     auth.require_admin()?;
+    let (actor_role, actor_id, actor_name) = auth.actor();
     let validated = types::validate_input(&input).map_err(AppError::Validation)?;
     let id = Uuid::now_v7().to_string();
     let now = now_millis();
@@ -31,6 +33,18 @@ pub async fn create(
     let mut tx = state.pool.begin().await?;
     match types::insert(&mut tx, &id, &validated, now).await {
         Ok(row) => {
+            audit::record(
+                &mut tx,
+                now,
+                actor_role,
+                actor_id,
+                actor_name,
+                "earning_type",
+                &id,
+                "create",
+                &format!("Earning type \"{}\" created", row.name),
+            )
+            .await?;
             tx.commit().await?;
             Ok((StatusCode::CREATED, Json(row)))
         }
@@ -55,6 +69,7 @@ pub async fn update(
     AppJson(input): AppJson<EarningTypeInput>,
 ) -> AppResult<Json<EarningTypeRow>> {
     auth.require_admin()?;
+    let (actor_role, actor_id, actor_name) = auth.actor();
     let validated = types::validate_input(&input).map_err(AppError::Validation)?;
     let now = now_millis();
 
@@ -62,6 +77,18 @@ pub async fn update(
     let mut tx = state.pool.begin().await?;
     match types::update(&mut tx, &id, &validated, now).await {
         Ok(row) => {
+            audit::record(
+                &mut tx,
+                now,
+                actor_role,
+                actor_id,
+                actor_name,
+                "earning_type",
+                &id,
+                "update",
+                &format!("Earning type \"{}\" updated", row.name),
+            )
+            .await?;
             tx.commit().await?;
             Ok(Json(row))
         }
@@ -86,11 +113,24 @@ pub async fn delete(
     Path(id): Path<String>,
 ) -> AppResult<Json<EarningTypeRow>> {
     auth.require_admin()?;
+    let (actor_role, actor_id, actor_name) = auth.actor();
     let now = now_millis();
     let _gate = state.write_gate.lock().await;
     let mut tx = state.pool.begin().await?;
     match types::soft_delete(&mut tx, &id, now).await {
         Ok(row) => {
+            audit::record(
+                &mut tx,
+                now,
+                actor_role,
+                actor_id,
+                actor_name,
+                "earning_type",
+                &id,
+                "delete",
+                &format!("Earning type \"{}\" deleted", row.name),
+            )
+            .await?;
             tx.commit().await?;
             Ok(Json(row))
         }

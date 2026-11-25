@@ -10,8 +10,23 @@ use crate::auth::Auth;
 use crate::db;
 use crate::domain::now_millis;
 use crate::error::{AppError, AppResult};
+use crate::repo::audit;
 use crate::repo::employees;
 use crate::repo::entries::{self, EntryInput, EntryRow};
+
+/// Human-readable one-line summary for the audit trail.
+fn entry_summary(action: &str, view: &EntryRow) -> String {
+    let date = crate::domain::date::parse_iso(&view.work_date)
+        .map(crate::domain::date::display)
+        .unwrap_or_else(|| view.work_date.clone());
+    format!(
+        "Day sheet \"{}\" {} {} (business {})",
+        view.employee_name,
+        date,
+        action,
+        crate::domain::money::format_inr(view.business_minor)
+    )
+}
 
 #[derive(Debug, Deserialize)]
 pub struct EntriesQuery {
@@ -81,6 +96,7 @@ pub async fn create(
     if let Some(scope) = auth.employee_scope() {
         input.employee_id = scope.to_string();
     }
+    let (actor_role, actor_id, actor_name) = auth.actor();
     let id = Uuid::now_v7().to_string();
     let now = now_millis();
     let _gate = state.write_gate.lock().await;
@@ -133,6 +149,18 @@ pub async fn create(
     let view = entries::find_any_view(&mut tx, &id)
         .await?
         .ok_or_else(|| AppError::internal(anyhow::anyhow!("inserted entry disappeared")))?;
+    audit::record(
+        &mut tx,
+        now,
+        actor_role,
+        actor_id,
+        actor_name,
+        "entry",
+        &id,
+        "create",
+        &entry_summary("created", &view),
+    )
+    .await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(view)))
 }
@@ -147,6 +175,7 @@ pub async fn update(
     if let Some(scope) = auth.employee_scope() {
         input.employee_id = scope.to_string();
     }
+    let (actor_role, actor_id, actor_name) = auth.actor();
     let now = now_millis();
     let _gate = state.write_gate.lock().await;
     let mut tx = state.pool.begin().await?;
@@ -194,6 +223,18 @@ pub async fn update(
     let view = entries::find_any_view(&mut tx, &id)
         .await?
         .ok_or_else(|| AppError::internal(anyhow::anyhow!("updated entry disappeared")))?;
+    audit::record(
+        &mut tx,
+        now,
+        actor_role,
+        actor_id,
+        actor_name,
+        "entry",
+        &id,
+        "update",
+        &entry_summary("updated", &view),
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(view))
 }
@@ -203,10 +244,11 @@ pub async fn delete(
     Auth(auth): Auth,
     Path(id): Path<String>,
 ) -> AppResult<Json<EntryRow>> {
+    let (actor_role, actor_id, actor_name) = auth.actor();
     let now = now_millis();
     let _gate = state.write_gate.lock().await;
     let mut tx = state.pool.begin().await?;
-    let existing = entries::find(&mut tx, &id)
+    let existing = entries::find_live(&mut tx, &id)
         .await?
         .ok_or(AppError::NotFound("entry"))?;
     ensure_entry_visible(&auth, &existing)?;
@@ -217,6 +259,18 @@ pub async fn delete(
         Err(sqlx::Error::RowNotFound) => return Err(AppError::NotFound("entry")),
         Err(err) => return Err(err.into()),
     };
+    audit::record(
+        &mut tx,
+        now,
+        actor_role,
+        actor_id,
+        actor_name,
+        "entry",
+        &id,
+        "delete",
+        &entry_summary("deleted", &existing),
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(row))
 }

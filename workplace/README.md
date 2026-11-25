@@ -21,6 +21,8 @@ no cloud dependency.
 - **Employee login** — each employee signs in with their code and a 4-digit PIN
   to see only their own details, day sheets and reports, and to enter their own
   day sheets.
+- **Audit trail** — an append-only log of every change to employees, day sheets,
+  earning types, PINs and the admin password, viewable by the admin.
 - **In-house by design** — SQLite on your machine, LAN or VPN access only,
   ₹ / INR and IST dates, and light/dark/high-contrast themes.
 
@@ -284,6 +286,9 @@ Employees can sign in without the admin password. On the sign-in screen choose
 - **Employee PINs** are four digits, hashed with Argon2id, and checked against
   the same per-IP throttle. A session is scoped to its employee id on the server,
   so an employee request can never read or write another employee's data.
+- **Audit log** — every create/update/delete (and PIN/password change) writes an
+  append-only row in the same transaction as the change, tagged with the actor.
+  Admins view it under **Settings → Audit log**; employees cannot access it.
 - **Sessions** are 256-bit opaque tokens; only their SHA-256 hashes are stored.
   Cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` when TLS is enabled.
 - **CSRF** is blocked by requiring an `X-Daybook-Client` header on every mutating
