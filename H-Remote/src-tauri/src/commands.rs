@@ -18,8 +18,8 @@ use hr_i18n::{LocaleInfo, supported_locales};
 use hr_observability::Checkpoint;
 use hr_platform::{Capabilities, ShortcutSpec, TrimOutcome};
 use hr_session::{
-    Frame, ProcessPlan, RdpPlan, ReconnectPolicy, SessionBackend, SessionCommand, SessionSnapshot,
-    SessionState, SpecialKey, VncPlan,
+    DisconnectReason, Frame, ProcessPlan, RdpPlan, ReconnectPolicy, SessionBackend, SessionCommand,
+    SessionSnapshot, SessionState, SpecialKey, VncPlan,
 };
 use hr_storage::{DataSourceConfig, Database, Repository, SecretCodec, SourceStatus, VaultCodec};
 use hr_theme::{ThemeConfig, ThemePreset};
@@ -359,6 +359,29 @@ async fn write_connection_failure_report(
     }
     if let Some(server) = server {
         let address = server.address().cloned();
+        let credentials = server.credentials();
+        let value = serde_json::to_value(&server)?;
+        let domain = value
+            .get("domain")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        details.push_str("## Credential summary\n\n");
+        details.push_str(&format!(
+            "- Username: `{}`\n- Domain: `{}`\n- Password configured: {}\n- Private key configured: {}\n- Inherited credential: `{}`\n- Ask for password on connect: {}\n\n",
+            credentials.map(|value| value.username.as_str()).unwrap_or(""),
+            domain,
+            credentials.is_some_and(|value| !value.password.is_empty()),
+            credentials.is_some_and(|value| {
+                value
+                    .private_key
+                    .as_deref()
+                    .is_some_and(|key| !key.trim().is_empty())
+            }),
+            credentials
+                .and_then(|value| value.inherited_credential_name.as_deref())
+                .unwrap_or(""),
+            credentials.is_some_and(|value| value.ask_password_when_connect),
+        ));
         details.push_str("## Server configuration (secrets removed)\n\n```json\n");
         details.push_str(&sanitized_server_json(&server)?);
         details.push_str("\n```\n\n");
@@ -376,6 +399,19 @@ async fn write_connection_failure_report(
                 address.address, address.port
             ));
         }
+    }
+    if snapshot.is_some_and(|session| {
+        session.reason == Some(hr_session::DisconnectReason::AuthenticationFailed)
+    }) {
+        details.push_str("## Interpretation\n\n");
+        details.push_str(
+            "The TCP port is reachable, so routing/VPN is not the immediate failure. The server \
+             accepted the connection and then rejected the security/authentication phase \
+             (NLA/CredSSP). Check the password presence above, the domain/username format, \
+             account lockout or expiry, server/client clock skew, and NTLM/Kerberos policy. \
+             If Windows `mstsc` works with the same account, enable Advanced → \"Launch with \
+             external mstsc\" for this server and retry.\n\n",
+        );
     }
     details.push_str("## Environment\n\n");
     for key in [
