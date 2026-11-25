@@ -54,10 +54,10 @@ is used instead and nothing is printed. Then install the generated CA certificat
 on each phone (see [docs/mobile-install.md](docs/mobile-install.md)) and open
 `https://192.168.1.20:8787`.
 
-On Windows you can start it by double-clicking **`start-daybook.bat`**. It uses
-the release binary when present, uses `certs\` automatically when those files
-exist, and keeps the console open after shutdown. Set `DAYBOOK_NO_TLS=1` before
-running it to force plain HTTP.
+On Windows you can start it by double-clicking **`start-daybook.bat`**. It runs
+the newest version found in `releases\` (see [Releases](#releases)), uses
+`certs\` automatically when those files exist, and keeps the console open after
+shutdown. Set `DAYBOOK_NO_TLS=1` before running it to force plain HTTP.
 
 Plain HTTP (no certificate) is fine for local development:
 
@@ -306,6 +306,24 @@ reload when a new service worker is ready.
 **Certificates:** `cert init` refuses to overwrite an existing set. When a new
 certificate is required (IP change, expiry), run it with `--force` and re-install
 the new CA on every phone.
+
+---
+
+## Releases
+
+Each completed feature ends with a release. The release task runs the quality
+gates, commits source, builds the portable release binary and publishes it under
+`releases\` with the shared version format `vYY.MM.DD.N` (for example
+`daybook-v26.11.25.1.exe`):
+
+```powershell
+.\scripts\release.ps1 -Message "feat(workplace): <summary>"
+```
+
+- `-SkipTests` skips the fmt/clippy/test gates; `-NoPush` skips the final push.
+- `releases\` also keeps `SHA256SUMS.txt` and `BUILD.txt` (source commit,
+  toolchain and build time). Old executables are retained until removed.
+- `start-daybook.bat` automatically runs the newest executable in `releases\`.
 
 ---
 

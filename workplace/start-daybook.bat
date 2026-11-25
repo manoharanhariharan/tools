@@ -21,7 +21,14 @@ rem ---------------------------------------------------------------------------
 
 if not defined DAYBOOK_BIND set "DAYBOOK_BIND=0.0.0.0:8787"
 
-set "EXE=%~dp0target\release\daybook.exe"
+rem Prefer the newest published release in releases\; fall back to a local build.
+set "RELEASES=%~dp0releases"
+set "EXE="
+if exist "%RELEASES%\daybook-v*.exe" (
+    for /f "usebackq delims=" %%F in (`powershell -NoProfile -Command "$d=Get-ChildItem -LiteralPath $env:RELEASES -Filter 'daybook-v*.exe' -File | Sort-Object {[version](($_.Name -replace '^daybook-v','') -replace '\.exe$','')} -Descending; if($d){$d[0].FullName}"`) do set "EXE=%%F"
+)
+
+if not defined EXE set "EXE=%~dp0target\release\daybook.exe"
 if not exist "%EXE%" set "EXE=%~dp0target\debug\daybook.exe"
 if not exist "%EXE%" (
     echo Building Daybook release binary... this can take a few minutes.
@@ -68,6 +75,7 @@ echo ============================================================
 echo   Daybook
 echo   bind      : %DAYBOOK_BIND%
 echo   protocol  : %SCHEME%
+echo   build     : %EXE%
 if defined DAYBOOK_DATA_DIR echo   data dir  : %DAYBOOK_DATA_DIR%
 if not defined DAYBOOK_DATA_DIR echo   data dir  : platform default (%%LOCALAPPDATA%%\Daybook)
 echo   this PC   : %SCHEME%://localhost:%PORT%

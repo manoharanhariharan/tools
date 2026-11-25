@@ -45,6 +45,16 @@ Execute work in explicit, verifiable phases rather than big-bang changes:
 - **Performance & Scale Bounds:** Avoid unbounded loops/payloads, N+1 queries, or blocking UI/event loops on heavy work; apply pagination, batching, or virtualization where large data is involved.
 - **Scope & Backward Compatibility:** Keep changes tightly scoped to the task; do not refactor unrelated code or break existing public contracts without explicit approval.
 
+## 9. Mandatory Release Task After Every Feature
+- After a feature is implemented and verified, run the release task:
+  `.\scripts\release.ps1 -Message "<type>(workplace): <summary>"`.
+- The task runs the quality gates, commits source, builds the portable release
+  binary, publishes it under `releases/` as `daybook-vYY.MM.DD.N.exe`, and
+  commits the release (pushing when a remote is available).
+- `start-daybook.bat` runs the newest version found in `releases/`.
+- Do not leave a completed feature only in the working tree. If the task cannot
+  push, report the exact failure and leave the local commits/artifacts intact.
+
 ## Required Response Format at Each Checkpoint
 1. **Clarifying Questions / Assumptions** (if any)
 2. **Plan or Changes Made** (files touched & key design decisions)
