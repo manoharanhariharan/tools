@@ -5,6 +5,11 @@
   import { dialogs } from "../../state/dialogs.svelte";
   import { i18n } from "../../i18n/index.svelte";
 
+  interface Props {
+    embedded?: boolean;
+  }
+  let { embedded = false }: Props = $props();
+
   let filter = $state("");
   let menuOpen = $state<string | null>(null);
 
@@ -72,7 +77,7 @@
   }
 </script>
 
-<aside class="tags">
+<aside class="tags" class:embedded>
   <header>
     <h2>{i18n.t("common.search")} tags</h2>
     <span>{tags.length}</span>
@@ -146,6 +151,14 @@
     border-right: 1px solid var(--hr-border);
     background: color-mix(in srgb, var(--hr-primary-dark) 22%, transparent);
     min-height: 0;
+  }
+
+  .tags.embedded {
+    width: auto;
+    flex: 1;
+    padding: 0;
+    border-right: 0;
+    background: transparent;
   }
 
   header {

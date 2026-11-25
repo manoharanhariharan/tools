@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockInvoke, resetMockState } from "../ipc/mock";
 import { commands } from "../ipc/client";
-import type { DataSourceConfig, Server } from "../ipc/contracts";
+import type { CatalogFolder, DataSourceConfig, Server } from "../ipc/contracts";
 import { app } from "./app.svelte";
 import { catalog, cloneJson } from "./catalog.svelte";
 
@@ -12,6 +12,7 @@ async function seed(): Promise<void> {
   catalog.clearSelection();
   catalog.query = "";
   catalog.viewMode = "list";
+  catalog.clearFolderFilter();
   await catalog.load();
 }
 
@@ -39,6 +40,23 @@ describe("catalog store", () => {
     expect(catalog.tags().map((tag) => tag.name)).toContain("prod");
     expect(catalog.visibleServerIds().length).toBe(7);
     expect(catalog.viewMode).toBe("list");
+  });
+
+  it("confines the catalog to a selected folder subtree", () => {
+    const folder = catalog.rootFolders()[0];
+    const flatten = (node: CatalogFolder): Server[] => [
+      ...node.servers,
+      ...node.folders.flatMap(flatten),
+    ];
+    const expected = flatten(folder);
+    catalog.setFolderFilter(folder.path);
+    expect(catalog.visibleServerIds().sort()).toEqual(
+      expected.map((server) => server.id).sort(),
+    );
+    expect(catalog.rootFolders()).toEqual(folder.folders);
+    expect(catalog.rootServers()).toEqual(folder.servers);
+    catalog.clearFolderFilter();
+    expect(catalog.visibleServerIds()).toHaveLength(7);
   });
 
   it("keeps direct matching first and filters by tag operators", async () => {

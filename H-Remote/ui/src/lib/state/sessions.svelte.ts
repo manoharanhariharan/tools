@@ -51,6 +51,7 @@ class SessionsStore {
   displayOverrides = $state<
     Record<string, { width: number; height: number; monitors: number }>
   >({});
+  private fitScreens = new Set<string>();
   private fitSizes = new Map<string, { width: number; height: number }>();
   private cleanup = new CleanupRegistry();
   private poll: ReturnType<typeof setInterval> | undefined;
@@ -702,6 +703,11 @@ class SessionsStore {
     return Boolean(this.displayOverrides[id]);
   }
 
+  /** Auto-resize is suspended for fixed resolutions and explicit fit-to-window. */
+  shouldAutoResize(id: string): boolean {
+    return !this.displayOverrides[id] && !this.fitScreens.has(id);
+  }
+
   /** Applies a fixed resolution and optional virtual-monitor multiplier. */
   async applyDisplay(
     id: string,
@@ -711,7 +717,18 @@ class SessionsStore {
   ): Promise<void> {
     const safeWidth = Math.min(3840, Math.max(640, Math.round(width)));
     const safeHeight = Math.min(2160, Math.max(480, Math.round(height)));
-    const safeMonitors = Math.min(4, Math.max(1, Math.round(monitors)));
+    // The RDP Display Control channel caps a single desktop at 8192 px wide.
+    // Never request a width the backend will silently clamp, which made
+    // 3–4 virtual monitors look unstable.
+    const maxMonitors = Math.max(
+      1,
+      Math.min(4, Math.floor(8192 / safeWidth)),
+    );
+    const safeMonitors = Math.min(
+      maxMonitors,
+      Math.max(1, Math.round(monitors)),
+    );
+    this.fitScreens.delete(id);
     this.displayOverrides = {
       ...this.displayOverrides,
       [id]: { width: safeWidth, height: safeHeight, monitors: safeMonitors },
@@ -725,15 +742,15 @@ class SessionsStore {
     );
   }
 
-  /** Returns to fit-to-window auto resizing. */
+  /**
+   * Fits the existing remote bitmap into the pane without changing the remote
+   * pixel size. Auto-resize stays suspended until a fixed resolution is applied.
+   */
   async resetDisplay(id: string): Promise<void> {
     const next = { ...this.displayOverrides };
     delete next[id];
     this.displayOverrides = next;
-    const fit = this.fitSizes.get(id);
-    if (fit) {
-      await this.resize(id, fit.width, fit.height);
-    }
+    this.fitScreens.add(id);
   }
 
   async resize(id: string, width: number, height: number): Promise<void> {
@@ -848,6 +865,7 @@ class SessionsStore {
     this.availabilityResolve = null;
     this.displaySessionId = null;
     this.displayOverrides = {};
+    this.fitScreens.clear();
     this.fitSizes.clear();
     this.autoReconnects.clear();
     this.reportedFailures.clear();
@@ -896,6 +914,7 @@ class SessionsStore {
 
   private removeLocal(id: string): void {
     this.sessions = this.sessions.filter((session) => session.id !== id);
+    this.fitScreens.delete(id);
     this.fitSizes.delete(id);
     this.autoReconnects.delete(id);
     this.reportedFailures.delete(id);

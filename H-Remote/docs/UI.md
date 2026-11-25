@@ -44,14 +44,17 @@ Current shared primitives: `Button`, `Icon`, `Toggle`, `TextField`,
 
 ```
 features/catalog/
-  CatalogPage.svelte        shell: header, toolbar, tag panel, views, editor
+  CatalogPage.svelte        shell: compact header, toolbar, side panel, views, editor
   CatalogToolbar.svelte     search, view switch, sort, notes, bulk actions
+  CatalogSidePanel.svelte    Folders / Tags switch; folder tree confines the catalog
+  FolderFilterTree.svelte    recursive folder filter with connection counts
   TagPanel.svelte           counts, filtering, pin/rename/delete/order/shortcuts
   CatalogList.svelte        list rows + nested folder groups (recursive)
   CatalogCards.svelte       card grid + nested folder groups (recursive)
   CatalogTree.svelte        tree view with drag & drop and folder menus
   ServerRow.svelte          list row: inline address edit (Enter saves without
-                            connecting), note, context menu
+                            connecting), custom-order up/down controls, note,
+                            context menu
   ServerCard.svelte         card presentation
   ServerEditor.svelte       side panel: protocol tabs, credentials, stock/library
                             icons, bulk; bounded to the visible window width
@@ -106,9 +109,9 @@ bootstrap payload.
 ```
 features/session/
   SessionWorkspace.svelte   single combined header (drag handle, tabs, actions,
-                            window controls), grid/snap layouts, focus/full-screen,
-                            context menus, close-all; standalone in the shared
-                            `sessions` window
+                            window controls), grid/snap layouts (including
+                            4-screen presets), focus/full-screen, context menus,
+                            close-all; standalone in the shared `sessions` window
   SessionPane.svelte        one session surface: RDP/VNC frames, process
                             state, VNC pointer/keyboard/special keys, resize
   FileBrowser.svelte        SFTP/FTP listing, path navigation, transfers

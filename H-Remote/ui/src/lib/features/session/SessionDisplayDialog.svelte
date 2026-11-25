@@ -43,6 +43,7 @@
   });
 
   const totalWidth = $derived(width * monitors);
+  const maxMonitors = $derived(Math.max(1, Math.min(4, Math.floor(8192 / width))));
 
   async function apply(): Promise<void> {
     if (!session) return;
@@ -117,22 +118,29 @@
             onchange={(event) => (monitors = Number(event.currentTarget.value))}
           >
             <option value="1">1</option>
-            <option value="2">2 (extend)</option>
-            <option value="3">3 (extend)</option>
-            <option value="4">4 (extend)</option>
+            <option value="2" disabled={maxMonitors < 2}>2 (wide desktop)</option>
+            <option value="3" disabled={maxMonitors < 3}>3 (wide desktop)</option>
+            <option value="4" disabled={maxMonitors < 4}>4 (wide desktop)</option>
           </select>
         </label>
       </div>
 
       <p class="hr-small hr-muted">
-        Fixed mode suspends automatic fit-to-window resizing until you choose Fit. Canvas:
-        <strong>{totalWidth}×{height}</strong>.
+        Fixed mode suspends automatic resizing. Canvas:
+        <strong>{totalWidth}×{height}</strong>. “Fit to window” keeps the current remote pixel
+        size and only scales the rendering.
       </p>
       {#if monitors > 1}
         <p class="hr-small note">
-          The embedded engine exposes virtual monitors as one wide remote desktop. For true
-          per-monitor layout, enable “Launch with external mstsc” on the server.
+          The embedded engine exposes these as one wide remote desktop (Windows sees a single
+          ultrawide monitor), not true per-monitor desktops. For real multi-monitor layout,
+          enable “Launch with external mstsc” on the server.
         </p>
+        {#if maxMonitors < monitors}
+          <p class="hr-small note">
+            This width is capped at {maxMonitors} wide screen(s) by the RDP 8192 px limit.
+          </p>
+        {/if}
       {/if}
     </div>
   {/if}

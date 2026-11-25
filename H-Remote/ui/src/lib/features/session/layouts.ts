@@ -94,37 +94,37 @@ const PRESETS: Record<number, Preset[]> = {
     ]),
   ],
   4: [
-    preset("4-grid", "2 × 2", 2, 2, [
+    preset("4-grid", "4 screens (2 × 2)", 2, 2, [
       [0, 0, 1, 1],
       [1, 0, 1, 1],
       [0, 1, 1, 1],
       [1, 1, 1, 1],
     ]),
-    preset("4-cols", "Four columns", 4, 1, [
+    preset("4-cols", "4 screens (four columns)", 4, 1, [
       [0, 0, 1, 1],
       [1, 0, 1, 1],
       [2, 0, 1, 1],
       [3, 0, 1, 1],
     ]),
-    preset("4-left", "One left, three right", 2, 3, [
+    preset("4-left", "4 screens (one left, three right)", 2, 3, [
       [0, 0, 1, 3],
       [1, 0, 1, 1],
       [1, 1, 1, 1],
       [1, 2, 1, 1],
     ]),
-    preset("4-right", "Three left, one right", 2, 3, [
+    preset("4-right", "4 screens (three left, one right)", 2, 3, [
       [0, 0, 1, 1],
       [0, 1, 1, 1],
       [0, 2, 1, 1],
       [1, 0, 1, 3],
     ]),
-    preset("4-top", "One top, three bottom", 3, 2, [
+    preset("4-top", "4 screens (one top, three bottom)", 3, 2, [
       [0, 0, 3, 1],
       [0, 1, 1, 1],
       [1, 1, 1, 1],
       [2, 1, 1, 1],
     ]),
-    preset("4-bottom", "Three top, one bottom", 3, 2, [
+    preset("4-bottom", "4 screens (three top, one bottom)", 3, 2, [
       [0, 0, 1, 1],
       [1, 0, 1, 1],
       [2, 0, 1, 1],

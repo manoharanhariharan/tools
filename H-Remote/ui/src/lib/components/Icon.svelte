@@ -13,6 +13,8 @@
     | "error"
     | "chevron-left"
     | "chevron-right"
+    | "arrow-up"
+    | "arrow-down"
     | "folder"
     | "external"
     | "refresh"
@@ -83,6 +85,10 @@
     <path d="m14 6-6 6 6 6" />
   {:else if name === "chevron-right"}
     <path d="m10 6 6 6-6 6" />
+  {:else if name === "arrow-up"}
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  {:else if name === "arrow-down"}
+    <path d="M12 5v14M6 13l6 6 6-6" />
   {:else if name === "folder"}
     <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
   {:else if name === "external"}

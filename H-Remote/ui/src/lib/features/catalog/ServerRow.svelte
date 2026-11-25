@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import type { SearchHit, Server } from "../../ipc/contracts";
   import { commands } from "../../ipc/client";
   import { i18n } from "../../i18n/index.svelte";
@@ -6,6 +7,7 @@
   import { catalog, cloneJson } from "../../state/catalog.svelte";
   import ContextMenu, { type MenuItem } from "../../components/ContextMenu.svelte";
   import HighlightedText from "../../components/HighlightedText.svelte";
+  import Icon from "../../components/Icon.svelte";
   import ServerIcon from "../../components/ServerIcon.svelte";
   import TriStateCheckbox from "../../components/TriStateCheckbox.svelte";
 
@@ -20,6 +22,7 @@
   let editingAddress = $state(false);
   let addressDraft = $state("");
   let addressInput = $state<HTMLInputElement | null>(null);
+  let addressEditTimer: ReturnType<typeof setTimeout> | undefined;
   let menu = $state<{ x: number; y: number } | null>(null);
   let noteOpen = $state(false);
 
@@ -44,9 +47,19 @@
 
   function startAddressEdit(event: MouseEvent) {
     event.stopPropagation();
-    addressDraft = server.address ?? "";
-    editingAddress = true;
+    // Delay the inline editor so the first click of a double-click does not
+    // replace the IP button before the row can handle the connect action.
+    clearTimeout(addressEditTimer);
+    addressEditTimer = setTimeout(() => {
+      addressEditTimer = undefined;
+      addressDraft = server.address ?? "";
+      editingAddress = true;
+    }, 220);
   }
+
+  onDestroy(() => {
+    clearTimeout(addressEditTimer);
+  });
 
   async function commitAddress() {
     if (!editingAddress) {
@@ -186,10 +199,16 @@
   style:grid-template-columns={template}
   role="row"
   tabindex="0"
-  ondblclick={() => {
-    if (!editingAddress) {
-      void catalog.connect([server]);
+  ondblclick={(event) => {
+    // Double-clicking a row connects. Only an already-open editable control
+    // (for example the inline address input) keeps the event for itself.
+    clearTimeout(addressEditTimer);
+    addressEditTimer = undefined;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("input, textarea, select")) {
+      return;
     }
+    void catalog.connect([server]);
   }}
   onkeydown={(event) => {
     // Enter belongs to the focused row only. Inputs and buttons handle their
@@ -214,6 +233,32 @@
     <span class="badge">{server.protocol}</span>
   </div>
   <div class="cell name">
+    {#if catalog.sort === "custom" && !readOnly}
+      <span class="reorder" aria-label={`Reorder ${server.displayName}`}>
+        <button
+          type="button"
+          title="Move up"
+          aria-label={`Move ${server.displayName} up`}
+          onclick={(event) => {
+            event.stopPropagation();
+            void catalog.moveServerOrder(server.id, -1);
+          }}
+        >
+          <Icon name="arrow-up" size={11} />
+        </button>
+        <button
+          type="button"
+          title="Move down"
+          aria-label={`Move ${server.displayName} down`}
+          onclick={(event) => {
+            event.stopPropagation();
+            void catalog.moveServerOrder(server.id, 1);
+          }}
+        >
+          <Icon name="arrow-down" size={11} />
+        </button>
+      </span>
+    {/if}
     <button
       type="button"
       class="name-button"
@@ -354,6 +399,12 @@
     gap: 8px;
   }
 
+  .cell.name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
   .name-button {
     display: flex;
     align-items: center;
@@ -364,6 +415,30 @@
     color: inherit;
     padding: 0;
     text-align: left;
+  }
+
+  .reorder {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 1px;
+    flex: none;
+  }
+
+  .reorder button {
+    width: 17px;
+    height: 14px;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: color-mix(in srgb, var(--hr-background-text) 58%, transparent);
+    display: grid;
+    place-items: center;
+  }
+
+  .reorder button:hover {
+    background: color-mix(in srgb, var(--hr-accent-mid) 22%, transparent);
+    color: var(--hr-accent-light);
   }
 
   .name-text {

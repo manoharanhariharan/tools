@@ -4,6 +4,7 @@
   import { app } from "../../state/app.svelte";
   import { catalog } from "../../state/catalog.svelte";
   import ContextMenu, { type MenuItem } from "../../components/ContextMenu.svelte";
+  import Icon from "../../components/Icon.svelte";
   import ServerIcon from "../../components/ServerIcon.svelte";
   import TriStateCheckbox from "../../components/TriStateCheckbox.svelte";
   import { i18n } from "../../i18n/index.svelte";
@@ -76,6 +77,32 @@
       <span>{server.subTitle}</span>
     </div>
     <span class="protocol">{server.protocol}</span>
+    {#if catalog.sort === "custom" && !catalog.isReadOnly(server)}
+      <span class="reorder">
+        <button
+          type="button"
+          title="Move up"
+          aria-label={`Move ${server.displayName} up`}
+          onclick={(event) => {
+            event.stopPropagation();
+            void catalog.moveServerOrder(server.id, -1);
+          }}
+        >
+          <Icon name="arrow-up" size={11} />
+        </button>
+        <button
+          type="button"
+          title="Move down"
+          aria-label={`Move ${server.displayName} down`}
+          onclick={(event) => {
+            event.stopPropagation();
+            void catalog.moveServerOrder(server.id, 1);
+          }}
+        >
+          <Icon name="arrow-down" size={11} />
+        </button>
+      </span>
+    {/if}
   </div>
   {#if server.tags.length > 0 || catalog.hasMultipleSources()}
     <div class="tags">
@@ -116,6 +143,28 @@
 
   .card:hover {
     border-color: var(--hr-border-strong);
+  }
+
+  .reorder {
+    display: inline-flex;
+    gap: 2px;
+    flex: none;
+  }
+
+  .reorder button {
+    width: 20px;
+    height: 20px;
+    border: 1px solid var(--hr-border);
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    display: grid;
+    place-items: center;
+  }
+
+  .reorder button:hover {
+    background: color-mix(in srgb, var(--hr-accent-mid) 18%, transparent);
+    color: var(--hr-accent-light);
   }
 
   .card.selected {

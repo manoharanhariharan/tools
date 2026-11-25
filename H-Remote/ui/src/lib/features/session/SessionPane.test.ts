@@ -180,9 +180,20 @@ describe("RDP session input", () => {
       monitors: 2,
     });
 
+    const callsBeforeFit = resize.mock.calls.length;
     await sessions.resetDisplay(session.id);
-    expect(resize).toHaveBeenLastCalledWith(session.id, 1280, 720);
+    expect(resize.mock.calls.length).toBe(callsBeforeFit);
     expect(sessions.displayOverrides[session.id]).toBeUndefined();
+    expect(sessions.shouldAutoResize(session.id)).toBe(false);
+    resize.mockRestore();
+  });
+
+  it("clamps virtual monitors to the RDP 8192 px desktop limit", async () => {
+    const session = await connectRdp();
+    const resize = vi.spyOn(sessions, "resize");
+    await sessions.applyDisplay(session.id, 3840, 2160, 4);
+    expect(resize).toHaveBeenCalledWith(session.id, 7680, 2160);
+    expect(sessions.displayOverrides[session.id]?.monitors).toBe(2);
     resize.mockRestore();
   });
 });

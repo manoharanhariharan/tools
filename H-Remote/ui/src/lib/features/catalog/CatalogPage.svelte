@@ -13,7 +13,7 @@
   import CatalogTree from "./CatalogTree.svelte";
   import ImportExportDialog from "./ImportExportDialog.svelte";
   import ServerEditor from "./ServerEditor.svelte";
-  import TagPanel from "./TagPanel.svelte";
+  import CatalogSidePanel from "./CatalogSidePanel.svelte";
 
   let importOpen = $state(false);
   let resizing = $state<{
@@ -80,11 +80,19 @@
   <header class="page-head">
     <h1>{i18n.t("catalog.title")}</h1>
     <span>{totalServers} server{totalServers === 1 ? "" : "s"}</span>
+    {#if catalog.folderFilter}
+      <span class="folder-filter">
+        / {catalog.folderFilter.join(" / ")}
+        <button type="button" aria-label="Clear folder filter" onclick={() => catalog.clearFolderFilter()}>
+          ×
+        </button>
+      </span>
+    {/if}
   </header>
   <CatalogToolbar onimport={() => (importOpen = true)} onnewfolder={newFolder} />
 
   <div class="body">
-    <TagPanel />
+    <CatalogSidePanel />
 
     <section class="main">
       {#if catalog.loading}
@@ -211,7 +219,7 @@
     display: flex;
     align-items: baseline;
     gap: 10px;
-    padding: 10px 14px 6px;
+    padding: 5px 10px 3px;
   }
 
   .page-head h1 {
@@ -221,6 +229,24 @@
   .page-head span {
     font-size: var(--hr-font-size-small);
     color: color-mix(in srgb, var(--hr-background-text) 52%, transparent);
+  }
+
+  .page-head .folder-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--hr-accent-light);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .folder-filter button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0 2px;
   }
 
   .body {

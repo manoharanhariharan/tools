@@ -87,7 +87,7 @@
         clearTimeout(resizeTimer);
       }
       resizeTimer = setTimeout(() => {
-        if (!rect || sessions.hasDisplayOverride(session.id)) {
+        if (!rect || !sessions.shouldAutoResize(session.id)) {
           return;
         }
         if (connected) {

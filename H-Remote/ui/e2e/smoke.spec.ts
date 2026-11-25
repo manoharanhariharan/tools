@@ -52,6 +52,24 @@ test.describe("H-Remote shell", () => {
     await expect(page.getByText("File Server")).toBeVisible();
     await page.getByRole("button", { name: "tree view" }).click();
     await expect(page.getByText("Prod").first()).toBeVisible();
+    await page.getByRole("button", { name: "list view" }).click();
+
+    await page.getByTestId("folder-filter-Prod").click();
+    await expect(page.locator(".row")).toHaveCount(3);
+    await expect(page.getByText("Lab VNC")).toHaveCount(0);
+    await page.getByTestId("folder-filter-Prod").click();
+    await expect(page.locator(".row")).toHaveCount(7);
+  });
+
+  test("offers visible move controls in custom order", async ({ page }) => {
+    await resetProfile(page);
+    await completeWizard(page);
+    await page.getByLabel("Sort servers").selectOption("custom");
+    const rows = page.locator(".row");
+    const firstName = await rows.nth(0).locator(".name-text").innerText();
+    await expect(rows.nth(0).getByRole("button", { name: /Move .* up/ })).toBeVisible();
+    await rows.nth(0).getByRole("button", { name: /Move .* down/ }).click();
+    await expect(rows.nth(1)).toContainText(firstName.split("\n")[0]);
   });
 
   test("edits an address inline", async ({ page }) => {

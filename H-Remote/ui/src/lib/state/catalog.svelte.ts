@@ -52,6 +52,8 @@ class CatalogStore {
   sources = $state<SourceStatus[]>([]);
   /** `all` or a source id; extra sources are read-only (P8-10/P8-11). */
   sourceFilter = $state("all");
+  /** When set, the catalog is confined to this folder subtree. */
+  folderFilter = $state<string[] | null>(null);
   columnWidths = $state<Record<string, number>>({ ...DEFAULT_COLUMNS });
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
   private refreshQueued = false;
@@ -222,12 +224,25 @@ class CatalogStore {
     return this.expanded.has(path.join("/"));
   }
 
-  rootFolders(): CatalogTree["folders"] {
+  allRootFolders(): CatalogTree["folders"] {
     return this.view?.tree.folders ?? [];
   }
 
+  rootFolders(): CatalogTree["folders"] {
+    return this.currentTree().folders;
+  }
+
   rootServers(): Server[] {
-    return this.view?.tree.servers ?? [];
+    return this.currentTree().servers;
+  }
+
+  setFolderFilter(path: string[] | null): void {
+    const normalized = path?.filter(Boolean) ?? [];
+    this.folderFilter = normalized.length > 0 ? normalized : null;
+  }
+
+  clearFolderFilter(): void {
+    this.folderFilter = null;
   }
 
   visibleServerIds(): string[] {
@@ -240,7 +255,8 @@ class CatalogStore {
         walk(folder.servers, folder.folders);
       }
     };
-    walk(this.view?.tree.servers ?? [], this.view?.tree.folders ?? []);
+    const tree = this.currentTree();
+    walk(tree.servers, tree.folders);
     return ids;
   }
 
@@ -252,8 +268,41 @@ class CatalogStore {
         walk(folder.servers, folder.folders);
       }
     };
-    walk(this.view?.tree.servers ?? [], this.view?.tree.folders ?? []);
+    const tree = this.currentTree();
+    walk(tree.servers, tree.folders);
     return all;
+  }
+
+  private currentTree(): {
+    folders: CatalogTree["folders"];
+    servers: Server[];
+  } {
+    const tree = this.view?.tree;
+    if (!tree) {
+      return { folders: [], servers: [] };
+    }
+    if (!this.folderFilter) {
+      return tree;
+    }
+    const folder = this.findFolder(tree.folders, this.folderFilter);
+    return folder ? { folders: folder.folders, servers: folder.servers } : tree;
+  }
+
+  private findFolder(
+    folders: CatalogTree["folders"],
+    path: string[],
+  ): CatalogTree["folders"][number] | undefined {
+    const key = path.join("/");
+    for (const folder of folders) {
+      if (folder.path.join("/") === key) {
+        return folder;
+      }
+      const nested = this.findFolder(folder.folders, path);
+      if (nested) {
+        return nested;
+      }
+    }
+    return undefined;
   }
 
   /** Folder paths in the current display order, used to seed custom ordering. */

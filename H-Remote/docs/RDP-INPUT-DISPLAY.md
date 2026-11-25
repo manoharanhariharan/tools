@@ -45,14 +45,17 @@ Playwright tab/full-screen/frame-containment flow.
 RDP sessions have a **Display** button in the workspace bar and a **Display…** tab
 context-menu entry:
 
-- **Fit to window** keeps the existing auto-resize behaviour (ResizeObserver).
+- **Fit to window** keeps the current remote pixel size and only scales the
+  canvas into the pane. Auto-resize stays suspended until a fixed resolution is
+  applied, so fitting never changes the server-side resolution.
 - **Fixed resolution** presets (1024×768 … 3840×2160) or custom width/height,
   clamped to 640–3840 × 480–2160 per monitor.
 - **Virtual monitors** 1–4 multiplies the width (`width × monitors`) and requests
   that larger desktop from the server, e.g. two 1920×1080 monitors become a
-  3840×1080 canvas. The protocol caps a single display at 8192×8192.
-- While an override is active, fit-to-window resizing is suspended; reconnecting
-  reapplies the override. Removing the override restores the last fit size.
+  3840×1080 canvas. Requests are capped at the protocol limit of 8192 px wide
+  (for example 3840-wide screens allow at most two).
+- While an override is active or fit-to-window is selected, automatic resizing is
+  suspended; reconnecting reapplies a fixed override.
 - Live changes use IronRDP `RdpInputEvent::Resize` (Display Control).
 
 ## Rendering, resizing and window controls
@@ -136,6 +139,9 @@ server-negotiated resolution rather than the initial viewport request.
 
 IronRDP's client currently hard-codes a single monitor in its GCC layout, so the
 embedded engine exposes virtual monitors as **one wide remote desktop** (Windows
-sees a single ultrawide display). For true per-monitor layout and taskbar/DPI
-behaviour, enable **Launch with external mstsc** on the server; the display menu
-shows this hint when monitors > 1.
+sees a single ultrawide display). This is why 3–4 “monitors” feel unstable:
+there is no real per-monitor topology, DPI or taskbar awareness, and a width
+above 8192 px is rejected/clamped by the Display Control channel. The UI now
+caps the multiplier to 8192 px and labels the options as a wide desktop. For
+true per-monitor layout and taskbar/DPI behaviour, enable **Launch with external
+mstsc** on the server.
