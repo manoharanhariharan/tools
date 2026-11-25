@@ -390,7 +390,7 @@
     flex-direction: column;
     flex: 1;
     min-height: 0;
-    color: #dbe8f3;
+    color: var(--hr-background-text);
     font-size: 12px;
   }
 
@@ -399,8 +399,8 @@
     flex-direction: column;
     gap: 6px;
     padding: 7px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    background: #132436;
+    border-bottom: 1px solid var(--hr-border);
+    background: color-mix(in srgb, var(--hr-primary-dark) 58%, var(--hr-background));
   }
 
   .path,
@@ -416,15 +416,15 @@
     min-width: 160px;
     min-height: 28px;
     border-radius: 5px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    background: #0b1520;
+    border: 1px solid var(--hr-border);
+    background: var(--hr-background);
     color: inherit;
     padding: 0 8px;
     font: inherit;
   }
 
   .path button {
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid var(--hr-border);
     background: transparent;
     color: inherit;
     border-radius: 5px;
@@ -435,8 +435,8 @@
   select {
     height: 26px;
     border-radius: 5px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    background: #0b1520;
+    border: 1px solid var(--hr-border);
+    background: var(--hr-background);
     color: inherit;
     font-size: 10px;
   }
@@ -454,16 +454,16 @@
     gap: 6px;
     align-items: center;
     padding: 3px 8px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    border-bottom: 1px solid var(--hr-border);
     cursor: default;
   }
 
   .row.head {
-    color: #8aa3b8;
+    color: color-mix(in srgb, var(--hr-background-text) 56%, transparent);
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    background: #0e1c29;
+    background: color-mix(in srgb, var(--hr-primary-dark) 40%, var(--hr-background));
   }
 
   .row.head button {
@@ -476,11 +476,11 @@
   }
 
   .row.selected {
-    background: rgba(83, 158, 226, 0.16);
+    background: color-mix(in srgb, var(--hr-accent-mid) 16%, transparent);
   }
 
   .row:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: color-mix(in srgb, var(--hr-background-text) 5%, transparent);
   }
 
   .scroll {
@@ -499,27 +499,27 @@
   }
 
   .glyph {
-    color: #8fd0ff;
+    color: var(--hr-accent-light);
   }
 
   .empty {
     padding: 20px;
     text-align: center;
-    color: #8aa3b8;
+    color: color-mix(in srgb, var(--hr-background-text) 58%, transparent);
   }
 
   .transfers {
     max-height: 130px;
     overflow: auto;
-    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    border-top: 1px solid var(--hr-border);
     padding: 6px 8px;
-    background: #0e1c29;
+    background: color-mix(in srgb, var(--hr-primary-dark) 40%, var(--hr-background));
   }
 
   .transfers h3 {
     font-size: 10px;
     text-transform: uppercase;
-    color: #8aa3b8;
+    color: color-mix(in srgb, var(--hr-background-text) 56%, transparent);
     margin-bottom: 4px;
   }
 
@@ -541,19 +541,19 @@
   .meter {
     height: 5px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.1);
+    background: color-mix(in srgb, var(--hr-background-text) 10%, transparent);
     overflow: hidden;
   }
 
   .meter i {
     display: block;
     height: 100%;
-    background: #4ea1e8;
+    background: var(--hr-accent-mid);
   }
 
   .state {
     text-align: right;
-    color: #9fb6c9;
+    color: color-mix(in srgb, var(--hr-background-text) 64%, transparent);
   }
 
   .transfer button {

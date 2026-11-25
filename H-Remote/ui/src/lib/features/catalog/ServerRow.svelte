@@ -23,6 +23,9 @@
   let addressDraft = $state("");
   let addressInput = $state<HTMLInputElement | null>(null);
   let addressEditTimer: ReturnType<typeof setTimeout> | undefined;
+  let editingName = $state(false);
+  let nameDraft = $state("");
+  let nameInput = $state<HTMLInputElement | null>(null);
   let menu = $state<{ x: number; y: number } | null>(null);
   let noteOpen = $state(false);
 
@@ -30,6 +33,13 @@
     if (editingAddress && addressInput) {
       addressInput.focus();
       addressInput.select();
+    }
+  });
+
+  $effect(() => {
+    if (editingName && nameInput) {
+      nameInput.focus();
+      nameInput.select();
     }
   });
 
@@ -79,6 +89,46 @@
 
   function cancelAddress() {
     editingAddress = false;
+  }
+
+  function startNameEdit(event?: Event) {
+    event?.stopPropagation();
+    if (readOnly) {
+      return;
+    }
+    nameDraft = server.displayName;
+    editingName = true;
+  }
+
+  async function commitName() {
+    if (!editingName) {
+      return;
+    }
+    editingName = false;
+    const displayName = nameDraft.trim();
+    if (!displayName) {
+      app.showNotice("Connection name cannot be empty.", "warning");
+      return;
+    }
+    if (displayName === server.displayName) {
+      return;
+    }
+    await catalog.saveInline({ ...cloneJson(server), displayName });
+  }
+
+  function cancelName() {
+    editingName = false;
+  }
+
+  function onRowDragStart(event: DragEvent) {
+    if (readOnly || editingAddress || editingName) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer?.setData("text/plain", `server:${server.id}`);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+    }
   }
 
   function openMenu(event: MouseEvent) {
@@ -199,6 +249,8 @@
   style:grid-template-columns={template}
   role="row"
   tabindex="0"
+  draggable={!readOnly && !editingAddress && !editingName}
+  ondragstart={onRowDragStart}
   ondblclick={(event) => {
     // Double-clicking a row connects. Only an already-open editable control
     // (for example the inline address input) keeps the event for itself.
@@ -206,6 +258,10 @@
     addressEditTimer = undefined;
     const target = event.target as HTMLElement | null;
     if (target?.closest("input, textarea, select")) {
+      return;
+    }
+    if (target?.closest(".name-button")) {
+      catalog.openEdit(server);
       return;
     }
     void catalog.connect([server]);
@@ -218,6 +274,9 @@
     }
     if (event.key === "Enter") {
       void catalog.connect([server]);
+    } else if (event.key === "F2") {
+      event.preventDefault();
+      startNameEdit(event);
     }
   }}
   oncontextmenu={openMenu}
@@ -259,34 +318,67 @@
         </button>
       </span>
     {/if}
-    <button
-      type="button"
-      class="name-button"
-      onclick={(event) => {
-        event.stopPropagation();
-        catalog.openEdit(server);
-      }}
-    >
+    {#if editingName}
       <ServerIcon {server} size={26} />
-      <span class="name-text">
-        <HighlightedText text={server.displayName} ranges={hit?.nameRanges ?? []} />
-        <span class="tags">
-          {#each server.tags.slice(0, 3) as tag (tag)}
-            <span class="tag">#{tag}</span>
-          {/each}
+      <input
+        bind:this={nameInput}
+        class="inline-name"
+        bind:value={nameDraft}
+        aria-label={`Rename ${server.displayName}`}
+        onblur={() => void commitName()}
+        onkeydown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.stopPropagation();
+            void commitName();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            cancelName();
+          }
+        }}
+      />
+    {:else}
+      <button
+        type="button"
+        class="name-button"
+        title="Click to select; F2 renames; double-click opens the full editor"
+        onclick={(event) => {
+          event.stopPropagation();
+          catalog.selected.clear();
+          catalog.selected.add(server.id);
+          (event.currentTarget.closest(".row") as HTMLElement | null)?.focus();
+        }}
+        onkeydown={(event) => {
+          if (event.key === "F2") {
+            event.preventDefault();
+            startNameEdit(event);
+          }
+        }}
+      >
+        <ServerIcon {server} size={26} />
+        <span class="name-text">
+          <span class="name-line">
+            <HighlightedText text={server.displayName} ranges={hit?.nameRanges ?? []} />
+          </span>
+          <span class="tags">
+            {#each server.tags.slice(0, 3) as tag (tag)}
+              <span class="tag">#{tag}</span>
+            {/each}
+          </span>
         </span>
-      </span>
-      {#if server.note}
-        <span
-          class="note-dot"
-          title={server.note}
-          role="img"
-          aria-label="Has note"
-          onmouseenter={() => (noteOpen = true)}
-          onmouseleave={() => (noteOpen = false)}
-        ></span>
-      {/if}
-    </button>
+        {#if server.note}
+          <span
+            class="note-dot"
+            title={server.note}
+            role="img"
+            aria-label="Has note"
+            onmouseenter={() => (noteOpen = true)}
+            onmouseleave={() => (noteOpen = false)}
+          ></span>
+        {/if}
+      </button>
+    {/if}
     {#if noteOpen && server.note}
       <div class="note-pop" role="tooltip">{server.note}</div>
     {/if}
@@ -452,6 +544,27 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .name-line {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .inline-name {
+    flex: 1;
+    min-width: 0;
+    min-height: 28px;
+    border-radius: var(--hr-radius-small);
+    border: 1px solid var(--hr-accent-mid);
+    background: var(--hr-background);
+    color: var(--hr-background-text);
+    padding: 3px 7px;
+    font: inherit;
+    font-size: var(--hr-font-size-small);
   }
 
   .tags {

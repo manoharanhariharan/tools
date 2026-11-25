@@ -6,8 +6,28 @@
   import TagPanel from "./TagPanel.svelte";
 
   let tab = $state<"folders" | "tags">("folders");
+  let rootDrop = $state(false);
   const folders = $derived(catalog.allRootFolders());
   const total = $derived(catalog.snapshot?.servers.length ?? 0);
+
+  async function dropOnRoot(event: DragEvent): Promise<void> {
+    event.preventDefault();
+    rootDrop = false;
+    const payload = event.dataTransfer?.getData("text/plain") ?? "";
+    if (payload.startsWith("server:")) {
+      const server = catalog.serverById(payload.slice(7));
+      if (server) {
+        await catalog.moveServer(server, []);
+      }
+    } else if (payload.startsWith("folder:")) {
+      const folder = catalog.snapshot?.folders.find(
+        (candidate) => candidate.id === payload.slice(7),
+      );
+      if (folder && folder.path.length > 1) {
+        await catalog.moveFolder(folder, []);
+      }
+    }
+  }
 
   async function newRootFolder(): Promise<void> {
     const name = await dialogs.input({
@@ -49,6 +69,14 @@
         type="button"
         class="all"
         class:active={!catalog.folderFilter}
+        class:drop={rootDrop}
+        title="Show all connections; drop here to keep a connection independent"
+        ondragover={(event) => {
+          event.preventDefault();
+          rootDrop = true;
+        }}
+        ondragleave={() => (rootDrop = false)}
+        ondrop={(event) => void dropOnRoot(event)}
         onclick={() => catalog.clearFolderFilter()}
       >
         <Icon name="servers" size={13} />
@@ -70,6 +98,7 @@
       {#if folders.length === 0}
         <p class="empty">No folders yet. Create one to group and confine connections.</p>
       {/if}
+      <p class="hint">Drag a connection onto a folder to file it, or onto “All connections” to keep it independent.</p>
     </div>
   {:else}
     <TagPanel embedded />
@@ -148,6 +177,12 @@
     color: var(--hr-accent-light);
   }
 
+  .all.drop {
+    outline: 1px dashed var(--hr-accent-light);
+    outline-offset: -2px;
+    background: color-mix(in srgb, var(--hr-accent-mid) 22%, transparent);
+  }
+
   .new-folder {
     width: 25px;
     height: 25px;
@@ -172,10 +207,17 @@
     color: color-mix(in srgb, var(--hr-background-text) 48%, transparent);
   }
 
-  .empty {
+  .empty,
+  .hint {
     font-size: 10px;
     line-height: 1.4;
     color: color-mix(in srgb, var(--hr-background-text) 52%, transparent);
     padding: 6px;
+  }
+
+  .hint {
+    margin-top: auto;
+    border-top: 1px solid var(--hr-border);
+    padding-top: 7px;
   }
 </style>

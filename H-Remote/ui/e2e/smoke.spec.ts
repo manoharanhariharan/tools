@@ -61,6 +61,41 @@ test.describe("H-Remote shell", () => {
     await expect(page.locator(".row")).toHaveCount(7);
   });
 
+  test("collapses and expands the left navigation", async ({ page }) => {
+    await resetProfile(page);
+    await completeWizard(page);
+    await page.getByRole("button", { name: "Collapse sidebar" }).click();
+    await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
+    await expect(page.getByTestId("nav-settings")).toBeVisible();
+    await page.getByRole("button", { name: "Expand sidebar" }).click();
+    await expect(page.getByRole("button", { name: "Collapse sidebar" })).toBeVisible();
+  });
+
+  test("renames a connection inline with F2", async ({ page }) => {
+    await resetProfile(page);
+    await completeWizard(page);
+    const row = page.locator(".row", { hasText: "Production RDP" });
+    await row.getByRole("button", { name: /Production RDP/ }).click();
+    await page.keyboard.press("F2");
+    const input = page.getByLabel("Rename Production RDP");
+    await expect(input).toBeVisible();
+    await input.fill("Renamed RDP");
+    await input.press("Enter");
+    await expect(page.getByText("Renamed RDP")).toBeVisible();
+  });
+
+  test("moves a connection into a folder and back to the root", async ({ page }) => {
+    await resetProfile(page);
+    await completeWizard(page);
+    const folder = page.getByTestId("folder-filter-Lab");
+    const root = page.getByRole("button", { name: /All connections/ });
+    await expect(folder).toContainText("1");
+    await page.locator(".row", { hasText: "FTP Drop" }).dragTo(folder);
+    await expect(folder).toContainText("2");
+    await page.locator(".row", { hasText: "FTP Drop" }).dragTo(root);
+    await expect(folder).toContainText("1");
+  });
+
   test("offers visible move controls in custom order", async ({ page }) => {
     await resetProfile(page);
     await completeWizard(page);
@@ -321,7 +356,8 @@ test.describe("H-Remote shell", () => {
     await expect(page.locator(".source-name").filter({ hasText: "Team DB" })).toBeVisible();
     await expect(page.locator(".source-ro").first()).toHaveText("read-only");
 
-    await page.getByText("Team DB host").click();
+    await page.locator(".row", { hasText: "Team DB host" }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "View", exact: true }).click();
     await expect(page.getByText("Read-only source")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   });

@@ -804,8 +804,8 @@
 
 <style>
   .editor {
-    width: min(520px, 42vw);
-    min-width: 340px;
+    width: min(620px, 46vw);
+    min-width: 380px;
     max-width: 100%;
     flex: none;
     display: flex;

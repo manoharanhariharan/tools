@@ -54,6 +54,17 @@
   class:selected
   role="button"
   tabindex="0"
+  draggable={!catalog.isReadOnly(server)}
+  ondragstart={(event) => {
+    if (catalog.isReadOnly(server)) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer?.setData("text/plain", `server:${server.id}`);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+    }
+  }}
   ondblclick={() => catalog.connect([server])}
   onkeydown={(event) => {
     if (event.key === "Enter") {

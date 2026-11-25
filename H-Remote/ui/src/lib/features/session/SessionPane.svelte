@@ -437,14 +437,14 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--hr-border);
     border-radius: 7px;
     overflow: hidden;
-    background: #0b1520;
+    background: color-mix(in srgb, var(--hr-primary-dark) 48%, var(--hr-background));
   }
 
   .pane:focus-within {
-    border-color: rgba(83, 158, 226, 0.65);
+    border-color: color-mix(in srgb, var(--hr-accent-mid) 65%, transparent);
   }
 
   .stage {
@@ -456,7 +456,7 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    background: #05090d;
+    background: var(--hr-background);
   }
 
   .frame {
@@ -490,13 +490,13 @@
   }
 
   .process-title {
-    color: #e6f0fa;
+    color: var(--hr-background-text);
     font-weight: 600;
   }
 
   .hint {
     font-size: 10px;
-    color: #8aa3b8;
+    color: color-mix(in srgb, var(--hr-background-text) 56%, transparent);
   }
 
   .placeholder {
@@ -506,7 +506,7 @@
     gap: 8px;
     padding: 16px;
     text-align: center;
-    color: #b7c9d9;
+    color: color-mix(in srgb, var(--hr-background-text) 74%, transparent);
     font-size: 12px;
   }
 
@@ -514,8 +514,8 @@
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    border: 2px solid rgba(143, 208, 255, 0.2);
-    border-top-color: #8fd0ff;
+    border: 2px solid color-mix(in srgb, var(--hr-accent-light) 22%, transparent);
+    border-top-color: var(--hr-accent-light);
   }
 
   .pulse.busy {
@@ -538,8 +538,8 @@
     inset: auto 8px 8px;
     padding: 6px 8px;
     border-radius: 5px;
-    background: rgba(208, 90, 90, 0.18);
-    color: #f0b4b4;
+    background: color-mix(in srgb, var(--hr-danger) 18%, transparent);
+    color: var(--hr-danger);
     font-size: 11px;
   }
 </style>

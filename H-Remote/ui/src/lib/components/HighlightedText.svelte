@@ -41,6 +41,6 @@
     background: color-mix(in srgb, var(--hr-accent-mid) 38%, transparent);
     color: inherit;
     border-radius: 2px;
-    padding: 0 1px;
+    padding: 0;
   }
 </style>

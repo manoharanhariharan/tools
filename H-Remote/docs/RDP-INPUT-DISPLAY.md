@@ -83,7 +83,9 @@ context-menu entry:
   ignored frame sizes and kept mapping the pointer against the initial viewport
   (the cause of the resize-dependent mouse drift).
 - The per-pane header was removed: the workspace tab strip is the single header,
-  and the tab's status dot carries the connection state.
+  and the tab's status dot carries the connection state. The session window,
+  workspace bar, panes, tabs and file browser use the same theme CSS variables as
+  the main window, including live theme changes from `config:changed`.
 - Frame events are coalesced: at most one PNG fetch is in flight per session, and
   bursts collapse into the next fetch. The 250 ms interval is only a safety net
   for dropped events, so mouse-heavy sessions no longer queue dozens of encodes.

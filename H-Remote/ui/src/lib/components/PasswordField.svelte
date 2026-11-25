@@ -62,7 +62,15 @@
       spellcheck="false"
       oninput={(event) => oninput(event.currentTarget.value)}
     />
-    <button type="button" class="icon" title={visible ? "Hide password" : "Reveal password"} aria-label={visible ? "Hide password" : "Reveal password"} onclick={() => void reveal()}>
+    <button
+      type="button"
+      class="icon"
+      title={visible
+        ? "Hide password"
+        : "Reveal stored password — confirm with your Windows sign-in account"}
+      aria-label={visible ? "Hide password" : "Reveal password"}
+      onclick={() => void reveal()}
+    >
       {visible ? "◉" : "◎"}
     </button>
     <button type="button" class="icon" title="Copy password" aria-label="Copy password" onclick={() => void copy()} disabled={!value}>⧉</button>

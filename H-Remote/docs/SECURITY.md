@@ -111,7 +111,9 @@ Phase 0 ships the settings and UI gates; Phase 7 adds:
    written to disk. Clipboard redirection is opt-in per server; clipboard text
    crosses the session event channel but is never logged.
 5. Sensitive actions (revealing/copying passwords, JSON/RDP export) require the
-   native Windows credential prompt and are cached for 30 seconds. Other
+   native Windows credential prompt and are cached for 30 seconds. The prompt
+   asks for the **local Windows sign-in account**, not the remote connection's
+   username/password. Other
    platforms report verification as unavailable and require explicit
    confirmation; Windows Hello is not wired yet.
 6. Additional data sources are read-only by design and their passwords are vault

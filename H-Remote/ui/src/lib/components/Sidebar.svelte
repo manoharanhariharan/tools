@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import type { AppInfo, PathsDto } from "../ipc/contracts";
   import { i18n } from "../i18n/index.svelte";
   import type { Route } from "../state/app.svelte";
@@ -18,15 +19,35 @@
     { route: "settings", icon: "settings", label: "nav.settings" },
     { route: "about", icon: "about", label: "nav.about" },
   ];
+
+  let collapsed = $state(false);
+
+  onMount(() => {
+    collapsed = window.localStorage.getItem("hremote.sidebar.collapsed") === "true";
+  });
+
+  function toggle(): void {
+    collapsed = !collapsed;
+    window.localStorage.setItem("hremote.sidebar.collapsed", String(collapsed));
+  }
 </script>
 
-<nav class="sidebar" aria-label={i18n.t("nav.servers")}>
+<nav class="sidebar" class:collapsed aria-label={i18n.t("nav.servers")}>
   <div class="identity">
     <span class="glyph" aria-hidden="true">H</span>
     <div class="identity-text">
       <strong>H-Remote</strong>
       <span>{i18n.t("app.tagline")}</span>
     </div>
+    <button
+      type="button"
+      class="collapse"
+      title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      onclick={toggle}
+    >
+      <Icon name={collapsed ? "chevron-right" : "chevron-left"} size={14} />
+    </button>
   </div>
 
   <div class="nav">
@@ -67,6 +88,51 @@
     padding: 16px 12px 14px;
     background: color-mix(in srgb, var(--hr-primary-mid) 88%, var(--hr-background));
     border-right: 1px solid var(--hr-border);
+    transition: width 140ms ease;
+  }
+
+  .sidebar.collapsed {
+    width: 52px;
+    padding-inline: 8px;
+  }
+
+  .sidebar.collapsed .identity-text,
+  .sidebar.collapsed .nav-label,
+  .sidebar.collapsed .footer {
+    display: none;
+  }
+
+  .sidebar.collapsed .identity {
+    flex-direction: column;
+    gap: 6px;
+    padding-inline: 2px;
+  }
+
+  .sidebar.collapsed .nav-item {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .collapse {
+    margin-left: auto;
+    width: 20px;
+    height: 22px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: color-mix(in srgb, var(--hr-primary-text) 55%, transparent);
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+
+  .collapse:hover {
+    background: color-mix(in srgb, var(--hr-primary-text) 10%, transparent);
+    color: var(--hr-primary-text);
+  }
+
+  .sidebar.collapsed .collapse {
+    margin-left: 0;
   }
 
   .identity {

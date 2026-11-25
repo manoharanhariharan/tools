@@ -681,8 +681,8 @@
     z-index: 800;
     display: flex;
     flex-direction: column;
-    background: #0b1520;
-    color: #e6f0fa;
+    background: var(--hr-background);
+    color: var(--hr-background-text);
   }
 
   .workspace-bar {
@@ -691,8 +691,8 @@
     gap: 8px;
     min-height: 42px;
     padding: 5px 8px;
-    background: #101f2e;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    background: color-mix(in srgb, var(--hr-primary-dark) 82%, var(--hr-background));
+    border-bottom: 1px solid var(--hr-border);
     user-select: none;
   }
 
@@ -714,18 +714,18 @@
     width: 40px;
     border: 0;
     background: transparent;
-    color: #a9bfd2;
+    color: color-mix(in srgb, var(--hr-background-text) 66%, transparent);
     display: grid;
     place-items: center;
   }
 
   .window-control:hover {
-    background: rgba(255, 255, 255, 0.12);
-    color: #eaf4ff;
+    background: color-mix(in srgb, var(--hr-background-text) 12%, transparent);
+    color: var(--hr-background-text);
   }
 
   .window-control.close:hover {
-    background: #c0392b;
+    background: var(--hr-danger);
     color: #fff;
   }
 
@@ -752,15 +752,15 @@
     border: 1px solid transparent;
     border-radius: 6px;
     background: transparent;
-    color: #a9bfd2;
+    color: color-mix(in srgb, var(--hr-background-text) 64%, transparent);
     font-size: 12px;
     white-space: nowrap;
   }
 
   .tab.active {
-    background: rgba(83, 158, 226, 0.18);
-    border-color: rgba(83, 158, 226, 0.5);
-    color: #eaf4ff;
+    background: color-mix(in srgb, var(--hr-accent-mid) 20%, transparent);
+    border-color: color-mix(in srgb, var(--hr-accent-mid) 52%, transparent);
+    color: var(--hr-background-text);
   }
 
   .tab .label {
@@ -804,7 +804,7 @@
 
   .tab-action:hover {
     opacity: 1;
-    background: rgba(255, 255, 255, 0.12);
+    background: color-mix(in srgb, var(--hr-background-text) 12%, transparent);
   }
 
   .workspace-actions {
@@ -817,8 +817,8 @@
   .special {
     height: 26px;
     border-radius: 5px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    background: #132436;
+    border: 1px solid var(--hr-border);
+    background: color-mix(in srgb, var(--hr-primary-dark) 58%, var(--hr-background));
     color: inherit;
     font-size: 11px;
   }
@@ -837,9 +837,9 @@
     overflow: auto;
     padding: 5px;
     border-radius: 7px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    background: #16293b;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    border: 1px solid var(--hr-border);
+    background: color-mix(in srgb, var(--hr-primary-mid) 94%, var(--hr-background));
+    box-shadow: var(--hr-shadow);
   }
 
   .layout-pop button {
@@ -858,7 +858,7 @@
 
   .layout-pop button:hover,
   .layout-pop button.active {
-    background: rgba(83, 158, 226, 0.2);
+    background: color-mix(in srgb, var(--hr-accent-mid) 20%, transparent);
   }
 
   .thumb {
@@ -868,12 +868,12 @@
     height: 24px;
     flex: none;
     padding: 2px;
-    border: 1px solid rgba(255, 255, 255, 0.25);
+    border: 1px solid var(--hr-border);
     border-radius: 3px;
   }
 
   .thumb i {
-    background: rgba(143, 208, 255, 0.55);
+    background: color-mix(in srgb, var(--hr-accent-light) 55%, transparent);
     border-radius: 1px;
   }
 
@@ -906,11 +906,11 @@
     align-items: center;
     justify-content: center;
     gap: 12px;
-    color: #b7c9d9;
+    color: color-mix(in srgb, var(--hr-background-text) 72%, transparent);
   }
 
   .empty h2 {
     font-size: 18px;
-    color: #e6f0fa;
+    color: var(--hr-background-text);
   }
 </style>
