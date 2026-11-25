@@ -452,8 +452,10 @@ probe and recent log lines are all relevant.
 `crash-session-*.md` report once per session id and disconnect episode. Failures
 before a session is created use `report_connection_failure`; reconnect command
 errors use the session report. The report contains the session snapshot,
-secrets-redacted server JSON, a 3-second TCP probe, proxy/domain environment
-values and the recent log tail. The user gets a notice with the report path.
+secrets-redacted server JSON, a credential-presence summary (never the secret),
+a 3-second TCP probe, proxy/domain environment values, an authentication
+interpretation for NLA/CredSSP failures, and the recent log tail. The user gets
+a notice with the report path.
 The session manager also logs disconnect, retry and terminal-failure events at
 warn/error level so the report's log tail contains the sequence.
 

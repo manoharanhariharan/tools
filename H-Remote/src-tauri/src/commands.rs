@@ -400,9 +400,9 @@ async fn write_connection_failure_report(
             ));
         }
     }
-    if snapshot.is_some_and(|session| {
-        session.reason == Some(hr_session::DisconnectReason::AuthenticationFailed)
-    }) {
+    if snapshot
+        .is_some_and(|session| session.reason == Some(DisconnectReason::AuthenticationFailed))
+    {
         details.push_str("## Interpretation\n\n");
         details.push_str(
             "The TCP port is reachable, so routing/VPN is not the immediate failure. The server \
