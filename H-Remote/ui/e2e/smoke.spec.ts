@@ -304,6 +304,17 @@ test.describe("H-Remote shell", () => {
     await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   });
 
+  test("repairs catalog secrets from data settings", async ({ page }) => {
+    await resetProfile(page);
+    await completeWizard(page);
+    await page.getByTestId("nav-settings").click();
+    await page.getByTestId("settings-tab-data").click();
+    await page.getByRole("button", { name: "Repair secrets" }).click();
+    await expect(page.getByRole("heading", { name: "Repair database secrets?" })).toBeVisible();
+    await page.getByRole("button", { name: "OK", exact: true }).click();
+    await expect(page.getByText(/Re-encrypted|Repaired/)).toBeVisible();
+  });
+
   test("persists general settings across reloads", async ({ page }) => {
     await resetProfile(page);
     await completeWizard(page);

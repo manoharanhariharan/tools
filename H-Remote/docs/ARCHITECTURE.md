@@ -117,6 +117,11 @@ Lifecycle:
   validation and again at launch.
 - **Corruption policy** — parse failure renames the file to
   `.corrupt-<millis>` and returns defaults; the path is surfaced in the UI.
+- **Mixed-key policy** — a row-level secret that cannot be decrypted is cleared
+  for display (never written back automatically) and logged with its id.
+  `Repository::open` refuses to stamp a new sentinel over existing rows. The
+  explicit `repair_catalog_secrets` command re-encrypts readable secrets, clears
+  unreadable ones and replaces the sentinel, then reopens the repository.
 - **Debounce** — updates go to a single worker thread; the latest snapshot wins.
   `flush()` writes immediately and waits; `Drop` flushes and joins the worker.
 - **Watchers** — `tokio::sync::watch` publishes persisted snapshots. The app owns

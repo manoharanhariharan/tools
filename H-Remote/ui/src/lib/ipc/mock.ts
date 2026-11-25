@@ -1973,6 +1973,8 @@ export async function mockInvoke<T>(
       } as VaultStatus as T;
     case "database_status":
       return bootstrap().database as T;
+    case "repair_catalog_secrets":
+      return { servers: catalog.servers.length, credentials: catalog.credentials.length, secretsCleared: 0 } as T;
     case "set_log_level": {
       config.general.logLevel = args?.level as Configuration["general"]["logLevel"];
       persist();

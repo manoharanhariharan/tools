@@ -21,7 +21,7 @@ pub use codec::{
     SecretCodec, VaultCodec, seal_credential, seal_server, unseal_credential, unseal_server,
 };
 pub use dialect::SqlDialect;
-pub use repository::Repository;
+pub use repository::{Repository, SecretRepairReport};
 pub use schema::{
     CONFIGS, CREDENTIALS, CURRENT_SCHEMA_VERSION, ENCRYPTION_TEST_KEY, SERVERS, TABLE_META,
 };

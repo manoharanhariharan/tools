@@ -99,11 +99,52 @@ pub fn unseal_server(
     json: &str,
     codec: &dyn SecretCodec,
 ) -> AppResult<Server> {
+    unseal_server_mode(stored_protocol, class_version, json, codec, false).map(|(server, _)| server)
+}
+
+/// Reads a server even when one or more secrets were encrypted with another
+/// key. Those fields become empty and the returned count lets the UI/recovery
+/// path report what was dropped.
+pub fn unseal_server_lenient(
+    stored_protocol: &str,
+    class_version: u32,
+    json: &str,
+    codec: &dyn SecretCodec,
+) -> AppResult<(Server, u32)> {
+    unseal_server_mode(stored_protocol, class_version, json, codec, true)
+}
+
+fn unseal_server_mode(
+    stored_protocol: &str,
+    class_version: u32,
+    json: &str,
+    codec: &dyn SecretCodec,
+    lenient: bool,
+) -> AppResult<(Server, u32)> {
     let mut value: Value = serde_json::from_str(json)?;
+    let mut cleared = 0;
     if let Value::Object(object) = &mut value {
-        unseal_field(object, "password", PURPOSE_SERVER_PASSWORD, codec)?;
-        unseal_field(object, "privateKey", PURPOSE_SERVER_PRIVATE_KEY, codec)?;
-        unseal_field(object, "gatewayPassword", PURPOSE_GATEWAY_PASSWORD, codec)?;
+        cleared += usize::from(unseal_field(
+            object,
+            "password",
+            PURPOSE_SERVER_PASSWORD,
+            codec,
+            lenient,
+        )?);
+        cleared += usize::from(unseal_field(
+            object,
+            "privateKey",
+            PURPOSE_SERVER_PRIVATE_KEY,
+            codec,
+            lenient,
+        )?);
+        cleared += usize::from(unseal_field(
+            object,
+            "gatewayPassword",
+            PURPOSE_GATEWAY_PASSWORD,
+            codec,
+            lenient,
+        )?);
     }
     if let Some(alternates) = value
         .get_mut("alternateCredentials")
@@ -111,8 +152,20 @@ pub fn unseal_server(
     {
         for alternate in alternates {
             if let Value::Object(object) = alternate {
-                unseal_field(object, "password", PURPOSE_ALTERNATE_PASSWORD, codec)?;
-                unseal_field(object, "privateKey", PURPOSE_ALTERNATE_PRIVATE_KEY, codec)?;
+                cleared += usize::from(unseal_field(
+                    object,
+                    "password",
+                    PURPOSE_ALTERNATE_PASSWORD,
+                    codec,
+                    lenient,
+                )?);
+                cleared += usize::from(unseal_field(
+                    object,
+                    "privateKey",
+                    PURPOSE_ALTERNATE_PRIVATE_KEY,
+                    codec,
+                    lenient,
+                )?);
             }
         }
     }
@@ -126,7 +179,13 @@ pub fn unseal_server(
                 .and_then(Value::as_str)
                 .is_some_and(|kind| kind.eq_ignore_ascii_case("secret"));
             if is_secret {
-                unseal_field(object, "value", PURPOSE_ARGUMENT_SECRET, codec)?;
+                cleared += usize::from(unseal_field(
+                    object,
+                    "value",
+                    PURPOSE_ARGUMENT_SECRET,
+                    codec,
+                    lenient,
+                )?);
             }
         }
     }
@@ -143,7 +202,7 @@ pub fn unseal_server(
             server.base().class_version
         )));
     }
-    Ok(server)
+    Ok((server, cleared as u32))
 }
 
 pub fn seal_credential(credential: &Credential, codec: &dyn SecretCodec) -> AppResult<String> {
@@ -161,18 +220,42 @@ pub fn seal_credential(credential: &Credential, codec: &dyn SecretCodec) -> AppR
 }
 
 pub fn unseal_credential(json: &str, codec: &dyn SecretCodec) -> AppResult<Credential> {
+    unseal_credential_mode(json, codec, false).map(|(credential, _)| credential)
+}
+
+/// Credential counterpart to [`unseal_server_lenient`].
+pub fn unseal_credential_lenient(
+    json: &str,
+    codec: &dyn SecretCodec,
+) -> AppResult<(Credential, u32)> {
+    unseal_credential_mode(json, codec, true)
+}
+
+fn unseal_credential_mode(
+    json: &str,
+    codec: &dyn SecretCodec,
+    lenient: bool,
+) -> AppResult<(Credential, u32)> {
     let mut value: Value = serde_json::from_str(json)?;
+    let mut cleared = 0;
     if let Value::Object(object) = &mut value {
-        unseal_field(object, "password", PURPOSE_CREDENTIAL_PASSWORD, codec)?;
-        unseal_field(
+        cleared += usize::from(unseal_field(
+            object,
+            "password",
+            PURPOSE_CREDENTIAL_PASSWORD,
+            codec,
+            lenient,
+        )?);
+        cleared += usize::from(unseal_field(
             object,
             "privateKeyPath",
             PURPOSE_CREDENTIAL_PRIVATE_KEY,
             codec,
-        )?;
+            lenient,
+        )?);
     }
     let credential: Credential = serde_json::from_value(value)?;
-    Ok(credential)
+    Ok((credential, cleared as u32))
 }
 
 fn seal_field(
@@ -208,19 +291,39 @@ fn unseal_field(
     key: &str,
     purpose: &str,
     codec: &dyn SecretCodec,
-) -> AppResult<()> {
+    lenient: bool,
+) -> AppResult<bool> {
     let Some(value) = object.get(key) else {
-        return Ok(());
+        return Ok(false);
     };
     let plaintext = match value {
-        Value::String(plaintext) => plaintext.clone(),
-        Value::Null => return Ok(()),
+        Value::String(plaintext) => {
+            object.insert(key.to_string(), Value::String(plaintext.clone()));
+            return Ok(false);
+        }
+        Value::Null => return Ok(false),
         Value::Object(sealed) => {
-            let encoded = sealed
-                .get(ENC_KEY)
-                .and_then(Value::as_str)
-                .ok_or_else(|| AppError::storage(format!("secret field '{key}' is malformed")))?;
-            codec.decrypt(purpose, encoded)?
+            let Some(encoded) = sealed.get(ENC_KEY).and_then(Value::as_str) else {
+                if lenient {
+                    object.insert(key.to_string(), Value::String(String::new()));
+                    return Ok(true);
+                }
+                return Err(AppError::storage(format!(
+                    "secret field '{key}' is malformed"
+                )));
+            };
+            match codec.decrypt(purpose, encoded) {
+                Ok(plaintext) => plaintext,
+                Err(_) if lenient => {
+                    object.insert(key.to_string(), Value::String(String::new()));
+                    return Ok(true);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        _ if lenient => {
+            object.insert(key.to_string(), Value::String(String::new()));
+            return Ok(true);
         }
         _ => {
             return Err(AppError::storage(format!(
@@ -229,7 +332,7 @@ fn unseal_field(
         }
     };
     object.insert(key.to_string(), Value::String(plaintext));
-    Ok(())
+    Ok(false)
 }
 
 #[cfg(test)]
@@ -284,6 +387,16 @@ pub(crate) mod tests {
         };
         let json = seal_server(&server, &codec).unwrap();
         assert!(unseal_server("SSH", server.base().class_version, &json, &other).is_err());
+
+        let (lenient, cleared) =
+            unseal_server_lenient("SSH", server.base().class_version, &json, &other).unwrap();
+        assert!(cleared > 0);
+        assert_eq!(lenient.base().display_name, server.base().display_name);
+        assert!(
+            lenient
+                .credentials()
+                .is_some_and(|value| value.password.is_empty())
+        );
     }
 
     #[test]

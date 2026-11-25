@@ -124,6 +124,12 @@ Phase 0 ships the settings and UI gates; Phase 7 adds:
    privileges by design; they are never run from imported data unless a server
    actually configures them. Inline PEM private keys are written to a per-launch
    temp file (mode 0600 on Unix) and deleted on exit/cancel/spawn failure.
+10. A copied/relinked profile can contain rows encrypted with a previous key.
+   Listing treats those individual secrets as empty (never plaintext fallback) and
+   logs the affected id. Settings → Data → **Repair secrets** explicitly
+   re-encrypts readable values with the current key, clears the unreadable ones
+   and replaces the sentinel. Repair never runs automatically.
+
 9. Update checks fetch a user-configured HTTPS manifest; the app never downloads
    or installs automatically, only opens the advertised download URL.
 10. Custom protocols execute the configured external runner with the user's

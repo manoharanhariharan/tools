@@ -290,6 +290,14 @@ impl AppState {
             })
     }
 
+    pub fn install_repository(&self, repository: Option<Arc<Repository>>, error: Option<String>) {
+        *self.repository.lock().expect("repository lock poisoned") = repository;
+        *self
+            .repository_error
+            .lock()
+            .expect("repository error lock poisoned") = error;
+    }
+
     pub fn sources(&self) -> AppResult<Arc<SourceManager>> {
         self.sources.clone().ok_or_else(|| {
             AppError::unavailable("additional data sources require the encrypted vault".to_string())

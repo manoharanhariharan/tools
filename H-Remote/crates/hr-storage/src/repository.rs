@@ -9,7 +9,8 @@ use sqlx::sqlite::SqlitePool;
 use sqlx::{Row, Sqlite, Transaction};
 
 use crate::codec::{
-    SecretCodec, VaultCodec, seal_credential, seal_server, unseal_credential, unseal_server,
+    SecretCodec, VaultCodec, seal_credential, seal_server, unseal_credential_lenient,
+    unseal_server_lenient,
 };
 use crate::dialect::SqlDialect;
 use crate::schema::{CONFIGS, CREDENTIALS, ENCRYPTION_TEST_KEY, FOLDERS, SERVERS, TABLE_META};
@@ -25,6 +26,14 @@ struct CachedServers {
 struct CachedCredentials {
     stamp: i64,
     values: Arc<Vec<Credential>>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretRepairReport {
+    pub servers: u32,
+    pub credentials: u32,
+    pub secrets_cleared: u32,
 }
 
 #[derive(Default)]
@@ -74,6 +83,15 @@ impl Repository {
                     ))
                 })?,
             None => {
+                // Never stamp a new key onto an existing catalog: its rows may
+                // still be encrypted with the previous key. Force the explicit
+                // repair path instead of producing silent mixed-key storage.
+                if repository.server_count().await? > 0 || repository.credential_count().await? > 0
+                {
+                    return Err(AppError::encryption_key(
+                        "the database contains encrypted data but its sentinel is missing; run catalog repair",
+                    ));
+                }
                 let sentinel = repository.codec.create_sentinel()?;
                 repository
                     .set_config(ENCRYPTION_TEST_KEY, &sentinel)
@@ -85,6 +103,105 @@ impl Repository {
 
     pub async fn with_vault(pool: SqlitePool, vault: Arc<hr_crypto::Vault>) -> AppResult<Self> {
         Self::open(pool, Arc::new(VaultCodec::new(vault))).await
+    }
+
+    /// Repairs rows written with another key: readable secrets are re-encrypted
+    /// with the current codec, unreadable ones are cleared, and the encryption
+    /// sentinel is replaced. Usable both when `open` succeeded and when the
+    /// sentinel itself failed verification.
+    pub async fn repair_secrets_with_pool(
+        pool: SqlitePool,
+        codec: Arc<dyn SecretCodec>,
+    ) -> AppResult<SecretRepairReport> {
+        let repository = Self {
+            pool,
+            codec,
+            dialect: SqlDialect::Sqlite,
+            cache: Arc::new(RwLock::new(Cache::default())),
+        };
+        repository.repair_secrets().await
+    }
+
+    pub async fn repair_secrets(&self) -> AppResult<SecretRepairReport> {
+        let now = now_ms();
+        let mut report = SecretRepairReport::default();
+        let mut transaction = self.pool.begin().await.map_err(storage_error)?;
+
+        let server_rows = sqlx::query(&format!(
+            "SELECT Id, Protocol, ClassVersion, Json FROM {SERVERS}"
+        ))
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(storage_error)?;
+        for row in server_rows {
+            let id: String = row.try_get("Id").map_err(storage_error)?;
+            let protocol: String = row.try_get("Protocol").map_err(storage_error)?;
+            let class_version: i64 = row.try_get("ClassVersion").map_err(storage_error)?;
+            let json: String = row.try_get("Json").map_err(storage_error)?;
+            let (server, cleared) = unseal_server_lenient(
+                &protocol,
+                class_version.max(0) as u32,
+                &json,
+                self.codec.as_ref(),
+            )
+            .map_err(|error| AppError::storage(format!("cannot repair server {id}: {error}")))?;
+            let sealed = seal_server(&server, self.codec.as_ref())?;
+            sqlx::query(&format!(
+                "UPDATE {SERVERS} SET Json = {}, UpdatedAt = {} WHERE Id = {}",
+                self.dialect.placeholder(1),
+                self.dialect.placeholder(2),
+                self.dialect.placeholder(3)
+            ))
+            .bind(&sealed)
+            .bind(now)
+            .bind(&id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(storage_error)?;
+            report.servers += 1;
+            report.secrets_cleared += cleared;
+        }
+
+        let credential_rows = sqlx::query(&format!("SELECT Id, Json FROM {CREDENTIALS}"))
+            .fetch_all(&mut *transaction)
+            .await
+            .map_err(storage_error)?;
+        for row in credential_rows {
+            let id: String = row.try_get("Id").map_err(storage_error)?;
+            let json: String = row.try_get("Json").map_err(storage_error)?;
+            let (credential, cleared) = unseal_credential_lenient(&json, self.codec.as_ref())
+                .map_err(|error| {
+                    AppError::storage(format!("cannot repair credential {id}: {error}"))
+                })?;
+            let sealed = seal_credential(&credential, self.codec.as_ref())?;
+            sqlx::query(&format!(
+                "UPDATE {CREDENTIALS} SET Json = {}, UpdatedAt = {} WHERE Id = {}",
+                self.dialect.placeholder(1),
+                self.dialect.placeholder(2),
+                self.dialect.placeholder(3)
+            ))
+            .bind(&sealed)
+            .bind(now)
+            .bind(&id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(storage_error)?;
+            report.credentials += 1;
+            report.secrets_cleared += cleared;
+        }
+
+        if report.servers > 0 {
+            bump_table(&mut transaction, SERVERS, 0, now).await?;
+        }
+        if report.credentials > 0 {
+            bump_table(&mut transaction, CREDENTIALS, 0, now).await?;
+        }
+        transaction.commit().await.map_err(storage_error)?;
+
+        self.set_config(ENCRYPTION_TEST_KEY, &self.codec.create_sentinel()?)
+            .await?;
+        self.invalidate_caches();
+        Ok(report)
     }
 
     pub fn dialect(&self) -> SqlDialect {
@@ -124,13 +241,20 @@ impl Repository {
             let protocol: String = row.try_get("Protocol").map_err(storage_error)?;
             let class_version: i64 = row.try_get("ClassVersion").map_err(storage_error)?;
             let json: String = row.try_get("Json").map_err(storage_error)?;
-            let server = unseal_server(
+            let (server, cleared) = unseal_server_lenient(
                 &protocol,
                 class_version.max(0) as u32,
                 &json,
                 self.codec.as_ref(),
             )
             .map_err(|error| AppError::storage(format!("cannot read server {id}: {error}")))?;
+            if cleared > 0 {
+                tracing::warn!(
+                    server_id = %id,
+                    cleared,
+                    "server has secrets encrypted with another key; run catalog repair"
+                );
+            }
             servers.push(server);
         }
         let values = Arc::new(servers);
@@ -556,9 +680,17 @@ impl Repository {
         for row in rows {
             let id: String = row.try_get("Id").map_err(storage_error)?;
             let json: String = row.try_get("Json").map_err(storage_error)?;
-            let credential = unseal_credential(&json, self.codec.as_ref()).map_err(|error| {
-                AppError::storage(format!("cannot read credential {id}: {error}"))
-            })?;
+            let (credential, cleared) = unseal_credential_lenient(&json, self.codec.as_ref())
+                .map_err(|error| {
+                    AppError::storage(format!("cannot read credential {id}: {error}"))
+                })?;
+            if cleared > 0 {
+                tracing::warn!(
+                    credential_id = %id,
+                    cleared,
+                    "credential has secrets encrypted with another key; run catalog repair"
+                );
+            }
             credentials.push(credential);
         }
         let values = Arc::new(credentials);
@@ -586,7 +718,7 @@ impl Repository {
             .map_err(storage_error)?;
         row.map(|row| {
             let json: String = row.try_get("Json").map_err(storage_error)?;
-            unseal_credential(&json, self.codec.as_ref())
+            unseal_credential_lenient(&json, self.codec.as_ref()).map(|(value, _)| value)
         })
         .transpose()
     }
@@ -603,7 +735,7 @@ impl Repository {
             .map_err(storage_error)?;
         row.map(|row| {
             let json: String = row.try_get("Json").map_err(storage_error)?;
-            unseal_credential(&json, self.codec.as_ref())
+            unseal_credential_lenient(&json, self.codec.as_ref()).map(|(value, _)| value)
         })
         .transpose()
     }
@@ -620,7 +752,7 @@ impl Repository {
             .map_err(storage_error)?;
         row.map(|row| {
             let json: String = row.try_get("Json").map_err(storage_error)?;
-            unseal_credential(&json, self.codec.as_ref())
+            unseal_credential_lenient(&json, self.codec.as_ref()).map(|(value, _)| value)
         })
         .transpose()
     }
@@ -878,12 +1010,13 @@ impl Repository {
         let protocol: String = row.try_get("Protocol").map_err(storage_error)?;
         let class_version: i64 = row.try_get("ClassVersion").map_err(storage_error)?;
         let json: String = row.try_get("Json").map_err(storage_error)?;
-        unseal_server(
+        unseal_server_lenient(
             &protocol,
             class_version.max(0) as u32,
             &json,
             self.codec.as_ref(),
         )
+        .map(|(server, _)| server)
         .map_err(|error| AppError::storage(format!("cannot read server {id}: {error}")))
     }
 }
@@ -1054,6 +1187,74 @@ mod tests {
         let error = Repository::open(
             database.pool().clone(),
             Arc::new(crate::codec::VaultCodec::new(wrong)),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, AppError::EncryptionKey(_)), "{error}");
+        database.close().await;
+    }
+
+    #[tokio::test]
+    async fn repair_reencrypts_readable_rows_and_clears_foreign_secrets() {
+        let dir = TempDir::new().unwrap();
+        let database = crate::Database::open_sqlite(dir.path().join("hremote.db"))
+            .await
+            .unwrap();
+        let salt = InstallationSalt::load_or_create(dir.path().join("salt")).unwrap();
+        let first = Arc::new(Vault::from_parts([5u8; 32], &salt, KeyStoreKind::Memory));
+        let first_codec = Arc::new(crate::codec::VaultCodec::new(Arc::clone(&first)));
+        let repository = Repository::open(database.pool().clone(), first_codec)
+            .await
+            .unwrap();
+        let mut server = Server::new_ssh("Host", "host.example", "root");
+        if let Some(credentials) = server.credentials_mut() {
+            credentials.password = "foreign-secret".into();
+        }
+        repository.upsert_server(server).await.unwrap();
+        drop(repository);
+
+        let second = Arc::new(Vault::from_parts([6u8; 32], &salt, KeyStoreKind::Memory));
+        let second_codec: Arc<dyn SecretCodec> =
+            Arc::new(crate::codec::VaultCodec::new(Arc::clone(&second)));
+        let report = Repository::repair_secrets_with_pool(
+            database.pool().clone(),
+            Arc::clone(&second_codec),
+        )
+        .await
+        .unwrap();
+        assert_eq!(report.servers, 1);
+        assert_eq!(report.secrets_cleared, 1);
+
+        let repaired = Repository::open(database.pool().clone(), second_codec)
+            .await
+            .unwrap();
+        let loaded = repaired.list_servers().await.unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].base().display_name, "Host");
+        assert!(loaded[0].credentials().unwrap().password.is_empty());
+        database.close().await;
+    }
+
+    #[tokio::test]
+    async fn missing_sentinel_with_existing_rows_requires_repair() {
+        let dir = TempDir::new().unwrap();
+        let (repository, _, database) = repository(&dir).await;
+        repository
+            .upsert_server(Server::new_ssh("Host", "host.example", "root"))
+            .await
+            .unwrap();
+        sqlx::query(&format!(
+            "DELETE FROM {CONFIGS} WHERE Key = '{ENCRYPTION_TEST_KEY}'"
+        ))
+        .execute(database.pool())
+        .await
+        .unwrap();
+        drop(repository);
+        let salt = InstallationSalt::load_or_create(dir.path().join("salt")).unwrap();
+        let vault = Arc::new(Vault::from_parts([3u8; 32], &salt, KeyStoreKind::Memory));
+        let error = Repository::open(
+            database.pool().clone(),
+            Arc::new(crate::codec::VaultCodec::new(vault)),
         )
         .await
         .unwrap_err();

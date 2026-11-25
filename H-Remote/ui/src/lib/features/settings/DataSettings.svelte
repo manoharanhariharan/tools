@@ -4,6 +4,8 @@
   import { commands } from "../../ipc/client";
   import { i18n } from "../../i18n/index.svelte";
   import { app } from "../../state/app.svelte";
+  import { catalog } from "../../state/catalog.svelte";
+  import { dialogs } from "../../state/dialogs.svelte";
   import Button from "../../components/Button.svelte";
   import Icon from "../../components/Icon.svelte";
 
@@ -34,6 +36,34 @@
     refreshing = true;
     try {
       database = await commands.databaseStatus();
+    } catch (error) {
+      await app.reportError(error);
+    } finally {
+      refreshing = false;
+    }
+  }
+
+  async function repairSecrets() {
+    const confirmed = await dialogs.confirm({
+      title: "Repair database secrets?",
+      message:
+        "Every readable secret is re-encrypted with the current key. Values encrypted with a different installation cannot be recovered and will be cleared; affected servers and credentials will need their passwords entered again.",
+      danger: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+    refreshing = true;
+    try {
+      const report = await commands.repairCatalogSecrets();
+      await refresh();
+      await catalog.load();
+      app.showNotice(
+        report.secretsCleared > 0
+          ? `Repaired ${report.servers} servers and ${report.credentials} credentials; cleared ${report.secretsCleared} unreadable secret(s).`
+          : `Re-encrypted ${report.servers} servers and ${report.credentials} credentials.`,
+        "info",
+      );
     } catch (error) {
       await app.reportError(error);
     } finally {
@@ -98,7 +128,15 @@
         <Icon name="folder" size={15} />
         {i18n.t("about.logs")}
       </Button>
+      <Button variant="secondary" disabled={refreshing} onclick={() => void repairSecrets()}>
+        <Icon name="refresh" size={15} />
+        Repair secrets
+      </Button>
     </div>
+    <p class="hr-small hr-muted">
+      If the keyring key changed or a database was copied from another profile, repair
+      re-encrypts readable values and clears the ones that cannot be decrypted.
+    </p>
   </section>
 
   <section class="hr-card">

@@ -62,6 +62,12 @@ export interface DatabaseInfo {
   error: string | null;
 }
 
+export interface SecretRepairReport {
+  servers: number;
+  credentials: number;
+  secretsCleared: number;
+}
+
 export type ProtocolCategory =
   | "remoteDesktop"
   | "terminal"

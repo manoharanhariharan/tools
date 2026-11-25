@@ -417,3 +417,21 @@ preview, custom colours and persistence like every other theme.
 
 **Consequences.** No separate contrast mode or media-query path is needed; users
 select it like any preset and can still customise colours.
+
+## ADR-030 - Mixed-key catalogs degrade per row and repair explicitly
+
+**Context.** A profile can be copied, relinked or lose its OS keyring entry. The
+database sentinel and existing rows may then have been sealed with different
+keys. Failing the whole catalog on one row makes the app unusable; silently
+writing a new sentinel makes the damage harder to see.
+
+**Decision.** Reads use a lenient unseal that turns only the unreadable secret
+fields into empty strings and logs the row id. `Repository::open` refuses to
+create a sentinel when rows already exist. Settings → Data → **Repair secrets**
+calls `repair_catalog_secrets`, which re-encrypts readable values, clears the
+unreadable ones, replaces the sentinel and reopens the repository.
+
+**Consequences.** The catalog and non-secret metadata remain usable, affected
+passwords must be re-entered, and no plaintext or foreign ciphertext is copied
+back into the database. Repair is explicit, reported to the user, and covered by
+storage tests.

@@ -21,7 +21,7 @@ use hr_session::{
     Frame, ProcessPlan, RdpPlan, ReconnectPolicy, SessionBackend, SessionCommand, SessionSnapshot,
     SessionState, SpecialKey, VncPlan,
 };
-use hr_storage::{DataSourceConfig, Database, SourceStatus};
+use hr_storage::{DataSourceConfig, Database, Repository, SecretCodec, SourceStatus, VaultCodec};
 use hr_theme::{ThemeConfig, ThemePreset};
 use tauri::{AppHandle, Emitter, State};
 
@@ -401,6 +401,36 @@ pub fn vault_status(state: State<'_, AppState>) -> Result<hr_crypto::VaultStatus
 #[tauri::command]
 pub async fn database_status(state: State<'_, AppState>) -> Result<DatabaseInfo, IpcError> {
     Ok(database_info(&state).await)
+}
+
+/// Re-encrypts every readable secret with the current vault key and clears the
+/// values that were encrypted by a different installation. This is the explicit
+/// recovery path for a copied/relinked profile; it never runs automatically.
+#[tauri::command]
+pub async fn repair_catalog_secrets(
+    state: State<'_, AppState>,
+) -> Result<hr_storage::SecretRepairReport, IpcError> {
+    let vault = state
+        .vault
+        .read()
+        .expect("vault lock poisoned")
+        .clone()
+        .ok_or_else(|| AppError::unavailable("the encrypted vault is unavailable"))?;
+    let pool = {
+        let database = state.db.lock().await;
+        database
+            .as_ref()
+            .ok_or_else(|| AppError::unavailable("the local database is unavailable"))?
+            .pool()
+            .clone()
+    };
+    let codec: std::sync::Arc<dyn SecretCodec> = std::sync::Arc::new(VaultCodec::new(vault));
+    let report =
+        Repository::repair_secrets_with_pool(pool.clone(), std::sync::Arc::clone(&codec)).await?;
+    let repository = Repository::open(pool, codec).await?;
+    state.install_repository(Some(std::sync::Arc::new(repository)), None);
+    state.bump_catalog_revision();
+    Ok(report)
 }
 
 #[tauri::command]

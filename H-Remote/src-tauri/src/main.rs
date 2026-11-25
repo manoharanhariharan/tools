@@ -165,6 +165,7 @@ fn main() {
             commands::startup_checkpoints,
             commands::vault_status,
             commands::database_status,
+            commands::repair_catalog_secrets,
             commands::set_log_level,
             commands::complete_guidance,
             commands::set_profile_mode,

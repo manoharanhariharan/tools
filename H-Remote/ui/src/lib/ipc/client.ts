@@ -88,6 +88,8 @@ export const commands = {
     invokeCommand<import("./contracts").Configuration>("set_log_level", { level }),
   i18nReport: () => invokeCommand<import("./contracts").I18nReport>("i18n_report"),
   databaseStatus: () => invokeCommand<import("./contracts").DatabaseInfo>("database_status"),
+  repairCatalogSecrets: () =>
+    invokeCommand<import("./contracts").SecretRepairReport>("repair_catalog_secrets"),
   checkForUpdate: () =>
     invokeCommand<import("./contracts").UpdateStatus>("check_for_update"),
   updateCheckStatus: () =>
