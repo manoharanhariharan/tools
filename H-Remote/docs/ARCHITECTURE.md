@@ -158,7 +158,9 @@ window controls. Closing it hides the webview instead of destroying it. Opening
 a connection emits `session:focus` so the shared window activates that tab
 instead of leaving focus on the previous one. PNG frame encoding runs on the
 blocking pool, never on Tauri's main thread, so a busy desktop cannot prevent
-the session window from painting or responding.
+the session window from painting or responding. Disconnects, retries and
+terminal failures are logged; the UI writes a diagnostic report for failures,
+network-loss disconnects and failed reconnects.
 
 The launcher is a second always-on-top webview (`launcher`) loading
 `index.html?window=launcher`. The hotkey toggles it; it loads the catalog and

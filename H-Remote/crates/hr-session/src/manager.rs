@@ -654,12 +654,30 @@ async fn run_session(
 
         match outcome {
             BackendOutcome::Disconnected { reason, message } => {
+                let snapshot = slot.snapshot();
+                tracing::warn!(
+                    session_id = %snapshot.id,
+                    server = %snapshot.server_name,
+                    reason = ?reason,
+                    message = ?message,
+                    "session disconnected"
+                );
                 finish(&inner, &slot, SessionState::Disconnected, reason, message);
                 return;
             }
             BackendOutcome::Failed { reason, message } => {
                 if reason.is_retryable() && attempt < policy.max_attempts.max(1) {
                     let delay = policy.delay(attempt);
+                    let snapshot = slot.snapshot();
+                    tracing::warn!(
+                        session_id = %snapshot.id,
+                        server = %snapshot.server_name,
+                        reason = ?reason,
+                        message = %message,
+                        attempt,
+                        delay_ms = delay.as_millis() as u64,
+                        "session failed; retrying"
+                    );
                     {
                         let mut machine = slot
                             .machine
@@ -690,6 +708,14 @@ async fn run_session(
                     attempt += 1;
                     continue;
                 }
+                let snapshot = slot.snapshot();
+                tracing::error!(
+                    session_id = %snapshot.id,
+                    server = %snapshot.server_name,
+                    reason = ?reason,
+                    message = %message,
+                    "session failed"
+                );
                 finish(&inner, &slot, SessionState::Failed, reason, Some(message));
                 return;
             }

@@ -124,10 +124,11 @@ Phase 0 ships the settings and UI gates; Phase 7 adds:
    privileges by design; they are never run from imported data unless a server
    actually configures them. Inline PEM private keys are written to a per-launch
    temp file (mode 0600 on Unix) and deleted on exit/cancel/spawn failure.
-10. Connection failures write a shareable Markdown diagnostic report containing
-   the session snapshot, a secrets-redacted server configuration, a TCP probe,
-   proxy/domain environment variables and the recent log tail. Passwords, private
-   keys and icons are removed before the report is written.
+10. Connection failures, network-loss disconnects and failed reconnects write a
+   shareable Markdown diagnostic report containing the session snapshot, a
+   secrets-redacted server configuration, a TCP probe, proxy/domain environment
+   variables and the recent log tail. Passwords, private keys and icons are
+   removed before the report is written.
 
 11. A copied/relinked profile can contain rows encrypted with a previous key.
    Listing treats those individual secrets as empty (never plaintext fallback) and

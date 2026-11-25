@@ -63,6 +63,7 @@ class SessionsStore {
   private autoReconnects = new Map<string, number>();
   private reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private reportedFailures = new Set<string>();
+  private reportedDisconnects = new Set<string>();
 
   get active(): SessionSnapshot | null {
     return this.sessions.find((session) => session.id === this.activeId) ?? null;
@@ -172,8 +173,14 @@ class SessionsStore {
       this.updateWindowTitle();
       if (event.session.state === "connected") {
         this.reportedFailures.delete(event.session.id);
+        this.reportedDisconnects.delete(event.session.id);
       } else if (event.session.state === "failed") {
         void this.reportFailure(event.session);
+      } else if (
+        event.session.state === "disconnected" &&
+        (event.session.reason === "networkLoss" || event.session.reason === "noInfo")
+      ) {
+        void this.reportDisconnect(event.session);
       }
       return;
     }
@@ -331,18 +338,39 @@ class SessionsStore {
   }
 
   private async reportFailure(session: SessionSnapshot): Promise<void> {
-    if (this.reportedFailures.has(session.id)) {
+    await this.reportFailureById(session.id, session.serverName);
+  }
+
+  private async reportFailureById(id: string, serverName?: string): Promise<boolean> {
+    if (this.reportedFailures.has(id)) {
+      return true;
+    }
+    this.reportedFailures.add(id);
+    try {
+      const report = await commands.reportSessionFailure(id);
+      const name =
+        serverName ?? this.sessions.find((session) => session.id === id)?.serverName ?? "Session";
+      app.showNotice(`${name} failed. Diagnostic report saved: ${report.path}`, "warning");
+      return true;
+    } catch (reason) {
+      console.debug("session failure report unavailable", reason);
+      return false;
+    }
+  }
+
+  private async reportDisconnect(session: SessionSnapshot): Promise<void> {
+    if (this.reportedDisconnects.has(session.id)) {
       return;
     }
-    this.reportedFailures.add(session.id);
+    this.reportedDisconnects.add(session.id);
     try {
       const report = await commands.reportSessionFailure(session.id);
       app.showNotice(
-        `${session.serverName} failed. Diagnostic report saved: ${report.path}`,
+        `${session.serverName} connection lost. Diagnostic report saved: ${report.path}`,
         "warning",
       );
     } catch (reason) {
-      console.debug("session failure report unavailable", reason);
+      console.debug("disconnect report unavailable", reason);
     }
   }
 
@@ -499,6 +527,8 @@ class SessionsStore {
     if (!id) {
       return;
     }
+    this.reportedFailures.delete(id);
+    this.reportedDisconnects.delete(id);
     try {
       const snapshot = await commands.sessionReconnect(id);
       this.replace(snapshot);
@@ -510,7 +540,10 @@ class SessionsStore {
       this.syncVisible();
       this.startPolling();
     } catch (reason) {
-      await app.reportError(reason);
+      const report = await this.reportFailureById(id);
+      if (!report) {
+        await app.reportError(reason);
+      }
     }
   }
 
@@ -818,6 +851,7 @@ class SessionsStore {
     this.fitSizes.clear();
     this.autoReconnects.clear();
     this.reportedFailures.clear();
+    this.reportedDisconnects.clear();
     for (const timer of this.reconnectTimers.values()) {
       clearTimeout(timer);
     }
@@ -865,6 +899,7 @@ class SessionsStore {
     this.fitSizes.delete(id);
     this.autoReconnects.delete(id);
     this.reportedFailures.delete(id);
+    this.reportedDisconnects.delete(id);
     const reconnect = this.reconnectTimers.get(id);
     if (reconnect) {
       clearTimeout(reconnect);

@@ -445,12 +445,15 @@ storage tests.
 last UI error: the remote target, session state, server configuration, network
 probe and recent log lines are all relevant.
 
-**Decision.** When a session reaches `failed`, the UI asks Rust to write a
-`crash-session-*.md` report once per session id. Failures before a session is
-created use `report_connection_failure`. The report contains the session
-snapshot, secrets-redacted server JSON, a 3-second TCP probe, proxy/domain
-environment values and the recent log tail. The user gets a notice with the
-report path.
+**Decision.** When a session reaches `failed`, or drops with `networkLoss` /
+`noInfo` (including before automatic reconnect), the UI asks Rust to write a
+`crash-session-*.md` report once per session id and disconnect episode. Failures
+before a session is created use `report_connection_failure`; reconnect command
+errors use the session report. The report contains the session snapshot,
+secrets-redacted server JSON, a 3-second TCP probe, proxy/domain environment
+values and the recent log tail. The user gets a notice with the report path.
+The session manager also logs disconnect, retry and terminal-failure events at
+warn/error level so the report's log tail contains the sequence.
 
 **Consequences.** Reports are shareable and safe to attach. They are not uploaded
 automatically; the user decides what to share.

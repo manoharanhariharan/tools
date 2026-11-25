@@ -2387,11 +2387,12 @@ pub fn update_tab_workspace(
 #[tauri::command]
 pub fn open_session_window(
     app: AppHandle,
-    state: State<'_, AppState>,
     session_id: String,
     placement: Option<WindowPlacement>,
 ) -> Result<String, IpcError> {
-    state.sessions.snapshot(&session_id)?;
+    // Showing the shared window must not depend on the session still being in
+    // the manager: file-transfer sessions live in FileManager and very short
+    // sessions can already have left it by the time the window is shown.
     Ok(window::open_session_window(&app, &session_id, placement)?)
 }
 

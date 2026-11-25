@@ -219,6 +219,25 @@ describe("session store", () => {
     connectSpy.mockRestore();
   });
 
+  it("writes a diagnostic report when the network drops", async () => {
+    const snapshot = await connectRdp();
+    const report = vi
+      .spyOn(commands, "reportSessionFailure")
+      .mockResolvedValue({ path: "C:\\logs\\crash-session.md", markdown: "" });
+    sessions.handleEvent({
+      kind: "state",
+      session: {
+        ...snapshot,
+        state: "disconnected",
+        reason: "networkLoss",
+        message: "The network connection was lost",
+      },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(report).toHaveBeenCalledWith(snapshot.id);
+    report.mockRestore();
+  });
+
   it("writes one diagnostic report per failed session", async () => {
     const snapshot = await connectRdp();
     const report = vi
