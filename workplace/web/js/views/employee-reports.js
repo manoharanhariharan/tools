@@ -134,8 +134,9 @@ export function renderEmployeeReports(root, ctx) {
 
   function renderReport(data, range) {
     const ledger = data.ledger ?? [];
-    const lines = data.lines ?? [];
-    if (!ledger.length && !lines.length) {
+    const days = data.days ?? [];
+    const totals = data.totals ?? {};
+    if (!ledger.length && !days.length && !totals.entries) {
       region.replaceChildren(emptyState('No earnings in this period', `${displayDate(range.from)} to ${displayDate(range.to)} has nothing recorded for you.`));
       return;
     }
@@ -143,8 +144,9 @@ export function renderEmployeeReports(root, ctx) {
     const stats = h(
       'section',
       { class: 'stat-grid', 'aria-label': 'My report totals' },
-      stat('Previous total', formatPaise(data.previous_total_minor ?? 0), 'before this period'),
-      stat('Sunday Earning', formatPaise(data.sunday_total_minor ?? 0), 'Sundays in range'),
+      stat('Business (this period)', formatPaise(totals.business_minor ?? 0), `${totals.entries ?? 0} day sheet${totals.entries === 1 ? '' : 's'}`),
+      stat('Final money (this period)', formatPaise(totals.net_minor ?? 0), 'after adjustments'),
+      stat('Previous total', formatPaise(data.previous_total_minor ?? 0), 'carried in before'),
       stat('Current total', formatPaise(data.current_total_minor ?? 0), 'your balance'),
     );
 
@@ -186,17 +188,26 @@ export function renderEmployeeReports(root, ctx) {
         h(
           'tbody',
           {},
-          lines.length
-            ? lines.map((line) =>
+          days.length
+            ? days.map((day) =>
                 h(
                   'tr',
                   {},
-                  h('th', { scope: 'row' }, displayDate(line.work_date)),
-                  h('td', { class: 'num' }, formatPaise(line.business_minor)),
-                  h('td', { class: 'num strong' }, formatPaise(line.net_minor)),
+                  h('th', { scope: 'row' }, displayDate(day.work_date)),
+                  h('td', { class: 'num' }, formatPaise(day.totals.business_minor)),
+                  h('td', { class: 'num strong' }, formatPaise(day.totals.net_minor)),
                 ),
               )
             : h('tr', {}, h('td', { colspan: '3', class: 'muted' }, 'No day sheets in this period.')),
+          days.length
+            ? h(
+                'tr',
+                { class: 'total-row' },
+                h('th', { scope: 'row' }, 'Total'),
+                h('td', { class: 'num' }, formatPaise(totals.business_minor ?? 0)),
+                h('td', { class: 'num strong' }, formatPaise(totals.net_minor ?? 0)),
+              )
+            : null,
         ),
       ),
     );
