@@ -3,7 +3,7 @@
 // The UI is a no-build ES-module app; the shell list below must stay in sync
 // with web/ (an integration test verifies every path exists).
 
-const VERSION = 'daybook-v4';
+const VERSION = 'daybook-v5';
 const CACHE = `daybook-${VERSION}`;
 
 const SHELL = [
