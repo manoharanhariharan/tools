@@ -9,7 +9,7 @@ committed.
 
 | File | SHA-256 |
 | --- | --- |
-| `h-remote-v26.11.25.5.exe` | `751ade18b3fbaaed1c4eb4408df21d1445f8b8a5258c44fe2c5d06e6908e9576` |
+| `h-remote-v26.11.25.6.exe` | `812292daa573a275a800934d7d244b43219750115c498c6ea6e2af55c74872fd` |
 
 `BUILD.txt` records the source commit, toolchain and build time.
 
