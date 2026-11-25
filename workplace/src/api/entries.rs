@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::api::{AppJson, resolve_range};
+use crate::auth::Auth;
 use crate::db;
 use crate::domain::now_millis;
 use crate::error::{AppError, AppResult};
@@ -34,28 +35,52 @@ fn duplicate_entry_error(existing: &EntryRow) -> AppError {
 
 pub async fn list(
     State(state): State<AppState>,
+    Auth(auth): Auth,
     Query(query): Query<EntriesQuery>,
 ) -> AppResult<Json<Vec<EntryRow>>> {
     let (from, to) = resolve_range(query.from.as_deref(), query.to.as_deref())?;
-    let rows = entries::list_live(&state.pool, &from, &to, query.employee_id.as_deref()).await?;
+    // Employees can only read their own day sheets; admins may filter by any id.
+    let employee_filter = if auth.is_admin() {
+        query.employee_id.as_deref()
+    } else {
+        auth.employee_scope()
+    };
+    let rows = entries::list_live(&state.pool, &from, &to, employee_filter).await?;
     Ok(Json(rows))
 }
 
 pub async fn get_one(
     State(state): State<AppState>,
+    Auth(auth): Auth,
     Path(id): Path<String>,
 ) -> AppResult<Json<EntryRow>> {
     let mut conn = state.pool.acquire().await?;
     let row = entries::find_live(&mut conn, &id)
         .await?
         .ok_or(AppError::NotFound("entry"))?;
+    ensure_entry_visible(&auth, &row)?;
     Ok(Json(row))
+}
+
+/// Employees may only read or modify their own day sheets.
+fn ensure_entry_visible(auth: &crate::auth::Identity, row: &EntryRow) -> AppResult<()> {
+    if let Some(scope) = auth.employee_scope()
+        && row.employee_id != scope
+    {
+        return Err(AppError::NotFound("entry"));
+    }
+    Ok(())
 }
 
 pub async fn create(
     State(state): State<AppState>,
-    AppJson(input): AppJson<EntryInput>,
+    Auth(auth): Auth,
+    AppJson(mut input): AppJson<EntryInput>,
 ) -> AppResult<(StatusCode, Json<EntryRow>)> {
+    // Employees always create their own day sheets, regardless of the body.
+    if let Some(scope) = auth.employee_scope() {
+        input.employee_id = scope.to_string();
+    }
     let id = Uuid::now_v7().to_string();
     let now = now_millis();
     let _gate = state.write_gate.lock().await;
@@ -114,16 +139,22 @@ pub async fn create(
 
 pub async fn update(
     State(state): State<AppState>,
+    Auth(auth): Auth,
     Path(id): Path<String>,
-    AppJson(input): AppJson<EntryInput>,
+    AppJson(mut input): AppJson<EntryInput>,
 ) -> AppResult<Json<EntryRow>> {
+    // Employees always update their own day sheets, regardless of the body.
+    if let Some(scope) = auth.employee_scope() {
+        input.employee_id = scope.to_string();
+    }
     let now = now_millis();
     let _gate = state.write_gate.lock().await;
     let mut tx = state.pool.begin().await?;
 
-    entries::find_live(&mut tx, &id)
+    let existing = entries::find_live(&mut tx, &id)
         .await?
         .ok_or(AppError::NotFound("entry"))?;
+    ensure_entry_visible(&auth, &existing)?;
 
     let employee = employees::find(&mut tx, input.employee_id.trim())
         .await?
@@ -169,14 +200,16 @@ pub async fn update(
 
 pub async fn delete(
     State(state): State<AppState>,
+    Auth(auth): Auth,
     Path(id): Path<String>,
 ) -> AppResult<Json<EntryRow>> {
     let now = now_millis();
     let _gate = state.write_gate.lock().await;
     let mut tx = state.pool.begin().await?;
-    entries::find(&mut tx, &id)
+    let existing = entries::find(&mut tx, &id)
         .await?
         .ok_or(AppError::NotFound("entry"))?;
+    ensure_entry_visible(&auth, &existing)?;
 
     let seq = db::next_seq(&mut tx).await?;
     let row = match entries::soft_delete(&mut tx, &id, now, seq).await {

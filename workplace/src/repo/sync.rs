@@ -154,6 +154,7 @@ mod tests {
             updated_at: 1,
             deleted_at: None,
             seq,
+            pin_hash: None,
         }
     }
 

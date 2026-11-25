@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::AppState;
 use crate::api::{AppQuery, resolve_range};
+use crate::auth::Auth;
 use crate::error::{AppError, AppResult, FieldError};
 use crate::reports::summary::{
     self, DayTotals, EmployeeTotals, LedgerRow, MoneyTotals, ReportData, ReportLayout, TypeTotals,
@@ -94,11 +95,20 @@ fn layout_or_default(value: Option<&str>, default: ReportLayout) -> AppResult<Re
     }
 }
 
+/// Employees can only ever report on themselves; admins keep their filter.
+fn scoped_request(auth: &crate::auth::Identity, mut request: ReportRequest) -> ReportRequest {
+    if !auth.is_admin() {
+        request.employee_id = auth.employee_id.clone();
+    }
+    request
+}
+
 pub async fn summary(
     State(state): State<AppState>,
+    Auth(auth): Auth,
     AppQuery(query): AppQuery<ReportQuery>,
 ) -> AppResult<Json<SummaryResponse>> {
-    let request = parse_request(&query)?;
+    let request = scoped_request(&auth, parse_request(&query)?);
     let data = summary::load(
         &state.pool,
         &request.from,
@@ -111,9 +121,10 @@ pub async fn summary(
 
 pub async fn export_csv(
     State(state): State<AppState>,
+    Auth(auth): Auth,
     AppQuery(query): AppQuery<ReportQuery>,
 ) -> AppResult<Response> {
-    let request = parse_request(&query)?;
+    let request = scoped_request(&auth, parse_request(&query)?);
     let layout = layout_or_default(query.layout.as_deref(), ReportLayout::Sunday)?;
     let data = summary::load(
         &state.pool,
@@ -138,9 +149,10 @@ pub async fn export_csv(
 
 pub async fn print_html(
     State(state): State<AppState>,
+    Auth(auth): Auth,
     AppQuery(query): AppQuery<ReportQuery>,
 ) -> AppResult<Response> {
-    let request = parse_request(&query)?;
+    let request = scoped_request(&auth, parse_request(&query)?);
     let layout = layout_or_default(query.layout.as_deref(), ReportLayout::Sunday)?;
     let data = summary::load(
         &state.pool,
@@ -165,9 +177,10 @@ pub async fn print_html(
 
 pub async fn report_pdf(
     State(state): State<AppState>,
+    Auth(auth): Auth,
     AppQuery(query): AppQuery<ReportQuery>,
 ) -> AppResult<Response> {
-    let request = parse_request(&query)?;
+    let request = scoped_request(&auth, parse_request(&query)?);
     let layout = layout_or_default(query.layout.as_deref(), ReportLayout::Sunday)?;
     let data = summary::load(
         &state.pool,

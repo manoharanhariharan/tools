@@ -766,6 +766,25 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 }
 .login-card h1 { margin: 0; font-size: 20px; }
 .login-card .muted { margin: 0; font-size: 13px; }
+.login-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.login-tab {
+  flex: 1;
+  min-height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.login-tab-active { background: var(--primary); color: var(--primary-ink); }
 .form-error { margin: 0; color: var(--danger); font-size: 13px; min-height: 1.2em; }
 .login-foot { color: var(--muted); font-size: 12px; margin: 0; }
 .login-screen .banner { width: min(380px, 100%); }

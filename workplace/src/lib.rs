@@ -77,7 +77,7 @@ pub fn build_router(state: AppState) -> Router {
         .fallback(web::static_handler)
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
-            auth::require_admin,
+            auth::require_auth,
         ))
         .layer(axum::middleware::from_fn(auth::require_client_header))
         .layer(SetResponseHeaderLayer::overriding(

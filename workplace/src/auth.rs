@@ -9,7 +9,8 @@ use std::time::{Duration, Instant};
 use argon2::Argon2;
 use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
-use axum::extract::{Request, State};
+use axum::extract::{FromRequestParts, Request, State};
+use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, Method, header};
 use axum::middleware::Next;
 use axum::response::Response;
@@ -26,6 +27,7 @@ use crate::error::{AppError, AppResult};
 pub const SESSION_COOKIE: &str = "daybook_session";
 pub const MIN_PASSWORD_LEN: usize = 10;
 pub const MAX_PASSWORD_LEN: usize = 200;
+pub const PIN_LEN: usize = 4;
 
 const MAX_TRACKED_IPS: usize = 4_096;
 const MAX_FAILURES: u32 = 5;
@@ -154,6 +156,13 @@ pub fn validate_password_policy(password: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn validate_pin_policy(pin: &str) -> Result<(), String> {
+    if pin.chars().count() != PIN_LEN || !pin.chars().all(|c| c.is_ascii_digit()) {
+        return Err(format!("PIN must be exactly {PIN_LEN} digits"));
+    }
+    Ok(())
+}
+
 pub fn hash_password(password: &str) -> anyhow::Result<String> {
     let salt = SaltString::generate(&mut OsRng);
     let hash = Argon2::default()
@@ -189,31 +198,125 @@ pub fn hash_token(token: &str) -> String {
 
 /// Create a session and return `(raw_token, expires_at_ms)`. Only the hash is
 /// persisted, so a database leak does not hand out live sessions.
-pub async fn create_session(pool: &SqlitePool, ttl: Duration) -> AppResult<(String, i64)> {
+pub async fn create_session(
+    pool: &SqlitePool,
+    ttl: Duration,
+    role: SessionRole,
+    employee_id: Option<&str>,
+    name: &str,
+) -> AppResult<(String, i64)> {
     let token = generate_token();
     let hash = hash_token(&token);
     let now = now_millis();
     let expires_at = now.saturating_add(ttl.as_millis() as i64);
-    sqlx::query("INSERT INTO sessions (token_hash, created_at, expires_at) VALUES (?, ?, ?)")
-        .bind(&hash)
-        .bind(now)
-        .bind(expires_at)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "INSERT INTO sessions (token_hash, created_at, expires_at, role, employee_id, name)
+         VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&hash)
+    .bind(now)
+    .bind(expires_at)
+    .bind(role.as_str())
+    .bind(employee_id)
+    .bind(name)
+    .execute(pool)
+    .await?;
     Ok((token, expires_at))
 }
 
-pub async fn session_expires_at(pool: &SqlitePool, token: &str) -> AppResult<Option<i64>> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionRole {
+    Admin,
+    Employee,
+}
+
+impl SessionRole {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            SessionRole::Admin => "admin",
+            SessionRole::Employee => "employee",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "admin" => Some(SessionRole::Admin),
+            "employee" => Some(SessionRole::Employee),
+            _ => None,
+        }
+    }
+}
+
+/// The authenticated subject recovered from a session cookie.
+#[derive(Debug, Clone)]
+pub struct Identity {
+    pub role: SessionRole,
+    pub employee_id: Option<String>,
+    pub name: String,
+    pub expires_at: i64,
+}
+
+impl Identity {
+    pub fn is_admin(&self) -> bool {
+        self.role == SessionRole::Admin
+    }
+
+    pub fn require_admin(&self) -> AppResult<()> {
+        if self.is_admin() {
+            Ok(())
+        } else {
+            Err(AppError::Forbidden("admin access required"))
+        }
+    }
+
+    /// The employee id an employee session is restricted to (admin has no scope).
+    pub fn employee_scope(&self) -> Option<&str> {
+        if self.is_admin() {
+            None
+        } else {
+            self.employee_id.as_deref()
+        }
+    }
+}
+
+/// Extractor for the identity inserted by `require_auth`.
+pub struct Auth(pub Identity);
+
+impl<S: Send + Sync> FromRequestParts<S> for Auth {
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<Identity>()
+            .cloned()
+            .map(Auth)
+            .ok_or(AppError::Unauthorized)
+    }
+}
+
+pub async fn session_identity(pool: &SqlitePool, token: &str) -> AppResult<Option<Identity>> {
     if token.is_empty() || token.len() > 128 {
         return Ok(None);
     }
-    let expires_at: Option<i64> =
-        sqlx::query_scalar("SELECT expires_at FROM sessions WHERE token_hash = ?")
-            .bind(hash_token(token))
-            .fetch_optional(pool)
-            .await?;
-    match expires_at {
-        Some(exp) if exp > now_millis() => Ok(Some(exp)),
+    let row: Option<(String, Option<String>, String, i64)> = sqlx::query_as(
+        "SELECT role, employee_id, name, expires_at FROM sessions WHERE token_hash = ?",
+    )
+    .bind(hash_token(token))
+    .fetch_optional(pool)
+    .await?;
+    match row {
+        Some((role, employee_id, name, expires_at)) if expires_at > now_millis() => {
+            let Some(role) = SessionRole::parse(&role) else {
+                return Ok(None);
+            };
+            Ok(Some(Identity {
+                role,
+                employee_id,
+                name,
+                expires_at,
+            }))
+        }
         _ => Ok(None),
     }
 }
@@ -290,24 +393,31 @@ fn is_public(path: &str) -> bool {
     !path.starts_with("/api/")
         || matches!(
             path,
-            "/api/health" | "/api/auth/login" | "/api/auth/logout" | "/api/auth/me"
+            "/api/health"
+                | "/api/auth/login"
+                | "/api/auth/login/employee"
+                | "/api/auth/logout"
+                | "/api/auth/me"
         )
 }
 
 /// Authentication gate for everything under `/api` except the public routes.
-/// Static assets are public; the UI itself decides what to render.
-pub async fn require_admin(
+/// A valid session has its identity inserted into the request extensions for
+/// handlers to read via the `Auth` extractor. Static assets are public; the UI
+/// itself decides what to render.
+pub async fn require_auth(
     State(state): State<AppState>,
-    req: Request,
+    mut req: Request,
     next: Next,
 ) -> AppResult<Response> {
     if is_public(req.uri().path()) {
         return Ok(next.run(req).await);
     }
     let token = cookie_token(req.headers()).ok_or(AppError::Unauthorized)?;
-    if session_expires_at(&state.pool, &token).await?.is_none() {
-        return Err(AppError::Unauthorized);
-    }
+    let identity = session_identity(&state.pool, &token)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+    req.extensions_mut().insert(identity);
     Ok(next.run(req).await)
 }
 

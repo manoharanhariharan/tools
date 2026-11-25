@@ -16,10 +16,13 @@ no cloud dependency.
 - **Sync with explicit conflicts** — a global change cursor, idempotent retries,
   tombstones for deletes, and a review screen when two devices edit the same row.
 - **Reports** — a default Sunday ledger (previous total + Sunday earnings =
-  current total), plus on-screen summaries, printable HTML, server-side PDF, and
-  CSV for any range up to 366 days.
-- **In-house by design** — one admin password, SQLite on your machine, LAN or
-  VPN access only, ₹ / INR and IST dates, and light/dark/high-contrast themes.
+  current total), plus on-screen summaries, printable HTML, server-side PDF, CSV,
+  and one-tap PNG share to WhatsApp for any range up to 366 days.
+- **Employee login** — each employee signs in with their code and a 4-digit PIN
+  to see only their own details, day sheets and reports, and to enter their own
+  day sheets.
+- **In-house by design** — SQLite on your machine, LAN or VPN access only,
+  ₹ / INR and IST dates, and light/dark/high-contrast themes.
 
 ---
 
@@ -215,6 +218,9 @@ employee-day with its earning detail).
 
 - The Reports tab offers **From/To date fields** for any range plus a month
   quick-pick; changing either field refreshes the on-screen summary.
+- **Share as image** renders the Sunday ledger to a PNG and opens the Android
+  share sheet (WhatsApp), falling back to a download where file sharing isn't
+  supported.
 - Maximum range: **366 days** per request.
 - `from`/`to` default to the current IST month.
 - PDF uses a system TrueType font with a ₹ glyph when available (Segoe UI on
@@ -256,12 +262,28 @@ re-trust a new CA only if you generate a new one.
 
 ---
 
+## Employee login
+
+Employees can sign in without the admin password. On the sign-in screen choose
+**Employee**, then enter the employee code and a **4-digit PIN**.
+
+- The admin sets (or clears) an employee's PIN in **Employees → edit employee →
+  Employee login PIN**. PINs are hashed with Argon2id and never shown or synced.
+- An employee sees only their own **My day** and **My reports**; they can enter
+  and edit their own day sheets. The roster, earning types, sync and settings
+  stay admin-only.
+- Employee sessions are online-only: their reads and writes go straight to the
+  server (the offline sync engine is the admin's path).
+
 ## Security model
 
 - **Single admin account.** The password is hashed with Argon2id and stored
   server-side. Login is throttled per IP (5 failures / 5 minutes, bounded memory).
   The password can be changed from Settings; the current session survives and
   every other session is revoked.
+- **Employee PINs** are four digits, hashed with Argon2id, and checked against
+  the same per-IP throttle. A session is scoped to its employee id on the server,
+  so an employee request can never read or write another employee's data.
 - **Sessions** are 256-bit opaque tokens; only their SHA-256 hashes are stored.
   Cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` when TLS is enabled.
 - **CSRF** is blocked by requiring an `X-Daybook-Client` header on every mutating
@@ -378,7 +400,9 @@ docs/                mobile install, sync protocol, operations
 
 ## Limits / non-goals
 
-- One admin login; employees cannot sign in to view their own pay.
+- One admin account plus optional per-employee PIN logins; employees see only
+  their own data. Employee sessions are online-only (they do not use the offline
+  sync engine).
 - No loan/advance balance ledger, tax withholding, payslips, attendance, or
   payroll-period closing. Advances and deductions are per-day amounts.
 - No time tracking or hourly/day rates: earnings are recorded as business rows

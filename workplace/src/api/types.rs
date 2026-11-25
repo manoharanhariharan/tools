@@ -5,18 +5,24 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::api::{AppJson, is_unique_violation};
+use crate::auth::Auth;
 use crate::domain::now_millis;
 use crate::error::{AppError, AppResult};
 use crate::repo::types::{self, EarningTypeInput, EarningTypeRow};
 
-pub async fn list(State(state): State<AppState>) -> AppResult<Json<Vec<EarningTypeRow>>> {
+pub async fn list(
+    State(state): State<AppState>,
+    Auth(_auth): Auth,
+) -> AppResult<Json<Vec<EarningTypeRow>>> {
     Ok(Json(types::list_live(&state.pool).await?))
 }
 
 pub async fn create(
     State(state): State<AppState>,
+    Auth(auth): Auth,
     AppJson(input): AppJson<EarningTypeInput>,
 ) -> AppResult<(StatusCode, Json<EarningTypeRow>)> {
+    auth.require_admin()?;
     let validated = types::validate_input(&input).map_err(AppError::Validation)?;
     let id = Uuid::now_v7().to_string();
     let now = now_millis();
@@ -44,9 +50,11 @@ pub async fn create(
 
 pub async fn update(
     State(state): State<AppState>,
+    Auth(auth): Auth,
     Path(id): Path<String>,
     AppJson(input): AppJson<EarningTypeInput>,
 ) -> AppResult<Json<EarningTypeRow>> {
+    auth.require_admin()?;
     let validated = types::validate_input(&input).map_err(AppError::Validation)?;
     let now = now_millis();
 
@@ -74,8 +82,10 @@ pub async fn update(
 
 pub async fn delete(
     State(state): State<AppState>,
+    Auth(auth): Auth,
     Path(id): Path<String>,
 ) -> AppResult<Json<EarningTypeRow>> {
+    auth.require_admin()?;
     let now = now_millis();
     let _gate = state.write_gate.lock().await;
     let mut tx = state.pool.begin().await?;

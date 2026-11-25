@@ -12,11 +12,17 @@ import { renderEmployees } from './views/employees.js';
 import { renderReports } from './views/reports.js';
 import { renderSync } from './views/sync.js';
 import { renderSettings } from './views/settings.js';
+import { renderEmployeeDay } from './views/employee-day.js';
+import { renderEmployeeReports } from './views/employee-reports.js';
 import { THEMES, applyTheme, readStoredTheme } from './theme.js';
 
 const store = createStore({
   booting: true,
   auth: false,
+  role: 'admin',
+  employeeId: null,
+  employeeName: '',
+  employeeCode: '',
   online: navigator.onLine,
   employees: [],
   allEmployees: [],
@@ -126,11 +132,20 @@ async function refreshTypes() {
 
 /* ------------------------------------------------------------------- auth */
 
-async function onAuthenticated() {
+async function onAuthenticated(identity = {}) {
+  const role = identity.role === 'employee' ? 'employee' : 'admin';
   await db.setMeta('auth_ok', Date.now());
-  store.set({ auth: true, selectedDate: isoToday() });
+  store.set({
+    auth: true,
+    role,
+    employeeId: identity.employee_id ?? null,
+    employeeName: identity.name ?? '',
+    employeeCode: identity.code ?? '',
+    selectedDate: isoToday(),
+  });
   try {
-    await enterApp();
+    if (role === 'employee') await enterEmployeeApp();
+    else await enterApp();
     toast('Signed in', 'success');
   } catch (error) {
     console.error('post-login setup failed', error);
@@ -176,13 +191,19 @@ function buildShell() {
   themeSelect.value = readStoredTheme();
   themeSelect.addEventListener('change', () => applyTheme(themeSelect.value));
 
-  const items = [
-    { path: '/today', label: 'Today' },
-    { path: '/employees', label: 'Employees' },
-    { path: '/reports', label: 'Reports' },
-    { path: '/sync', label: 'Sync', badge: syncBadge },
-    { path: '/settings', label: 'Settings' },
-  ];
+  const isEmployee = store.get().role === 'employee';
+  const items = isEmployee
+    ? [
+        { path: '/my-day', label: 'My day' },
+        { path: '/my-reports', label: 'My reports' },
+      ]
+    : [
+        { path: '/today', label: 'Today' },
+        { path: '/employees', label: 'Employees' },
+        { path: '/reports', label: 'Reports' },
+        { path: '/sync', label: 'Sync', badge: syncBadge },
+        { path: '/settings', label: 'Settings' },
+      ];
   navLinks = new Map(
     items.map((item) => {
       const link = h(
@@ -237,7 +258,12 @@ function ensureShell() {
 
 function updateShell(state) {
   if (!shellReady) return;
-  if (!state.online) {
+  if (state.role === 'employee') {
+    statusChip.textContent = state.employeeName || 'Employee';
+    statusChip.className = 'status-chip status-ok';
+    statusChip.title = '';
+    syncBadge.hidden = true;
+  } else if (!state.online) {
     statusChip.textContent = state.outbox.length ? `Offline · ${state.outbox.length} pending` : 'Offline';
     statusChip.className = 'status-chip status-offline';
   } else if (state.syncing) {
@@ -275,7 +301,7 @@ function updateShell(state) {
 
 function normalizeHash() {
   const raw = location.hash.replace(/^#/, '');
-  if (!raw) return '/today';
+  if (!raw) return store.get().role === 'employee' ? '/my-day' : '/today';
   const path = raw.startsWith('/') ? raw : `/${raw}`;
   return path.split('?')[0];
 }
@@ -291,14 +317,20 @@ function mountView(path) {
   viewCleanup?.();
   viewCleanup = null;
 
-  const renderers = {
-    '/today': renderToday,
-    '/employees': renderEmployees,
-    '/reports': renderReports,
-    '/sync': renderSync,
-    '/settings': renderSettings,
-  };
-  const render = renderers[path] ?? renderToday;
+  const isEmployee = store.get().role === 'employee';
+  const renderers = isEmployee
+    ? {
+        '/my-day': renderEmployeeDay,
+        '/my-reports': renderEmployeeReports,
+      }
+    : {
+        '/today': renderToday,
+        '/employees': renderEmployees,
+        '/reports': renderReports,
+        '/sync': renderSync,
+        '/settings': renderSettings,
+      };
+  const render = renderers[path] ?? (isEmployee ? renderEmployeeDay : renderToday);
   const viewRoot = document.getElementById('view');
   if (!viewRoot) {
     buildShell();
@@ -344,6 +376,11 @@ async function enterApp() {
   route();
 }
 
+async function enterEmployeeApp() {
+  ensureShell();
+  route();
+}
+
 /* --------------------------------------------------------------- bootstrap */
 
 function fatalMessage(error) {
@@ -382,9 +419,10 @@ async function bootstrap() {
   }
 
   let authenticated = false;
+  let me = null;
   if (navigator.onLine) {
     try {
-      const me = await api.me();
+      me = await api.me();
       authenticated = Boolean(me?.authenticated);
     } catch (error) {
       // Network failure: allow offline use if this device signed in before.
@@ -396,11 +434,21 @@ async function bootstrap() {
   }
 
   await db.setMeta('auth_ok', authenticated ? Date.now() : null).catch(() => {});
-  store.set({ auth: authenticated, booting: false, online: navigator.onLine });
+  const role = me?.role === 'employee' ? 'employee' : 'admin';
+  store.set({
+    auth: authenticated,
+    booting: false,
+    online: navigator.onLine,
+    role,
+    employeeId: me?.employee_id ?? null,
+    employeeName: me?.name ?? '',
+    employeeCode: me?.code ?? '',
+  });
 
   if (authenticated) {
     try {
-      await enterApp();
+      if (role === 'employee') await enterEmployeeApp();
+      else await enterApp();
     } catch (error) {
       console.error('startup failed', error);
       fatalMessage(error);

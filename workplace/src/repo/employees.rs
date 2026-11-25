@@ -31,6 +31,10 @@ pub struct EmployeeRow {
     pub updated_at: i64,
     pub deleted_at: Option<i64>,
     pub seq: i64,
+    /// Argon2 hash of the employee's login PIN. Hidden from every API response
+    /// and never synced; employees read it only indirectly through login.
+    #[serde(skip_serializing)]
+    pub pin_hash: Option<String>,
 }
 
 impl EmployeeRow {
@@ -176,6 +180,44 @@ pub async fn get_live_by_code(
     .bind(code)
     .fetch_optional(pool)
     .await
+}
+
+/// Set (or replace) an employee's login PIN hash. No sequence bump: the PIN is
+/// not part of the sync protocol.
+pub async fn set_pin(
+    conn: &mut SqliteConnection,
+    id: &str,
+    pin_hash: &str,
+    now: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE employees SET pin_hash = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+    )
+    .bind(pin_hash)
+    .bind(now)
+    .bind(id)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
+pub async fn clear_pin(conn: &mut SqliteConnection, id: &str, now: i64) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE employees SET pin_hash = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+    )
+    .bind(now)
+    .bind(id)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
+pub async fn has_pin(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Error> {
+    let pin: Option<String> = sqlx::query_scalar("SELECT pin_hash FROM employees WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(pin.is_some())
 }
 
 pub async fn find_live_by_code(

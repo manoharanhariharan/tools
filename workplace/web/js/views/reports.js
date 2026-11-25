@@ -9,6 +9,7 @@ import {
   formatPaise,
   monthBounds,
 } from '../format.js';
+import { renderLedgerImage, shareOrDownload } from '../share-image.js';
 
 const LAYOUTS = [
   ['sunday', 'Sunday ledger'],
@@ -31,6 +32,7 @@ export function renderReports(root, ctx) {
   let layout = 'sunday';
   let requestController = null;
   let requestToken = 0;
+  let lastReport = null;
 
   const monthInput = h('input', {
     type: 'month',
@@ -59,6 +61,7 @@ export function renderReports(root, ctx) {
   const actions = h(
     'div',
     { class: 'button-row' },
+    h('button', { class: 'btn btn-primary', type: 'button', 'data-action': 'share' }, 'Share as image'),
     h('button', { class: 'btn btn-primary', type: 'button', 'data-action': 'print' }, 'View & print'),
     h('button', { class: 'btn', type: 'button', 'data-action': 'pdf' }, 'Download PDF'),
     h('button', { class: 'btn', type: 'button', 'data-action': 'csv' }, 'Download CSV'),
@@ -152,6 +155,35 @@ export function renderReports(root, ctx) {
     }
   }
 
+  async function shareImage() {
+    if (!lastReport) return;
+    const { data, range } = lastReport;
+    const ledger = data.ledger ?? [];
+    if (!ledger.length) {
+      toast('No Sunday ledger data to share in this period', 'error');
+      return;
+    }
+    const canvas = renderLedgerImage({
+      title: 'Daybook — Sunday ledger',
+      period: `${displayDate(range.from)} to ${displayDate(range.to)}`,
+      rows: ledger.map((row) => ({
+        name: row.name,
+        previous_minor: row.previous_minor,
+        sunday_minor: row.sunday_minor,
+        current_minor: row.current_minor,
+      })),
+      previousTotal: data.previous_total_minor,
+      sundayTotal: data.sunday_total_minor,
+      currentTotal: data.current_total_minor,
+    });
+    try {
+      const result = await shareOrDownload(canvas, `daybook-${range.from}-${range.to}.png`);
+      if (!result.shared && !result.cancelled) toast('Image downloaded', 'success');
+    } catch (error) {
+      toast(error?.message ?? 'Could not create the image', 'error');
+    }
+  }
+
   async function load() {
     const range = validatedRange();
     if (!range) return;
@@ -186,6 +218,7 @@ export function renderReports(root, ctx) {
 
   function renderReport(data, range) {
     const ledger = data.ledger ?? [];
+    lastReport = { data, range };
     if (!data.totals.entries && !ledger.length) {
       region.replaceChildren(
         emptyState(
@@ -423,6 +456,8 @@ export function renderReports(root, ctx) {
       if (!ensureOnline()) return;
       const range = validatedRange();
       if (range) ctx.api.openPrintReport({ from: range.from, to: range.to, layout });
+    } else if (control.dataset.action === 'share') {
+      void shareImage();
     } else if (control.dataset.action === 'pdf') {
       void download('pdf');
     } else if (control.dataset.action === 'csv') {

@@ -92,6 +92,10 @@ pub fn router() -> Router<AppState> {
         .route("/health", get(health::health))
         .route("/auth/login", axum::routing::post(auth_routes::login))
         .route(
+            "/auth/login/employee",
+            axum::routing::post(auth_routes::employee_login),
+        )
+        .route(
             "/auth/password",
             axum::routing::post(auth_routes::change_password),
         )
@@ -103,6 +107,12 @@ pub fn router() -> Router<AppState> {
             get(employees::get_one)
                 .patch(employees::update)
                 .delete(employees::delete),
+        )
+        .route(
+            "/employees/{id}/pin",
+            get(employees::pin_status)
+                .put(employees::set_pin)
+                .delete(employees::clear_pin),
         )
         .route("/entries", get(entries::list).post(entries::create))
         .route(

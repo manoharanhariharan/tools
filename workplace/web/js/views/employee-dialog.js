@@ -27,6 +27,42 @@ export function openEmployeeDialog(ctx, { existing = null } = {}) {
 
   const nameError = h('p', { class: 'field-error', role: 'alert' });
   const codeError = h('p', { class: 'field-error', role: 'alert' });
+  const pin = h('input', {
+    type: 'password',
+    inputmode: 'numeric',
+    autocomplete: 'off',
+    maxlength: '4',
+    pattern: '[0-9]{4}',
+    placeholder: '4-digit PIN',
+  });
+  const pinError = h('p', { class: 'field-error', role: 'alert' });
+  const pinStatus = h('span', { class: 'badge badge-neutral' }, existing ? '…' : 'set after saving');
+
+  const pinSection = h(
+    'details',
+    { class: 'advanced' },
+    h('summary', {}, 'Employee login PIN'),
+    h(
+      'div',
+      { class: 'field' },
+      h('label', {}, h('span', { class: 'field-label' }, 'New PIN (optional)'), pin),
+      h('p', { class: 'field-hint' }, `Employees sign in with their code and this 4-digit PIN. ${existing ? 'Leave blank to keep the current PIN.' : 'Save the employee first, then reopen to set a PIN.'}`),
+      pinError,
+      h('div', { class: 'badge-row', style: { marginTop: '6px' } }, pinStatus),
+    ),
+  );
+
+  if (existing) {
+    ctx.api
+      .employeePinStatus(existing.id)
+      .then((status) => {
+        pinStatus.textContent = status?.has_pin ? 'PIN is set' : 'No PIN';
+        pinStatus.className = `badge ${status?.has_pin ? 'badge-pending' : 'badge-neutral'}`;
+      })
+      .catch(() => {
+        pinStatus.textContent = 'PIN status unknown';
+      });
+  }
 
   const content = h(
     'div',
@@ -49,6 +85,7 @@ export function openEmployeeDialog(ctx, { existing = null } = {}) {
       h('span', {}, 'Active — can be given new day sheets'),
     ),
     h('div', { class: 'field' }, h('label', {}, h('span', { class: 'field-label' }, 'Note'), note)),
+    existing ? pinSection : null,
   );
 
   function collect() {
@@ -75,6 +112,25 @@ export function openEmployeeDialog(ctx, { existing = null } = {}) {
 
   const actions = [];
   if (existing) {
+    actions.push({
+      label: 'Remove PIN',
+      onClick: async () => {
+        if (!ctx.state.online) {
+          toast('Removing the PIN needs a connection', 'error');
+          return false;
+        }
+        try {
+          await ctx.api.clearEmployeePin(existing.id);
+          pin.value = '';
+          pinStatus.textContent = 'No PIN';
+          pinStatus.className = 'badge badge-neutral';
+          toast('Employee PIN removed', 'success');
+        } catch (error) {
+          toast(error?.message ?? 'Could not remove the PIN', 'error');
+          return false;
+        }
+      },
+    });
     actions.push({
       label: 'Delete',
       kind: 'danger',
@@ -127,6 +183,27 @@ export function openEmployeeDialog(ctx, { existing = null } = {}) {
         existing,
         conflict: ctx.findConflict('employee', existing?.id),
       });
+
+      if (existing && pin.value) {
+        if (!/^\d{4}$/.test(pin.value)) {
+          pinError.textContent = 'PIN must be exactly 4 digits';
+          pin.setAttribute('aria-invalid', 'true');
+          return false;
+        }
+        if (!ctx.state.online) {
+          pinError.textContent = 'Setting a PIN needs a connection. Reconnect and try again.';
+          return false;
+        }
+        try {
+          await ctx.api.setEmployeePin(existing.id, pin.value);
+          pinStatus.textContent = 'PIN is set';
+          pinStatus.className = 'badge badge-pending';
+        } catch (error) {
+          pinError.textContent = error?.message ?? 'Could not set the PIN';
+          return false;
+        }
+      }
+
       ctx.refresh();
       void ctx.sync.run();
       toast(existing ? 'Employee updated' : 'Employee added', 'success');

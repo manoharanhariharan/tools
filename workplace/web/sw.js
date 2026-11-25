@@ -3,7 +3,7 @@
 // The UI is a no-build ES-module app; the shell list below must stay in sync
 // with web/ (an integration test verifies every path exists).
 
-const VERSION = 'daybook-v3';
+const VERSION = 'daybook-v4';
 const CACHE = `daybook-${VERSION}`;
 
 const SHELL = [
@@ -27,6 +27,7 @@ const SHELL = [
   '/js/sync-logic.js',
   '/js/theme.js',
   '/js/theme-boot.js',
+  '/js/share-image.js',
   '/js/totals.js',
   '/js/views/login.js',
   '/js/views/today.js',
@@ -35,6 +36,8 @@ const SHELL = [
   '/js/views/entry-dialog.js',
   '/js/views/reports.js',
   '/js/views/settings.js',
+  '/js/views/employee-day.js',
+  '/js/views/employee-reports.js',
   '/js/views/sync.js',
   '/js/views/type-dialog.js',
 ];

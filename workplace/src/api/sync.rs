@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::api::{AppJson, is_unique_violation};
+use crate::auth::Auth;
 use crate::db;
 use crate::domain::now_millis;
 use crate::error::{AppError, AppResult, FieldError};
@@ -47,7 +48,11 @@ pub struct StateResponse {
     pub server_time: i64,
 }
 
-pub async fn state(State(state): State<AppState>) -> AppResult<Json<StateResponse>> {
+pub async fn state(
+    State(state): State<AppState>,
+    Auth(auth): Auth,
+) -> AppResult<Json<StateResponse>> {
+    auth.require_admin()?;
     Ok(Json(StateResponse {
         cursor: db::current_seq(&state.pool).await?,
         server_time: now_millis(),
@@ -56,8 +61,10 @@ pub async fn state(State(state): State<AppState>) -> AppResult<Json<StateRespons
 
 pub async fn pull(
     State(state): State<AppState>,
+    Auth(auth): Auth,
     Query(query): Query<PullQuery>,
 ) -> AppResult<Json<PullResponse>> {
+    auth.require_admin()?;
     let since = query.since.unwrap_or(0).max(0);
     let limit = query
         .limit
@@ -227,8 +234,10 @@ fn row_json<T: Serialize>(row: &T) -> Value {
 
 pub async fn push(
     State(state): State<AppState>,
+    Auth(auth): Auth,
     AppJson(body): AppJson<PushBody>,
 ) -> AppResult<Json<PushResponse>> {
+    auth.require_admin()?;
     if body.changes.len() > MAX_PUSH_CHANGES {
         return Err(AppError::BadRequest(
             "too many changes in one push (max 200)",

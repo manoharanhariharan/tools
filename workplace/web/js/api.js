@@ -88,6 +88,10 @@ export function login(password, signal) {
   return request('/api/auth/login', { method: 'POST', body: { password }, signal });
 }
 
+export function loginEmployee(code, pin, signal) {
+  return request('/api/auth/login/employee', { method: 'POST', body: { code, pin }, signal });
+}
+
 export function logout() {
   return request('/api/auth/logout', { method: 'POST' });
 }
@@ -125,6 +129,30 @@ export function deleteEarningType(id) {
 
 export function listEntries({ from, to, employeeId } = {}, signal) {
   return request(`/api/entries?${query({ from, to, employee_id: employeeId })}`, { signal });
+}
+
+export function createEntry(body) {
+  return request('/api/entries', { method: 'POST', body });
+}
+
+export function updateEntry(id, body) {
+  return request(`/api/entries/${encodeURIComponent(id)}`, { method: 'PATCH', body });
+}
+
+export function deleteEntry(id) {
+  return request(`/api/entries/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export function employeePinStatus(id) {
+  return request(`/api/employees/${encodeURIComponent(id)}/pin`);
+}
+
+export function setEmployeePin(id, pin) {
+  return request(`/api/employees/${encodeURIComponent(id)}/pin`, { method: 'PUT', body: { pin } });
+}
+
+export function clearEmployeePin(id) {
+  return request(`/api/employees/${encodeURIComponent(id)}/pin`, { method: 'DELETE' });
 }
 
 export function syncState(signal) {
