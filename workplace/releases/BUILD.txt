@@ -1,7 +1,7 @@
 Daybook release
-build version: 26.11.25.1
-tag: v26.11.25.1
-commit: 5b706a8
+build version: 26.11.25.2
+tag: v26.11.25.2
+commit: 4e1d0c9
 rustc: rustc 1.99.1 (58cf8f9c3 2026-10-13)
-built: 2026-11-25T06:41:33.0894103+05:30
-artifact: daybook-v26.11.25.1.exe
+built: 2026-11-25T07:20:07.3267982+05:30
+artifact: daybook-v26.11.25.2.exe
