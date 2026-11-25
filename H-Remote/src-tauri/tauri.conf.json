@@ -50,6 +50,7 @@
         "height": 700,
         "minWidth": 640,
         "minHeight": 480,
+        "decorations": false,
         "resizable": true,
         "visible": false,
         "center": false,

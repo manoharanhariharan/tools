@@ -234,10 +234,13 @@ window dragging between webviews is not portable.
 A hidden `sessions` webview window is declared in `tauri.conf.json`
 (`index.html?window=sessions`), so it is loaded during startup rather than
 created from an IPC command. The first connection shows it; later connections
-focus it and appear as tabs. It renders the full tab strip and grid workspace,
+focus it and appear as tabs. It is borderless and renders a single combined
+header (drag handle, tabs, actions, window controls) plus the grid workspace,
 polls only its visible panes and stores its geometry in
-`locality.session.sessionWindows`. Closing it hides the webview. Closing the
-main catalog window exits the app because there is no tray icon.
+`locality.session.sessionWindows`. Opening a session emits `session:focus` so
+the window selects that tab; duplicate connections to an already-open server
+focus the existing tab instead of adding another. Closing it hides the webview.
+Closing the main catalog window exits the app because there is no tray icon.
 
 **Consequences.** Tabs/grid always render in a window dedicated to sessions,
 and the catalog remains usable while sessions are live. The shared window is a
@@ -435,3 +438,19 @@ unreadable ones, replaces the sentinel and reopens the repository.
 passwords must be re-entered, and no plaintext or foreign ciphertext is copied
 back into the database. Repair is explicit, reported to the user, and covered by
 storage tests.
+
+## ADR-031 - Connection failures write a diagnostic report
+
+**Context.** A failure that works on LAN but fails over VPN needs more than the
+last UI error: the remote target, session state, server configuration, network
+probe and recent log lines are all relevant.
+
+**Decision.** When a session reaches `failed`, the UI asks Rust to write a
+`crash-session-*.md` report once per session id. Failures before a session is
+created use `report_connection_failure`. The report contains the session
+snapshot, secrets-redacted server JSON, a 3-second TCP probe, proxy/domain
+environment values and the recent log tail. The user gets a notice with the
+report path.
+
+**Consequences.** Reports are shareable and safe to attach. They are not uploaded
+automatically; the user decides what to share.

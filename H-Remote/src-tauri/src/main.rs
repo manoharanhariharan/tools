@@ -153,6 +153,8 @@ fn main() {
             commands::open_url,
             commands::read_log_tail,
             commands::report_ui_error,
+            commands::report_session_failure,
+            commands::report_connection_failure,
             commands::save_error_report,
             commands::list_crash_reports,
             commands::read_crash_report,

@@ -62,6 +62,7 @@ class SessionsStore {
   private availabilityResolve: ((proceed: boolean) => void) | null = null;
   private autoReconnects = new Map<string, number>();
   private reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private reportedFailures = new Set<string>();
 
   get active(): SessionSnapshot | null {
     return this.sessions.find((session) => session.id === this.activeId) ?? null;
@@ -114,6 +115,21 @@ class SessionsStore {
         (event) => this.handleEvent(event),
         this.cleanup,
       );
+      subscribe<string>(
+        "session:focus",
+        (id) => {
+          if (this.sessions.some((session) => session.id === id)) {
+            this.focus(id);
+          } else {
+            void this.load().then(() => {
+              if (this.sessions.some((session) => session.id === id)) {
+                this.focus(id);
+              }
+            });
+          }
+        },
+        this.cleanup,
+      );
     }
   }
 
@@ -154,6 +170,11 @@ class SessionsStore {
       }
       this.syncVisible();
       this.updateWindowTitle();
+      if (event.session.state === "connected") {
+        this.reportedFailures.delete(event.session.id);
+      } else if (event.session.state === "failed") {
+        void this.reportFailure(event.session);
+      }
       return;
     }
     if (event.kind === "frame") {
@@ -200,6 +221,19 @@ class SessionsStore {
       this.startEvents();
     }
     try {
+      if (!options?.alternateName) {
+        const existing = await this.findOpenSession(server.id);
+        if (existing) {
+          await this.hostSession(existing.id);
+          if (!isTauriRuntime) {
+            this.focus(existing.id);
+          }
+          if (existing.state === "failed" || existing.state === "disconnected") {
+            void this.reconnect(existing.id);
+          }
+          return;
+        }
+      }
       let username = options?.username;
       let password = options?.password;
       let privateKey = options?.privateKey;
@@ -264,9 +298,51 @@ class SessionsStore {
         this.updateWindowTitle();
       }
     } catch (reason) {
-      await app.reportError(reason);
+      const message = reason instanceof Error ? reason.message : String(reason);
+      try {
+        const report = await commands.reportConnectionFailure(server.id, message);
+        app.showNotice(
+          `Connection failed. Diagnostic report saved: ${report.path}`,
+          "warning",
+        );
+      } catch {
+        await app.reportError(reason);
+      }
     } finally {
       this.busy = false;
+    }
+  }
+
+  private async findOpenSession(serverId: string): Promise<SessionSnapshot | undefined> {
+    const local = this.sessions.find((session) => session.serverId === serverId);
+    if (local) {
+      return local;
+    }
+    try {
+      const all = await commands.sessionList();
+      const existing = all.find((session) => session.serverId === serverId);
+      if (existing) {
+        this.replace(existing);
+      }
+      return existing;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async reportFailure(session: SessionSnapshot): Promise<void> {
+    if (this.reportedFailures.has(session.id)) {
+      return;
+    }
+    this.reportedFailures.add(session.id);
+    try {
+      const report = await commands.reportSessionFailure(session.id);
+      app.showNotice(
+        `${session.serverName} failed. Diagnostic report saved: ${report.path}`,
+        "warning",
+      );
+    } catch (reason) {
+      console.debug("session failure report unavailable", reason);
     }
   }
 
@@ -281,6 +357,9 @@ class SessionsStore {
   /** Shows (or focuses) the shared window that hosts every session tab. */
   async hostSession(id: string): Promise<void> {
     if (!isTauriRuntime) {
+      if (this.sessions.some((session) => session.id === id)) {
+        this.focus(id);
+      }
       return;
     }
     try {
@@ -738,6 +817,7 @@ class SessionsStore {
     this.displayOverrides = {};
     this.fitSizes.clear();
     this.autoReconnects.clear();
+    this.reportedFailures.clear();
     for (const timer of this.reconnectTimers.values()) {
       clearTimeout(timer);
     }
@@ -784,6 +864,7 @@ class SessionsStore {
     this.sessions = this.sessions.filter((session) => session.id !== id);
     this.fitSizes.delete(id);
     this.autoReconnects.delete(id);
+    this.reportedFailures.delete(id);
     const reconnect = this.reconnectTimers.get(id);
     if (reconnect) {
       clearTimeout(reconnect);

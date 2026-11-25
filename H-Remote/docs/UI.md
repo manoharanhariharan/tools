@@ -105,7 +105,8 @@ bootstrap payload.
 
 ```
 features/session/
-  SessionWorkspace.svelte   tab strip, grid/snap layouts, focus/full-screen,
+  SessionWorkspace.svelte   single combined header (drag handle, tabs, actions,
+                            window controls), grid/snap layouts, focus/full-screen,
                             context menus, close-all; standalone in the shared
                             `sessions` window
   SessionPane.svelte        one session surface: RDP/VNC frames, process

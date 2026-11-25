@@ -5,10 +5,10 @@ import { commands } from "../ipc/client";
 import { app } from "./app.svelte";
 import { sessions } from "./sessions.svelte";
 
-async function connectRdp(id = "mock-rdp-1", name = "Production RDP") {
-  await sessions.connect({
+function rdpServer(id = "mock-rdp-1", name = "Production RDP") {
+  return {
     id,
-    protocol: "rdp",
+    protocol: "rdp" as const,
     displayName: name,
     classVersion: 1,
     subTitle: "",
@@ -24,7 +24,11 @@ async function connectRdp(id = "mock-rdp-1", name = "Production RDP") {
     alwaysOpenInNewTabWindow: false,
     sessionId: null,
     sourceId: "local",
-  });
+  };
+}
+
+async function connectRdp(id = "mock-rdp-1", name = "Production RDP") {
+  await sessions.connect(rdpServer(id, name));
   return sessions.sessions[sessions.sessions.length - 1];
 }
 
@@ -202,6 +206,36 @@ describe("session store", () => {
     await vi.advanceTimersByTimeAsync(1600);
     expect(reconnect).toHaveBeenCalledWith(snapshot.id);
     reconnect.mockRestore();
+  });
+
+  it("focuses an existing connection instead of creating a duplicate tab", async () => {
+    const first = await connectRdp();
+    const connectSpy = vi.spyOn(commands, "connectServer");
+    await sessions.connect(rdpServer());
+    expect(connectSpy).not.toHaveBeenCalled();
+    expect(sessions.sessions).toHaveLength(1);
+    expect(sessions.activeId).toBe(first.id);
+    expect(sessions.focusedId).toBe(first.id);
+    connectSpy.mockRestore();
+  });
+
+  it("writes one diagnostic report per failed session", async () => {
+    const snapshot = await connectRdp();
+    const report = vi
+      .spyOn(commands, "reportSessionFailure")
+      .mockResolvedValue({ path: "C:\\logs\\crash-session.md", markdown: "" });
+    const failed = {
+      ...snapshot,
+      state: "failed" as const,
+      reason: "connectionFailed" as const,
+      message: "RDP connection failed",
+    };
+    sessions.handleEvent({ kind: "state", session: failed });
+    sessions.handleEvent({ kind: "state", session: failed });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report).toHaveBeenCalledWith(snapshot.id);
+    report.mockRestore();
   });
 
   it("keeps multiple tabs, cycles, selects by index and reorders", async () => {

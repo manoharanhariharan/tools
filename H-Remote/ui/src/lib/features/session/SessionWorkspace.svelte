@@ -29,6 +29,10 @@
   let resizingWindow: ReturnType<typeof setTimeout> | undefined;
   let onKeydown: ((event: KeyboardEvent) => void) | undefined;
   let onFullscreen: (() => void) | undefined;
+  let maximized = $state(false);
+  let windowControlsReady = $state(false);
+  let windowResizeUnlisten: (() => void) | undefined;
+  let windowDisposed = false;
 
   const sessionsInWorkspace = $derived(sessions.sessions);
   const active = $derived(
@@ -83,19 +87,61 @@
     };
     window.addEventListener("keydown", onKeydown);
     document.addEventListener("fullscreenchange", onFullscreen);
+    if (standalone && isTauriRuntime) {
+      void import("@tauri-apps/api/window").then(async ({ getCurrentWindow }) => {
+        if (windowDisposed) {
+          return;
+        }
+        const window = getCurrentWindow();
+        windowControlsReady = true;
+        try {
+          maximized = await window.isMaximized();
+          windowResizeUnlisten = await window.onResized(async () => {
+            maximized = await window.isMaximized();
+          });
+          if (windowDisposed) {
+            windowResizeUnlisten?.();
+            windowResizeUnlisten = undefined;
+          }
+        } catch (reason) {
+          console.debug("session window state unavailable", reason);
+        }
+      });
+    }
   });
 
   onDestroy(() => {
+    windowDisposed = true;
     if (onKeydown) {
       window.removeEventListener("keydown", onKeydown);
     }
     if (onFullscreen) {
       document.removeEventListener("fullscreenchange", onFullscreen);
     }
+    windowResizeUnlisten?.();
+    windowResizeUnlisten = undefined;
     if (resizingWindow) {
       clearTimeout(resizingWindow);
     }
   });
+
+  async function toggleMaximizeWindow(): Promise<void> {
+    if (!isTauriRuntime) {
+      return;
+    }
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const window = getCurrentWindow();
+    await window.toggleMaximize();
+    maximized = await window.isMaximized();
+  }
+
+  async function closeWindow(): Promise<void> {
+    if (!isTauriRuntime) {
+      return;
+    }
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().close();
+  }
 
   const serverFor = (serverId: string) =>
     catalog.snapshot?.servers.find((server) => server.id === serverId);
@@ -358,6 +404,15 @@
   aria-label="Session workspace"
 >
   <header class="workspace-bar">
+    {#if standalone}
+      <div
+        class="drag-handle"
+        data-tauri-drag-region
+        title="Drag window"
+        role="presentation"
+        ondblclick={() => void toggleMaximizeWindow()}
+      ></div>
+    {/if}
     <div class="tabs" role="tablist" aria-label="Sessions">
       {#each sessionsInWorkspace as session, index (session.id)}
         {@const server = serverFor(session.serverId)}
@@ -537,6 +592,42 @@
         <Icon name="close" size={14} />
       </Button>
     </div>
+
+    {#if standalone}
+      <div class="window-controls" class:ready={windowControlsReady}>
+        <button
+          type="button"
+          class="window-control"
+          title={i18n.t("titlebar.minimize")}
+          aria-label={i18n.t("titlebar.minimize")}
+          onclick={() => void minimizeCurrentWindow()}
+        >
+          <Icon name="minimize" size={14} />
+        </button>
+        <button
+          type="button"
+          class="window-control"
+          title={maximized ? i18n.t("titlebar.restore") : i18n.t("titlebar.maximize")}
+          aria-label={maximized ? i18n.t("titlebar.restore") : i18n.t("titlebar.maximize")}
+          onclick={() => void toggleMaximizeWindow()}
+          oncontextmenu={(event) => {
+            event.preventDefault();
+            void toggleMaximizeWindow();
+          }}
+        >
+          <Icon name={maximized ? "restore" : "maximize"} size={13} />
+        </button>
+        <button
+          type="button"
+          class="window-control close"
+          title={i18n.t("titlebar.close")}
+          aria-label={i18n.t("titlebar.close")}
+          onclick={() => void closeWindow()}
+        >
+          <Icon name="close" size={14} />
+        </button>
+      </div>
+    {/if}
   </header>
 
   <div class="content">
@@ -602,6 +693,44 @@
     padding: 5px 8px;
     background: #101f2e;
     border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    user-select: none;
+  }
+
+  .drag-handle {
+    width: 16px;
+    align-self: stretch;
+    flex: none;
+    cursor: move;
+  }
+
+  .window-controls {
+    display: flex;
+    align-self: stretch;
+    flex: none;
+    margin: -5px -8px -5px 0;
+  }
+
+  .window-control {
+    width: 40px;
+    border: 0;
+    background: transparent;
+    color: #a9bfd2;
+    display: grid;
+    place-items: center;
+  }
+
+  .window-control:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #eaf4ff;
+  }
+
+  .window-control.close:hover {
+    background: #c0392b;
+    color: #fff;
+  }
+
+  .window-controls:not(.ready) {
+    opacity: 0.7;
   }
 
   .tabs {

@@ -153,9 +153,12 @@ connection shows or focuses that window, so the catalog remains a catalog and
 session tabs/grids always render in a window built for them. The window is
 never created from an IPC command, avoiding the white-window/hang caused by
 building a webview while the main thread was still dispatching the command.
-Closing it hides the webview instead of destroying it. PNG frame encoding runs
-on the blocking pool, never on Tauri's main thread, so a busy desktop cannot
-prevent the session window from painting or responding.
+It is borderless and uses one combined header: drag handle, tabs, actions and
+window controls. Closing it hides the webview instead of destroying it. Opening
+a connection emits `session:focus` so the shared window activates that tab
+instead of leaving focus on the previous one. PNG frame encoding runs on the
+blocking pool, never on Tauri's main thread, so a busy desktop cannot prevent
+the session window from painting or responding.
 
 The launcher is a second always-on-top webview (`launcher`) loading
 `index.html?window=launcher`. The hotkey toggles it; it loads the catalog and
@@ -173,6 +176,7 @@ Events:
 | Event | Payload | Consumer |
 |---|---|---|
 | `config:changed` | `Configuration` | theme/locale state |
+| `session:focus` | `string` (session id) | shared session window selects the tab |
 | `ui:navigate` | `"settings" \| "about"` | route |
 | `activation:connect` | `CliAction` | catalog/launcher (Phases 2/5) |
 | `cli:errors` | `string[]` | notice bar |

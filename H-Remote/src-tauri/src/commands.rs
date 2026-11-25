@@ -307,6 +307,151 @@ pub fn report_ui_error(
 }
 
 #[tauri::command]
+pub async fn report_session_failure(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<hr_observability::CrashReport, IpcError> {
+    let snapshot = if let Ok(snapshot) = state.sessions.snapshot(&id) {
+        Some(snapshot)
+    } else {
+        state
+            .files
+            .info(&id)
+            .await
+            .ok()
+            .map(|info| file_session_snapshot(&info))
+    };
+    let server_id = snapshot.as_ref().map(|session| session.server_id.clone());
+    let message = snapshot
+        .as_ref()
+        .and_then(|session| session.message.clone())
+        .unwrap_or_else(|| "session failed".to_string());
+    Ok(
+        write_connection_failure_report(&state, server_id.as_deref(), snapshot.as_ref(), &message)
+            .await?,
+    )
+}
+
+#[tauri::command]
+pub async fn report_connection_failure(
+    state: State<'_, AppState>,
+    server_id: String,
+    message: String,
+) -> Result<hr_observability::CrashReport, IpcError> {
+    Ok(write_connection_failure_report(&state, Some(&server_id), None, &message).await?)
+}
+
+async fn write_connection_failure_report(
+    state: &AppState,
+    server_id: Option<&str>,
+    snapshot: Option<&SessionSnapshot>,
+    message: &str,
+) -> AppResult<hr_observability::CrashReport> {
+    let server = match server_id {
+        Some(id) => state.find_server(id).await?,
+        None => None,
+    };
+    let mut details = String::new();
+    if let Some(snapshot) = snapshot {
+        details.push_str("## Session\n\n```\n");
+        details.push_str(&format!("{snapshot:#?}"));
+        details.push_str("\n```\n\n");
+    }
+    if let Some(server) = server {
+        let address = server.address().cloned();
+        details.push_str("## Server configuration (secrets removed)\n\n```json\n");
+        details.push_str(&sanitized_server_json(&server)?);
+        details.push_str("\n```\n\n");
+        if let Some(address) = address {
+            let probe = hr_platform::tcp_latency(
+                &address.address,
+                address.port,
+                std::time::Duration::from_secs(3),
+            )
+            .await
+            .map(|latency| format!("reachable ({latency} ms)"))
+            .unwrap_or_else(|| "unreachable or timed out after 3 s".to_string());
+            details.push_str(&format!(
+                "## Network probe\n\n- Target: `{}:{}`\n- TCP: {probe}\n\n",
+                address.address, address.port
+            ));
+        }
+    }
+    details.push_str("## Environment\n\n");
+    for key in [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "USERDNSDOMAIN",
+        "USERDOMAIN",
+    ] {
+        let value = std::env::var(key).unwrap_or_else(|_| "<unset>".to_string());
+        details.push_str(&format!("- {key}: {value}\n"));
+    }
+    let log_level = state.config_snapshot().general.log_level;
+    details.push_str(&format!("- Log level: {log_level:?}\n\n"));
+    details.push_str("## Recent log tail\n\n```\n");
+    match read_tail(&state.paths.log_file(), 400, 2 * 1024 * 1024) {
+        Ok(tail) => details.push_str(&tail),
+        Err(error) => details.push_str(&format!("(log unavailable: {error})")),
+    }
+    details.push_str("\n```\n");
+    let title = snapshot
+        .map(|session| {
+            format!(
+                "{} connection failed ({:?}): {message}",
+                session.server_name, session.reason
+            )
+        })
+        .unwrap_or_else(|| format!("connection failed: {message}"));
+    hr_observability::write_crash_report(
+        &state.paths.logs_dir,
+        "session",
+        &title,
+        &details,
+        &state.app_info,
+    )
+}
+
+fn sanitized_server_json(server: &Server) -> AppResult<String> {
+    let mut value = serde_json::to_value(server)?;
+    if let serde_json::Value::Object(object) = &mut value {
+        object.remove("iconBase64");
+        for key in ["password", "privateKey", "gatewayPassword"] {
+            object.insert(key.to_string(), serde_json::Value::Null);
+        }
+        if let Some(alternates) = object
+            .get_mut("alternateCredentials")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            for alternate in alternates {
+                if let serde_json::Value::Object(alternate) = alternate {
+                    alternate.insert("password".to_string(), serde_json::Value::Null);
+                    alternate.insert("privateKey".to_string(), serde_json::Value::Null);
+                }
+            }
+        }
+        if let Some(arguments) = object
+            .get_mut("argumentList")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            for argument in arguments {
+                if let serde_json::Value::Object(argument) = argument
+                    && argument
+                        .get("type")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|kind| kind.eq_ignore_ascii_case("secret"))
+                {
+                    argument.insert("value".to_string(), serde_json::Value::Null);
+                }
+            }
+        }
+    }
+    Ok(serde_json::to_string_pretty(&value)?)
+}
+
+#[tauri::command]
 pub fn save_error_report(state: State<'_, AppState>, markdown: String) -> Result<String, IpcError> {
     if markdown.len() > 1024 * 1024 {
         return Err(AppError::validation("error report is too large").into());
@@ -2860,6 +3005,22 @@ mod tests {
         assert!(ensure_local_target(Some("local")).is_ok());
         let error = ensure_local_target(Some("team-db")).unwrap_err();
         assert!(error.to_string().contains("read-only"));
+    }
+
+    #[test]
+    fn failure_reports_remove_server_secrets_and_icons() {
+        let mut server = Server::new_ssh("Host", "host.example", "root");
+        if let Some(credentials) = server.credentials_mut() {
+            credentials.password = "super-secret".into();
+            credentials.private_key = Some("private-key-material".into());
+        }
+        server.base_mut().icon_base64 = Some("BASE64-ICON".into());
+        let json = sanitized_server_json(&server).unwrap();
+        assert!(!json.contains("super-secret"));
+        assert!(!json.contains("private-key-material"));
+        assert!(!json.contains("BASE64-ICON"));
+        assert!(json.contains("\"password\": null"));
+        assert!(json.contains("host.example"));
     }
 
     #[test]

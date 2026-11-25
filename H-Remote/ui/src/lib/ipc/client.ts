@@ -61,6 +61,13 @@ export const commands = {
     invokeCommand<import("./contracts").GuidanceResult>("complete_guidance", { selection }),
   reportUiError: (message: string, details: string) =>
     invokeCommand<import("./contracts").CrashReport>("report_ui_error", { message, details }),
+  reportSessionFailure: (id: string) =>
+    invokeCommand<import("./contracts").CrashReport>("report_session_failure", { id }),
+  reportConnectionFailure: (serverId: string, message: string) =>
+    invokeCommand<import("./contracts").CrashReport>("report_connection_failure", {
+      serverId,
+      message,
+    }),
   saveErrorReport: (markdown: string) =>
     invokeCommand<string>("save_error_report", { markdown }),
   validateHotkey: (hotkey: string) => invokeCommand<string>("validate_hotkey", { hotkey }),

@@ -1975,6 +1975,12 @@ export async function mockInvoke<T>(
       return bootstrap().database as T;
     case "repair_catalog_secrets":
       return { servers: catalog.servers.length, credentials: catalog.credentials.length, secretsCleared: 0 } as T;
+    case "report_session_failure":
+    case "report_connection_failure":
+      return {
+        path: `C:\\H-Remote\\.logs\\crash-session-${Date.now()}.md`,
+        markdown: "# H-Remote crash report\n\nMock session diagnostic report.",
+      } as T;
     case "set_log_level": {
       config.general.logLevel = args?.level as Configuration["general"]["logLevel"];
       persist();

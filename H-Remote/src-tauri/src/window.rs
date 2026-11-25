@@ -3,7 +3,9 @@ use std::sync::atomic::Ordering;
 use hr_config::WindowPlacement;
 use hr_core::{AppError, AppResult};
 use hr_platform::{MonitorInfo, PlacementDecision, screen_layout_signature, validate_placement};
-use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, UserAttentionType, WebviewWindow};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, UserAttentionType, WebviewWindow,
+};
 
 use crate::state::AppState;
 
@@ -241,7 +243,7 @@ pub fn save_session_placement(app: &AppHandle, label: &str) {
 /// main thread waited on the new webview's first navigation.
 pub fn open_session_window(
     app: &AppHandle,
-    _session_id: &str,
+    session_id: &str,
     requested: Option<WindowPlacement>,
 ) -> AppResult<String> {
     let label = SESSION_WINDOW.to_string();
@@ -267,6 +269,9 @@ pub fn open_session_window(
         .map_err(|error| AppError::platform(format!("cannot show the session window: {error}")))?;
     let _ = window.unminimize();
     let _ = window.set_focus();
+    // The session window is shared: tell its UI which tab to activate instead
+    // of leaving focus on whatever was selected previously.
+    let _ = window.emit("session:focus", session_id.to_string());
     Ok(label)
 }
 

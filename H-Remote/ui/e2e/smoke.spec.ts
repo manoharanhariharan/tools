@@ -95,6 +95,10 @@ test.describe("H-Remote shell", () => {
     await page.goto("/?window=sessions");
     await expect(page.locator(".workspace")).toBeVisible();
     await expect(page.getByText("No sessions in this window")).toBeVisible();
+    // A session window has one combined header: tabs, actions and controls.
+    await expect(page.locator("header")).toHaveCount(1);
+    await expect(page.locator(".workspace-bar .tabs")).toHaveCount(1);
+    await expect(page.locator(".workspace-bar .window-controls")).toBeVisible();
   });
 
   test("connects a session, shows frames and reconnects", async ({ page }) => {
