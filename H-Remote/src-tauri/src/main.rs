@@ -322,10 +322,14 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            let app = window.app_handle();
+            let exiting = app.state::<AppState>().exiting.load(Ordering::SeqCst);
             if window.label() == window::LAUNCHER_WINDOW {
                 if let WindowEvent::CloseRequested { api, .. } = event {
+                    if exiting {
+                        return;
+                    }
                     api.prevent_close();
-                    let app = window.app_handle();
                     window::save_launcher_placement(app);
                     let _ = window.hide();
                 }
@@ -333,10 +337,13 @@ fn main() {
             }
             if window.label() == window::SESSION_WINDOW {
                 if let WindowEvent::CloseRequested { api, .. } = event {
+                    if exiting {
+                        return;
+                    }
                     // Keep the pre-created webview alive; recreating it at
                     // runtime is what caused a blank, unresponsive window.
                     api.prevent_close();
-                    window::save_session_placement(window.app_handle(), window.label());
+                    window::save_session_placement(app, window.label());
                     let _ = window.hide();
                 }
                 return;
@@ -345,7 +352,14 @@ fn main() {
                 return;
             }
             if let WindowEvent::CloseRequested { .. } = event {
-                window::save_placement(window.app_handle());
+                window::save_placement(app);
+                // Closing the catalog is the user's quit action. Hidden
+                // launcher/session windows must not keep the process (and its
+                // DB/log/executable locks) alive.
+                app.state::<AppState>()
+                    .exiting
+                    .store(true, Ordering::SeqCst);
+                app.exit(0);
             }
         })
         .build(tauri::generate_context!());

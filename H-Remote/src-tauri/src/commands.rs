@@ -286,7 +286,7 @@ pub fn open_url(url: String) -> Result<(), IpcError> {
 
 #[tauri::command]
 pub fn read_log_tail(state: State<'_, AppState>, lines: usize) -> Result<String, IpcError> {
-    let path = state.paths.log_file();
+    let path = hr_observability::current_log_file(&state.paths.logs_dir);
     Ok(read_tail(&path, lines.clamp(1, 2000), 2 * 1024 * 1024)?)
 }
 
@@ -392,9 +392,13 @@ async fn write_connection_failure_report(
     let log_level = state.config_snapshot().general.log_level;
     details.push_str(&format!("- Log level: {log_level:?}\n\n"));
     details.push_str("## Recent log tail\n\n```\n");
-    match read_tail(&state.paths.log_file(), 400, 2 * 1024 * 1024) {
+    let log_path = hr_observability::current_log_file(&state.paths.logs_dir);
+    match read_tail(&log_path, 400, 2 * 1024 * 1024) {
         Ok(tail) => details.push_str(&tail),
-        Err(error) => details.push_str(&format!("(log unavailable: {error})")),
+        Err(error) => details.push_str(&format!(
+            "(log unavailable at {}: {error})",
+            log_path.display()
+        )),
     }
     details.push_str("\n```\n");
     let title = snapshot

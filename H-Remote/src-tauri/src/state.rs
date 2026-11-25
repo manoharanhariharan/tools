@@ -58,6 +58,7 @@ pub struct AppState {
     pub catalog_revision: std::sync::atomic::AtomicU64,
     pub verified_until: Mutex<Option<std::time::Instant>>,
     pub data_ready: AtomicBool,
+    pub exiting: AtomicBool,
     pub shutdown_started: AtomicBool,
     pub start_minimized: AtomicBool,
     pub first_run: bool,
@@ -259,6 +260,7 @@ impl AppState {
             catalog_revision: std::sync::atomic::AtomicU64::new(1),
             verified_until: Mutex::new(None),
             data_ready: AtomicBool::new(false),
+            exiting: AtomicBool::new(false),
             shutdown_started: AtomicBool::new(false),
             start_minimized: AtomicBool::new(start_minimized),
             first_run,
@@ -385,7 +387,7 @@ impl AppState {
                 tracing::error!(%error, store = name, "failed to flush store during shutdown");
             }
         }
-        self.sessions.shutdown();
+        self.sessions.shutdown().await;
         self.files.shutdown().await;
         if let Some(sources) = &self.sources {
             sources.shutdown().await;

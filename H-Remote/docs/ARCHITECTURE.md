@@ -71,8 +71,12 @@ Lifecycle:
 8. Build Tauri, restore the main window, register the hotkey, and start the
    source watcher (initial load, periodic health probe, reconnect) and the
    update watcher (periodic manifest check).
-9. On exit: stop the watchers, drop the repository, close every source pool, flush
-   every store, close the local pool, drop the vault, stop logging.
+9. Closing the main catalog window requests process exit even though the
+   launcher/session webviews are hidden. On exit: cancel every session and await
+   its task (up to 2 s each, then abort) so child processes are reaped, stop the
+   watchers, drop the repository, close every source pool, flush every store,
+   close the local pool, drop the vault, stop logging. No hidden window keeps
+   the process, database or executable locks alive.
 
 ## 4. Persistence model
 

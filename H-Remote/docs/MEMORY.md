@@ -86,6 +86,8 @@ UI
   ├── polls visible panes at 150 ms and skips hidden tabs
   ├── stops the interval when no session is connected and on `dispose()` (tested)
   ├── one shared `sessions` window hosts every tab and the grid
+  ├── main-window close exits; hidden windows never keep the process alive
+  ├── shutdown awaits cancelled session tasks so child processes are reaped
   └── never retains a second copy of a frame after `frames[id]` is replaced
 ```
 

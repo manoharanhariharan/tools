@@ -6,7 +6,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use hr_core::{AppError, AppResult, new_id};
 use tokio::sync::{Notify, broadcast, mpsc};
@@ -516,7 +516,9 @@ impl SessionManager {
         Ok(true)
     }
 
-    pub fn shutdown(&self) {
+    /// Cancels every session and waits for its task to unwind so child
+    /// processes and native handles are released before the process exits.
+    pub async fn shutdown(&self) {
         let sessions: Vec<Arc<SessionSlot>> = {
             let mut guard = self
                 .inner
@@ -525,9 +527,26 @@ impl SessionManager {
                 .unwrap_or_else(|poison| poison.into_inner());
             guard.drain().map(|(_, slot)| slot).collect()
         };
+        let mut tasks = Vec::new();
         for slot in sessions {
             slot.cancel.cancel();
-            slot.abort_task();
+            if let Some(task) = slot
+                .task
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner())
+                .take()
+            {
+                tasks.push(task);
+            }
+        }
+        for mut task in tasks {
+            if tokio::time::timeout(Duration::from_secs(2), &mut task)
+                .await
+                .is_err()
+            {
+                task.abort();
+                let _ = task.await;
+            }
         }
     }
 
@@ -1111,7 +1130,7 @@ mod tests {
         let manager = manager(Arc::clone(&backend));
         let snapshot = manager.start(plan()).unwrap();
         tokio::time::sleep(Duration::from_millis(30)).await;
-        manager.shutdown();
+        manager.shutdown().await;
         assert!(manager.list().is_empty());
         assert!(manager.snapshot(&snapshot.id).is_err());
     }

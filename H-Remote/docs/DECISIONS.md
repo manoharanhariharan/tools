@@ -240,7 +240,9 @@ polls only its visible panes and stores its geometry in
 `locality.session.sessionWindows`. Opening a session emits `session:focus` so
 the window selects that tab; duplicate connections to an already-open server
 focus the existing tab instead of adding another. Closing it hides the webview.
-Closing the main catalog window exits the app because there is no tray icon.
+Closing the main catalog window is an explicit quit: hidden launcher/session
+webviews no longer keep the process alive, sessions are cancelled and awaited,
+and all stores/pools/logs are closed before exit. There is no tray icon.
 
 **Consequences.** Tabs/grid always render in a window dedicated to sessions,
 and the catalog remains usable while sessions are live. The shared window is a

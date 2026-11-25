@@ -100,9 +100,12 @@ async fn run(context: BackendContext<'_>) -> BackendOutcome {
                 }
             }
             outcome = &mut done_rx => {
-                return outcome.unwrap_or(BackendOutcome::Disconnected {
-                    reason: DisconnectReason::NoInfo,
-                    message: None,
+                return outcome.unwrap_or_else(|_| {
+                    tracing::error!("RDP worker ended without reporting a result");
+                    BackendOutcome::Failed {
+                        reason: DisconnectReason::ConnectionFailed,
+                        message: "RDP worker ended without reporting a result".to_string(),
+                    }
                 });
             }
         }
@@ -141,6 +144,10 @@ async fn run_client(
 
     loop {
         tokio::select! {
+            // The client sends its terminal event before its task completes.
+            // Prefer the event so a connection failure is never downgraded to
+            // "Disconnected / NoInfo" by a simultaneously-ready task branch.
+            biased;
             _ = cancel.cancelled() => {
                 let _ = input.send(RdpInputEvent::Close);
                 return BackendOutcome::Cancelled;
@@ -234,8 +241,14 @@ async fn run_client(
                         }
                     }
                     Some(RdpOutputEvent::ConnectionFailure(error)) => {
+                        let reason = map_connection_failure(&error);
+                        tracing::warn!(
+                            reason = ?reason,
+                            message = %error,
+                            "RDP connection failed"
+                        );
                         return BackendOutcome::Failed {
-                            reason: map_connection_failure(&error),
+                            reason,
                             message: error.to_string(),
                         };
                     }
@@ -245,10 +258,13 @@ async fn run_client(
                                 reason: map_disconnect_reason(&reason),
                                 message: Some(reason.description()),
                             },
-                            Err(error) => BackendOutcome::Failed {
-                                reason: DisconnectReason::NetworkLoss,
-                                message: error.to_string(),
-                            },
+                            Err(error) => {
+                                tracing::warn!(%error, "RDP session terminated with an error");
+                                BackendOutcome::Failed {
+                                    reason: DisconnectReason::NetworkLoss,
+                                    message: error.to_string(),
+                                }
+                            }
                         };
                     }
                     Some(RdpOutputEvent::PointerDefault) => {
@@ -268,17 +284,36 @@ async fn run_client(
                         // move a system cursor themselves.
                     }
                     None => {
+                        tracing::warn!("RDP output channel closed without a terminal event");
                         return BackendOutcome::Disconnected {
                             reason: DisconnectReason::NoInfo,
-                            message: None,
+                            message: Some(
+                                "RDP output channel closed without a terminal event".to_string(),
+                            ),
                         };
                     }
                 }
             }
             _ = &mut task => {
+                // Drain any event that raced with task completion.
+                while let Ok(event) = output_rx.try_recv() {
+                    if let RdpOutputEvent::ConnectionFailure(error) = event {
+                        let reason = map_connection_failure(&error);
+                        tracing::warn!(
+                            reason = ?reason,
+                            message = %error,
+                            "RDP connection failed"
+                        );
+                        return BackendOutcome::Failed {
+                            reason,
+                            message: error.to_string(),
+                        };
+                    }
+                }
+                tracing::warn!("RDP client task ended without a terminal event");
                 return BackendOutcome::Disconnected {
                     reason: DisconnectReason::NoInfo,
-                    message: None,
+                    message: Some("RDP client task ended without a terminal event".to_string()),
                 };
             }
         }
