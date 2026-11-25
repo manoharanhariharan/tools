@@ -67,7 +67,7 @@ pub(super) fn merged_table(ui: &mut Ui, ctx: &CsvTableContext<'_>, state: &mut C
         + columns.len() as f32 * 10.0
         + 30.0;
     let viewport = ui.available_width().max(160.0);
-    let pane_height = (ui.available_height() - 24.0).max(80.0);
+    let pane_height = (ui.available_height() - 32.0).max(80.0);
     let mut initial_x = state.merged_scroll_x;
     if let Some(col) = focus_col {
         if let Some(pos) = columns.iter().position(|candidate| *candidate == col) {
@@ -209,7 +209,7 @@ pub(super) fn side_by_side_table(ui: &mut Ui, ctx: &CsvTableContext<'_>, state: 
         + columns.iter().map(|col| widths[*col]).sum::<f32>()
         + columns.len() as f32 * 10.0
         + 20.0;
-    let pane_height = (full_rect.height() - 24.0).max(80.0);
+    let pane_height = (full_rect.height() - 32.0).max(80.0);
 
     let mut left_rect = egui::Rect::NOTHING;
     let mut right_rect = egui::Rect::NOTHING;

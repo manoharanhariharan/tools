@@ -481,7 +481,7 @@ pub fn show(
                 common::row_scroll_target(row, 18.0, ui.spacing().item_spacing.y, viewport);
         }
         let full_rect = ui.available_rect_before_wrap();
-        let pane_height = (ui.available_height() - 24.0).max(80.0);
+        let pane_height = (ui.available_height() - 32.0).max(80.0);
         let mut left_rect = egui::Rect::NOTHING;
         let mut right_rect = egui::Rect::NOTHING;
         let mut left_offset = egui::Vec2::new(state.sync_scroll_x, state.sync_scroll_y);
