@@ -266,7 +266,6 @@ impl App {
             let selected = csv_ui.selected_row;
             let current = csv_ui.current_change;
             csv_ui.set_hidden(ignore);
-            csv_ui.column_widths.clear();
             csv_ui.ensure_widths(&new_compare);
             csv_ui.selected_row = selected.filter(|row| *row < new_compare.rows.len());
             csv_ui.current_change = current.filter(|row| *row < new_compare.rows.len());

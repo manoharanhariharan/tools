@@ -5,33 +5,6 @@ use crate::csvdiff::column_backups_excluding;
 use crate::ui::icons::Icon;
 use std::path::PathBuf;
 
-/// Split the columns into the visible group (checked, in column order) and the
-/// hidden group (unchecked, shown below the visible ones).
-pub(super) fn column_visibility_entries(
-    compare: &CsvCompare,
-    hidden: &BTreeSet<usize>,
-) -> (Vec<usize>, Vec<usize>) {
-    let mut visible = Vec::with_capacity(compare.column_count);
-    let mut hidden_cols = Vec::new();
-    for col in 0..compare.column_count {
-        if hidden.contains(&col) {
-            hidden_cols.push(col);
-        } else {
-            visible.push(col);
-        }
-    }
-    (visible, hidden_cols)
-}
-
-/// Apply one checkbox toggle to the hidden-column set.
-pub(super) fn set_column_visible(hidden: &mut BTreeSet<usize>, col: usize, visible: bool) {
-    if visible {
-        hidden.remove(&col);
-    } else {
-        hidden.insert(col);
-    }
-}
-
 /// Tooltip describing why a column header is highlighted.
 pub(super) fn column_header_tooltip(compare: &CsvCompare, col: usize) -> Option<String> {
     let changes = compare.column_change_count(col);
@@ -59,25 +32,38 @@ pub(super) fn column_header_tooltip(compare: &CsvCompare, col: usize) -> Option<
 /// Toolbar column picker: every column is listed and checked while visible.
 /// Unchecking one hides it and moves it into the hidden group at the bottom.
 pub(super) fn columns_menu(ui: &mut Ui, compare: &CsvCompare, state: &mut CsvUiState) {
-    let hidden_count = state.hidden_count();
-    let visible_count = compare.column_count.saturating_sub(hidden_count);
+    let (visible_entries, hidden_entries) = state.column_visibility_entries(compare);
+    let visible_count = visible_entries.len();
     let _ = common::icon_menu_button(
         ui,
         Icon::Columns,
         &format!("Columns ({visible_count}/{})", compare.column_count),
         |ui| {
-            ui.set_min_width(360.0);
+            let scroll = &mut ui.style_mut().spacing.scroll;
+            scroll.floating = false;
+            scroll.bar_width = 18.0;
+            scroll.bar_inner_margin = 4.0;
+            scroll.bar_outer_margin = 2.0;
+            scroll.handle_min_length = 48.0;
+            let screen = ui.ctx().screen_rect();
+            let width = (screen.width() - 80.0).clamp(360.0, 560.0);
+            let max_height = (screen.height() - 180.0).clamp(240.0, 560.0);
+            ui.set_min_width(width);
             common::small_muted(
                 ui,
-                "Checked columns are visible. Uncheck one to hide it; hidden columns move to the bottom of the list.",
+                if state.differences_only {
+                    "Differences only is on, so unchanged columns are hidden automatically. Check one to show it; uncheck to hide it again."
+                } else {
+                    "Checked columns are visible. Uncheck one to hide it; hidden columns move to the bottom of the list."
+                },
             );
             ui.separator();
             egui::ScrollArea::vertical()
                 .id_salt("csv_columns_menu")
-                .max_height(420.0)
+                .max_height(max_height)
+                .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    let (visible, hidden) =
-                        column_visibility_entries(compare, &state.hidden_columns);
+                    let (visible, hidden) = state.column_visibility_entries(compare);
                     for col in visible {
                         column_visibility_row(ui, compare, state, col);
                     }
@@ -90,7 +76,7 @@ pub(super) fn columns_menu(ui: &mut Ui, compare: &CsvCompare, state: &mut CsvUiS
                         }
                     }
                 });
-            if !state.hidden_columns.is_empty() {
+            if !state.hidden_columns.is_empty() || !hidden_entries.is_empty() {
                 ui.separator();
                 if common::icon_button(
                     ui,
@@ -100,8 +86,10 @@ pub(super) fn columns_menu(ui: &mut Ui, compare: &CsvCompare, state: &mut CsvUiS
                 )
                 .clicked()
                 {
+                    let had_hidden = !state.hidden_columns.is_empty();
                     state.hidden_columns.clear();
-                    state.hidden_dirty = true;
+                    state.shown_columns = (0..compare.column_count).collect();
+                    state.hidden_dirty = had_hidden;
                     common::close_menu(ui);
                 }
             }
@@ -110,10 +98,11 @@ pub(super) fn columns_menu(ui: &mut Ui, compare: &CsvCompare, state: &mut CsvUiS
 }
 
 fn column_visibility_row(ui: &mut Ui, compare: &CsvCompare, state: &mut CsvUiState, col: usize) {
-    let mut shown = !state.hidden_columns.contains(&col);
+    let mut shown = state.column_visible(compare, col);
     let changes = compare.column_change_count(col);
     let mut toggled = false;
     ui.horizontal(|ui| {
+        ui.set_min_height(34.0);
         toggled |= ui.checkbox(&mut shown, "").changed();
         let mut text = RichText::new(format!("{}  {}", col + 1, compare.column_name(col)));
         if changes > 0 {
@@ -141,8 +130,8 @@ fn column_visibility_row(ui: &mut Ui, compare: &CsvCompare, state: &mut CsvUiSta
         }
     });
     if toggled {
-        set_column_visible(&mut state.hidden_columns, col, shown);
-        state.hidden_dirty = true;
+        state.set_column_visible(compare, col, shown);
+        state.refresh_search(compare);
     }
 }
 
@@ -265,7 +254,7 @@ pub(super) fn column_context_menu(
     col: usize,
     state: &mut CsvUiState,
 ) {
-    let mut visible = !state.hidden_columns.contains(&col);
+    let mut visible = state.column_visible(compare, col);
     ui.horizontal(|ui| {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(15.0, 15.0), Sense::hover());
         crate::ui::icons::paint(
@@ -275,12 +264,8 @@ pub(super) fn column_context_menu(
             theme::muted(),
         );
         if ui.checkbox(&mut visible, "Visible").changed() {
-            if visible {
-                state.hidden_columns.remove(&col);
-            } else {
-                state.hidden_columns.insert(col);
-            }
-            state.hidden_dirty = true;
+            state.set_column_visible(compare, col, visible);
+            state.refresh_search(compare);
             ui.close_menu();
         }
     });

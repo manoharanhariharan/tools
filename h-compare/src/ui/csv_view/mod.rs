@@ -42,6 +42,8 @@ pub struct CsvUiState {
     pub search: SearchUiState,
     pub column_widths: Vec<f32>,
     pub hidden_columns: BTreeSet<usize>,
+    /// Columns explicitly shown again while "Differences only" is active.
+    pub shown_columns: BTreeSet<usize>,
     pub hidden_dirty: bool,
     /// Backups already restored in this session; hidden from the restore menu.
     pub restored_backups: BTreeSet<PathBuf>,
@@ -69,6 +71,7 @@ impl CsvUiState {
             search: SearchUiState::default(),
             column_widths: Vec::new(),
             hidden_columns: BTreeSet::new(),
+            shown_columns: BTreeSet::new(),
             hidden_dirty: false,
             restored_backups: BTreeSet::new(),
             pending_key: None,
@@ -89,14 +92,67 @@ impl CsvUiState {
         self.hidden_dirty = false;
     }
 
-    pub fn hidden_count(&self) -> usize {
-        self.hidden_columns.len()
-    }
-
     pub fn visible_columns(&self, compare: &CsvCompare) -> Vec<usize> {
         (0..compare.column_count)
-            .filter(|col| !self.hidden_columns.contains(col))
+            .filter(|col| self.column_visible(compare, *col))
             .collect()
+    }
+
+    /// Whether a column should be drawn right now. "Differences only"
+    /// auto-hides unchanged columns; an explicit show from the Columns menu
+    /// overrides that until the user hides it again.
+    pub fn column_visible(&self, compare: &CsvCompare, col: usize) -> bool {
+        if self.hidden_columns.contains(&col) {
+            return false;
+        }
+        if self.differences_only
+            && !self.shown_columns.contains(&col)
+            && !compare.column_has_differences(col)
+        {
+            return false;
+        }
+        true
+    }
+
+    /// Apply a visibility toggle from the Columns menu or a header menu.
+    pub fn set_column_visible(&mut self, compare: &CsvCompare, col: usize, visible: bool) {
+        if visible {
+            let was_hidden = self.hidden_columns.remove(&col);
+            if self.differences_only && !compare.column_has_differences(col) {
+                self.shown_columns.insert(col);
+            } else {
+                self.shown_columns.remove(&col);
+            }
+            if was_hidden {
+                self.hidden_dirty = true;
+            }
+        } else if self.differences_only
+            && !compare.column_has_differences(col)
+            && self.shown_columns.contains(&col)
+        {
+            // Unchecking an auto-shown unchanged column just returns it to the
+            // differences-only hidden group; it is not an explicit hide.
+            self.shown_columns.remove(&col);
+        } else {
+            self.hidden_columns.insert(col);
+            self.shown_columns.remove(&col);
+            self.hidden_dirty = true;
+        }
+    }
+
+    /// Split columns into the visible group (checked, in column order) and the
+    /// hidden group (unchecked, shown below the visible ones).
+    pub fn column_visibility_entries(&self, compare: &CsvCompare) -> (Vec<usize>, Vec<usize>) {
+        let mut visible = Vec::with_capacity(compare.column_count);
+        let mut hidden = Vec::new();
+        for col in 0..compare.column_count {
+            if self.column_visible(compare, col) {
+                visible.push(col);
+            } else {
+                hidden.push(col);
+            }
+        }
+        (visible, hidden)
     }
 
     /// Move the selected cell with the keyboard. Up/Down walk the currently
@@ -167,7 +223,7 @@ impl CsvUiState {
             let mut hit = false;
             if let Some(left) = row.left {
                 for col in 0..compare.column_count {
-                    if self.hidden_columns.contains(&col) {
+                    if !self.column_visible(compare, col) {
                         continue;
                     }
                     let hits = find_ranges(
@@ -182,7 +238,7 @@ impl CsvUiState {
             }
             if let Some(right) = row.right {
                 for col in 0..compare.column_count {
-                    if self.hidden_columns.contains(&col) {
+                    if !self.column_visible(compare, col) {
                         continue;
                     }
                     let hits = find_ranges(
@@ -336,11 +392,15 @@ fn compute_widths(compare: &CsvCompare) -> Vec<f32> {
         for row in compare.rows.iter().take(5000) {
             let left_len = row
                 .left
-                .map(|line| display_value(compare.left.cell(line, col)).width())
+                .map(|line| {
+                    display_value_capped(compare.left.cell(line, col), MEASURE_VALUE_CHARS).width()
+                })
                 .unwrap_or(0);
             let right_len = row
                 .right
-                .map(|line| display_value(compare.right.cell(line, col)).width())
+                .map(|line| {
+                    display_value_capped(compare.right.cell(line, col), MEASURE_VALUE_CHARS).width()
+                })
                 .unwrap_or(0);
             let width_chars = left_len.max(right_len);
             max_chars = max_chars.max(width_chars.min(80));
@@ -504,7 +564,12 @@ pub fn show(
                 });
                 ui.end_row();
 
-                ui.checkbox(&mut state.differences_only, "Differences only");
+                if ui
+                    .checkbox(&mut state.differences_only, "Differences only")
+                    .changed()
+                {
+                    state.refresh_search(compare);
+                }
                 ui.checkbox(&mut options.trim_whitespace, "Trim cells");
                 let _ = common::icon_menu_button(ui, Icon::Download, "Export", |ui| {
                     if common::icon_button(
@@ -642,6 +707,14 @@ pub fn show(
             state.selected_row = visible.first().copied();
         }
     }
+    if let Some((row, col)) = state.selected_cell {
+        if !state.column_visible(compare, col) {
+            state.selected_cell = state
+                .visible_columns(compare)
+                .first()
+                .map(|first| (row, *first));
+        }
+    }
     if let Some(key) = common::take_navigation_key(ui) {
         if state.navigate_cells(compare, &visible, key) {
             ui.ctx().request_repaint();
@@ -748,6 +821,23 @@ fn display_value(value: &str) -> Cow<'_, str> {
     }
     Cow::Owned(out)
 }
+
+/// Bounded display value used for table rendering and width measurement.
+/// Very large CSV cells are truncated for layout while the full value remains
+/// available in tooltips, search and exports.
+fn display_value_capped(value: &str, limit: usize) -> Cow<'_, str> {
+    let cut = value.char_indices().nth(limit).map(|(index, _)| index);
+    let Some(index) = cut else {
+        return display_value(value);
+    };
+    let mut out = display_value(&value[..index]).into_owned();
+    out.push('…');
+    Cow::Owned(out)
+}
+
+const MEASURE_VALUE_CHARS: usize = 160;
+const RENDER_VALUE_CHARS: usize = 800;
+const TOOLTIP_VALUE_CHARS: usize = 4000;
 
 mod menus;
 mod table;

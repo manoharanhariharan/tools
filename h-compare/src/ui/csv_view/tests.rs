@@ -1,7 +1,6 @@
 use super::*;
 use crate::csvdiff::compare_csv;
 use crate::load::{OpenData, OpenKind};
-use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 fn data_with(compare: CsvCompare) -> OpenData {
@@ -308,18 +307,56 @@ fn column_visibility_entries_list_visible_first_then_hidden() {
         &CsvOptions::default(),
     )
     .unwrap();
-    let mut hidden = BTreeSet::from([1, 3]);
-    let (visible, hidden_cols) = super::menus::column_visibility_entries(&compare, &hidden);
+    let mut state = CsvUiState::new(&compare);
+    state.hidden_columns.insert(1);
+    state.hidden_columns.insert(3);
+    let (visible, hidden_cols) = state.column_visibility_entries(&compare);
     assert_eq!(visible, vec![0, 2]);
     assert_eq!(hidden_cols, vec![1, 3]);
 
-    super::menus::set_column_visible(&mut hidden, 1, true);
-    assert!(!hidden.contains(&1));
-    super::menus::set_column_visible(&mut hidden, 0, false);
-    let (visible, hidden_cols) = super::menus::column_visibility_entries(&compare, &hidden);
+    state.set_column_visible(&compare, 1, true);
+    assert!(!state.hidden_columns.contains(&1));
+    state.set_column_visible(&compare, 0, false);
+    let (visible, hidden_cols) = state.column_visibility_entries(&compare);
     assert_eq!(visible, vec![1, 2]);
     assert_eq!(hidden_cols, vec![0, 3]);
     assert_eq!(visible.len() + hidden_cols.len(), compare.column_count);
+}
+
+#[test]
+fn differences_only_hides_unchanged_columns_and_allows_override() {
+    let compare = compare_csv(
+        b"id,a,b,c\n1,x,y,z\n",
+        b"id,a,b,c\n1,X,y,z\n",
+        &CsvOptions::default(),
+    )
+    .unwrap();
+    let mut state = CsvUiState::new(&compare);
+    state.differences_only = true;
+    assert!(state.column_visible(&compare, 1));
+    assert!(!state.column_visible(&compare, 0));
+    assert!(!state.column_visible(&compare, 2));
+    let (visible, hidden_cols) = state.column_visibility_entries(&compare);
+    assert_eq!(visible, vec![1]);
+    assert_eq!(hidden_cols, vec![0, 2, 3]);
+
+    // Explicitly show an unchanged column; differences-only must respect it.
+    state.set_column_visible(&compare, 0, true);
+    assert!(state.column_visible(&compare, 0));
+    let (visible, hidden_cols) = state.column_visibility_entries(&compare);
+    assert_eq!(visible, vec![0, 1]);
+    assert_eq!(hidden_cols, vec![2, 3]);
+
+    // Hiding it again returns it to the auto-hidden group.
+    state.set_column_visible(&compare, 0, false);
+    assert!(!state.column_visible(&compare, 0));
+    assert!(state.shown_columns.is_empty());
+
+    // Turning differences-only off restores auto-hidden columns; only explicit
+    // hides remain hidden.
+    state.differences_only = false;
+    assert!(state.column_visible(&compare, 0));
+    assert!(state.column_visible(&compare, 2));
 }
 
 #[test]
@@ -341,6 +378,18 @@ fn column_header_tooltip_reports_cell_and_header_differences() {
     assert!(!cell_tip.contains("Header differs"));
 
     assert!(super::menus::column_header_tooltip(&compare, 0).is_none());
+}
+
+#[test]
+fn huge_values_are_capped_for_rendering() {
+    let value = "x".repeat(5000);
+    let shown = display_value_capped(&value, RENDER_VALUE_CHARS);
+    assert_eq!(shown.chars().count(), RENDER_VALUE_CHARS + 1);
+    assert!(shown.ends_with('…'));
+    assert_eq!(
+        display_value_capped("short", RENDER_VALUE_CHARS).as_ref(),
+        "short"
+    );
 }
 
 #[test]

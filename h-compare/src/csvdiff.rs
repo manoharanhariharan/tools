@@ -214,6 +214,11 @@ impl CsvCompare {
         self.column_changes.get(col).copied().unwrap_or(0)
     }
 
+    /// True when a column has a changed header or at least one changed cell.
+    pub fn column_has_differences(&self, col: usize) -> bool {
+        self.column_change_count(col) > 0 || self.changed_headers.contains(&col)
+    }
+
     pub fn column_name(&self, col: usize) -> String {
         let left = self.left.display_header(col);
         let right = self.right.display_header(col);
@@ -241,11 +246,11 @@ impl CsvCompare {
     }
 
     pub fn cell_diff(&self, row: usize, col: usize) -> Option<&CellDiff> {
-        self.rows
-            .get(row)?
-            .cells
-            .iter()
-            .find(|cell| cell.col == col)
+        let row = self.rows.get(row)?;
+        row.cells
+            .binary_search_by_key(&col, |cell| cell.col)
+            .ok()
+            .map(|index| &row.cells[index])
     }
 }
 
@@ -766,7 +771,13 @@ fn compare_row(
             continue;
         }
         changed_cols.push(col);
-        let (left_spans, right_spans) = intraline_spans(left_value, right_value);
+        let (left_spans, right_spans) = if left_value.len().max(right_value.len()) > 32 * 1024 {
+            // Character-level spans are invisible beyond the bounded render
+            // window and very expensive to compute for multi-megabyte cells.
+            (Vec::new(), Vec::new())
+        } else {
+            intraline_spans(left_value, right_value)
+        };
         cells.push(CellDiff {
             col,
             left: left_value.to_string(),
@@ -1062,6 +1073,30 @@ mod tests {
         assert_eq!(compare.column_change_count(1), 1);
         assert_eq!(compare.column_change_count(2), 1);
         assert_eq!(compare.column_change_count(99), 0);
+        assert!(compare.column_has_differences(1));
+        assert!(!compare.column_has_differences(0));
+    }
+
+    #[test]
+    fn a_changed_header_counts_as_a_column_difference() {
+        let compare =
+            compare_csv(b"id,name\n1,alpha\n", b"id,title\n1,alpha\n", &options()).unwrap();
+        assert_eq!(compare.column_change_count(1), 0);
+        assert!(compare.column_has_differences(1));
+    }
+
+    #[test]
+    fn cell_diff_lookup_finds_any_changed_column() {
+        let compare =
+            compare_csv(b"id,a,b,c\n1,x,y,z\n", b"id,a,b,c\n1,x,Q,W\n", &options()).unwrap();
+        let row = compare
+            .rows
+            .iter()
+            .position(|row| row.kind == CsvRowKind::Modified)
+            .unwrap();
+        assert_eq!(compare.cell_diff(row, 2).unwrap().col, 2);
+        assert_eq!(compare.cell_diff(row, 3).unwrap().col, 3);
+        assert!(compare.cell_diff(row, 1).is_none());
     }
 
     #[test]
@@ -1074,6 +1109,17 @@ mod tests {
         assert_eq!(compare.column_change_count(1), 0);
         assert_eq!(compare.column_change_count(2), 1);
         assert_eq!(compare.stats.changed_cells, 1);
+    }
+
+    #[test]
+    fn huge_changed_cells_skip_intraline_spans() {
+        let left = format!("id,big\n1,{}\n", "a".repeat(40_000));
+        let right = format!("id,big\n1,{}\n", "b".repeat(40_000));
+        let compare = compare_csv(left.as_bytes(), right.as_bytes(), &options()).unwrap();
+        assert_eq!(compare.stats.changed_cells, 1);
+        let cell = compare.cell_diff(0, 1).expect("changed cell");
+        assert!(cell.left_spans.is_empty());
+        assert!(cell.right_spans.is_empty());
     }
 
     #[test]

@@ -551,6 +551,11 @@ pub fn install(ctx: &egui::Context) {
     style.spacing.button_padding = egui::vec2(13.0, 7.0);
     style.spacing.interact_size.y = 30.0;
     style.spacing.menu_margin = egui::Margin::same(6);
+    style.spacing.scroll = egui::style::ScrollStyle::solid();
+    style.spacing.scroll.bar_width = 12.0;
+    style.spacing.scroll.bar_inner_margin = 3.0;
+    style.spacing.scroll.bar_outer_margin = 2.0;
+    style.spacing.scroll.handle_min_length = 36.0;
     style
         .text_styles
         .insert(TextStyle::Heading, FontId::proportional(22.0));

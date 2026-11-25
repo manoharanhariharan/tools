@@ -96,11 +96,16 @@ A fast, native folder / text / CSV comparison tool written in Rust. It is built 
   - **Merged** shows `left` and `right` values stacked in each changed cell.
   - **Side by side** gives both full tables with a central change gutter.
 - Side-by-side mode keeps the splitter fixed at the centre of the viewport; both panes
-  share vertical and horizontal scrolling so they stay aligned, with one shared
+  share vertical and horizontal scrolling so they stay aligned, with one large shared
   horizontal scrollbar under the panes.
 - The chosen layout and differences-only state are retained across rescans, reloads
   and column edits.
 - Differences-only filter, search across cells, per-row deltas, and stats.
+- **Differences only** also hides columns with no differences. Those columns are grouped at
+  the bottom of the Columns menu; check one to override and show it while the filter is on.
+- Very large cells are rendered from a bounded preview (the full value remains in the
+  tooltip), and width sampling/intra-line spans are bounded so wide or huge columns do not
+  stall the table.
 - F7 / Shift+F7 change navigation steps through each differing cell in a row before
   moving to the next changed row, focusing and scrolling the cell into view. The
   counter shows the current changed-cell position and the total number of cells.
@@ -110,7 +115,8 @@ A fast, native folder / text / CSV comparison tool written in Rust. It is built 
 - **Hide any column** from the table and comparison with one context-menu action.
 - The **Columns (visible/total)** toolbar menu lists every column with a checkbox. Visible
   columns are checked; unchecking one hides it and moves it into the **Hidden columns**
-  group at the bottom of the menu. A **Show all columns** action restores everything.
+  group at the bottom of the menu. A **Show all columns** action restores everything. The
+  picker uses a larger window and a wide draggable scrollbar for long column lists.
 - Hidden columns do not contribute to row alignment, cell differences, stats or exports.
 - Hidden-column choices are remembered per open file for the current session.
 - Right-click a column header or cell for hide/key/copy/delete actions, and right-click a row

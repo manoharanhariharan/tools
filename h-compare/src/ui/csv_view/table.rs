@@ -469,9 +469,15 @@ fn render_csv_pane(
                                 })
                                 .unwrap_or(&[]);
                             let tooltip = if left_side {
-                                format!("Left: {value}")
+                                format!(
+                                    "Left: {}",
+                                    display_value_capped(value, TOOLTIP_VALUE_CHARS)
+                                )
                             } else {
-                                format!("Right: {value}")
+                                format!(
+                                    "Right: {}",
+                                    display_value_capped(value, TOOLTIP_VALUE_CHARS)
+                                )
                             };
                             let response = paint_side_cell(
                                 ui,
@@ -698,16 +704,18 @@ fn paint_merged_cell(ui: &mut Ui, cell: &MergedCell<'_>, state: &mut CsvUiState)
     let display_color = theme::text();
 
     if let Some(cell) = cell {
-        let left_display = display_value(if cell.left.is_empty() {
+        let left_value = if cell.left.is_empty() {
             "∅"
         } else {
-            &cell.left
-        });
-        let right_display = display_value(if cell.right.is_empty() {
+            cell.left.as_str()
+        };
+        let right_value = if cell.right.is_empty() {
             "∅"
         } else {
-            &cell.right
-        });
+            cell.right.as_str()
+        };
+        let left_display = display_value_capped(left_value, RENDER_VALUE_CHARS);
+        let right_display = display_value_capped(right_value, RENDER_VALUE_CHARS);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.add(
@@ -734,7 +742,7 @@ fn paint_merged_cell(ui: &mut Ui, cell: &MergedCell<'_>, state: &mut CsvUiState)
             );
         });
     } else if let Some(value) = right.or(left) {
-        let display = display_value(value);
+        let display = display_value_capped(value, RENDER_VALUE_CHARS);
         ui.add(
             Label::new(colored_job(
                 &display,
@@ -754,9 +762,19 @@ fn paint_merged_cell(ui: &mut Ui, cell: &MergedCell<'_>, state: &mut CsvUiState)
         Sense::click(),
     );
     let tooltip = match (cell, left, right) {
-        (Some(cell), _, _) => format!("Left: {}\nRight: {}", cell.left, cell.right),
-        (None, Some(left), Some(right)) if left == right => left.to_string(),
-        (None, Some(left), Some(right)) => format!("Left: {left}\nRight: {right}"),
+        (Some(cell), _, _) => format!(
+            "Left: {}\nRight: {}",
+            display_value_capped(&cell.left, TOOLTIP_VALUE_CHARS),
+            display_value_capped(&cell.right, TOOLTIP_VALUE_CHARS)
+        ),
+        (None, Some(left), Some(right)) if left == right => {
+            display_value_capped(left, TOOLTIP_VALUE_CHARS).into_owned()
+        }
+        (None, Some(left), Some(right)) => format!(
+            "Left: {}\nRight: {}",
+            display_value_capped(left, TOOLTIP_VALUE_CHARS),
+            display_value_capped(right, TOOLTIP_VALUE_CHARS)
+        ),
         _ => String::new(),
     };
     if !tooltip.is_empty() {
@@ -905,7 +923,7 @@ fn paint_side_cell(ui: &mut Ui, cell: &SideCell<'_>, state: &mut CsvUiState) -> 
             Sense::click(),
         );
     }
-    let display = display_value(value);
+    let display = display_value_capped(value, RENDER_VALUE_CHARS);
     let search_spans = if query.is_empty() {
         Vec::new()
     } else {

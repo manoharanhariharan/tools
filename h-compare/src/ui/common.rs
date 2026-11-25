@@ -585,29 +585,29 @@ pub fn horizontal_scroll_bar(ui: &mut Ui, offset: f32, viewport: f32, content: f
         return None;
     }
     let width = ui.available_width().max(60.0);
+    let height = 24.0;
     let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(width, 14.0), egui::Sense::click_and_drag());
+        ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click_and_drag());
     let track = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + 2.0, rect.center().y - 3.0),
-        egui::pos2(rect.right() - 2.0, rect.center().y + 3.0),
+        egui::pos2(rect.left() + 2.0, rect.center().y - 4.5),
+        egui::pos2(rect.right() - 2.0, rect.center().y + 4.5),
     );
-    ui.painter().rect_filled(track, 3.0, theme::gutter());
-    let handle_width = ((viewport / content) * track.width()).clamp(30.0, track.width());
+    ui.painter().rect_filled(track, 4.5, theme::gutter());
+    let handle_width = ((viewport / content) * track.width()).clamp(48.0, track.width());
     let travel = (track.width() - handle_width).max(0.0);
     let ratio = (offset / max_offset).clamp(0.0, 1.0);
     let handle = egui::Rect::from_min_size(
         egui::pos2(track.left() + travel * ratio, track.top()),
         egui::vec2(handle_width, track.height()),
     );
-    ui.painter().rect_filled(
-        handle,
-        3.0,
-        if response.hovered() || response.dragged() {
-            theme::widget_hover()
-        } else {
-            theme::widget()
-        },
-    );
+    let handle_color = if response.dragged() {
+        theme::accent()
+    } else if response.hovered() {
+        theme::widget_hover()
+    } else {
+        theme::widget()
+    };
+    ui.painter().rect_filled(handle, 4.5, handle_color);
     if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
