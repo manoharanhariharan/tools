@@ -73,9 +73,22 @@ The executable lands at `src-tauri/target/release/h-finvasia-desktop.exe` and ru
 ### Layout
 
 The workspace opens on a four-card account strip - **Account details** (user, account, login
-state), **Funds available**, **RPNL**, **MTM** - followed by three tabs: **Index**, **Option chain**,
-**Instruments**. Market watch and the account screens (Positions, Order book, Groups, Diagnostics)
-sit behind the **More** menu, so the working area stays uncluttered.
+state), **Funds available**, **RPNL**, **MTM** - followed by four tabs: **Index**, **Stocks**,
+**Option chain**, **Instruments**. Market watch and the account screens (Positions, Order book,
+Groups, Diagnostics) sit behind the **More** menu, so the working area stays uncluttered.
+
+**Stocks** lists the full NSE cash-equity universe from the local master (currently 2,786 symbols).
+Anything in the watch list is pinned to the top with a live LTP, change, percent change and volume;
+the rest stay alphabetical and cost no broker calls. The list is virtualised, so scrolling 2,786
+rows stays smooth. Right-click a stock for **Open option chain** (when its underlying has F&O) or
+**Add to watch**.
+
+**Option chain** uses the usual quad layout: calls on the left, puts on the right, strike price in
+the middle. Each side is mirrored around the strike (OI, d OI, volume, LTP, change, bid qty, bid,
+ask, ask qty, then the strike). OI and volume cells carry a proportional background fill, so size is
+visible at a glance. Calls and puts are tinted by moneyness (ITM / ATM / OTM) around the spot, with
+the ATM row highlighted. The default view is the 10 strikes either side of the ATM; the rest of the
+chain remains in the local master but is not streamed.
 
 ### Using it
 
@@ -86,10 +99,10 @@ sit behind the **More** menu, so the working area stays uncluttered.
    Search is relaxed and multi-term: `nifty 25800`, `25800 nifty`, `NIFTY 26NOV 25800` all find the
    25800-strike NIFTY contracts. Adding an instrument while **live** subscribes it on the open socket
    immediately — no reconnect, no manual refresh.
-4. **Right-click any row** (Index, Option chain source rows, Instruments, Market watch) for actions.
+4. **Right-click any row** (Index, Stocks, Instruments, Market watch) for actions.
    When the instrument's underlying has derivatives the menu offers **Open option chain
    (UNDERLYING)**; choosing it switches to the Option chain tab, selects that underlying's nearest
-   expiry, and loads the chain with the usual +/- strikes subscription window. Instruments without
+   expiry, and loads the chain centred on the watched spot (or the entered ATM). Instruments without
    derivatives show the item disabled, so the broker is never asked for a chain that cannot exist.
 5. **Diagnostics** shows backend (`mongo` vs `in-memory`), frame rate, decode errors, and the live
    connect form.
@@ -106,10 +119,10 @@ keep their session. Verified against the live venue (NTPC/ACC streaming with bid
 | Rule | Value |
 |---|---|
 | Total instruments subscribed at once | **100** (watch + option chain combined) |
-| Option-chain legs subscribed | only a ± strikes window (default ±10 = 42 legs); the rest is browsable metadata |
-| Websocket connections per session | 1, opened only when you press *Connect live* |
-| Automatic broker calls | **one connect at launch** when a valid session already exists (watch list restored from disk); never a silent login |
-| Automatic login | never — startup only *adopts* a valid stored/env token; a fresh TOTP login happens only when you press Connect |
+| Option-chain legs subscribed | only a +/- strikes window (default +/-10 = 42 legs); other strikes stay in the local master as metadata |
+| Websocket connections per session | 1, opened at launch when a valid session exists (or via Diagnostics -> Connect live) |
+| Automatic broker calls | **one connect at launch** when a valid session exists; the account strip refreshes only on mount, on first connect, or manually - never on a timer |
+| Automatic login | never - startup only *adopts* a valid stored/env token; a fresh TOTP login happens only when you press Connect |
 
 Overflow is **refused and reported**, never silently dropped. The status bar shows
 `subscribed N/100` so the budget is always visible.
@@ -228,9 +241,10 @@ scripts/make-icon.ps1      regenerates src-tauri/icons
 - **One websocket per session token.** Opening a second connection while the first is live makes the
   venue go silent, so the app never probes and connects — it opens a single socket and reports the
   real state through `FeedState`.
-- **REST base is `NorenWClientAPI`.** The older `NorenWClientTP` host now returns 502.
-- **Live feed is untested end-to-end** — needs OAuth app registration. The transport, routing and
-  backoff logic are unit-tested; the venue handshake is not.
+- **REST split.** General calls use `NorenWClientAPI`; `Limits`/`PositionBook` use `NorenWClientWeb` because the persisted token is web-scoped. The older `NorenWClientTP` host returns 502.
+- **Stocks covers the NSE EQ series** (currently 2,786 symbols, including ETFs). BSE listings and other NSE series (BE, bonds, SMS) are not in the list yet.
+- **Option-chain IV is not shown** because the WebSocket frames we receive do not carry it; d OI is computed from `oi` minus the venue `poi`.
+- **Spot/ATM requires the underlying to be watched.** The chain centres on the watched spot; without it (or a typed ATM) it falls back to the middle strike of the full chain.
 - **Master load is 2.7 s**, not the <1 s target. Next step: `RawDocumentBuf` zero-copy reads.
 - **MongoDB 4.4.2 is EOL**; driver 3.10 works today, plan is 7.x.
 - **Dead indexes** exist in the local database (`INSTRUMENT` indexes `tradingSymbol`, documents use

@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg: #0b1017;
   --panel: #111a24;
   --panel-2: #16212d;
@@ -747,3 +747,221 @@ table.grid tfoot td {
   color: var(--dim);
   cursor: not-allowed;
 }
+
+/* ---- stocks ---- */
+
+.num {
+  text-align: right;
+}
+
+.stock-head,
+.stock-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) 120px 100px 90px 110px 100px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+}
+
+.stock-head {
+  height: 30px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.stock-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.stock-row {
+  height: 30px;
+  border-bottom: 1px solid rgba(34, 48, 63, 0.45);
+  cursor: context-menu;
+  font-size: 12.5px;
+}
+
+.stock-row:hover {
+  background: var(--panel-2);
+}
+
+.stock-row.watched {
+  background: rgba(42, 110, 168, 0.14);
+  box-shadow: inset 2px 0 0 var(--accent-2);
+}
+
+.stock-row.watched:hover {
+  background: rgba(42, 110, 168, 0.2);
+}
+
+.stock-row .symbol {
+  font-weight: 600;
+}
+
+button.tiny {
+  padding: 2px 9px;
+  font-size: 11px;
+  border-radius: 6px;
+}
+
+/* ---- option chain quad ---- */
+
+.chain-wrap {
+  overflow: auto;
+}
+
+table.chain-grid {
+  min-width: 1240px;
+  font-size: 12px;
+}
+
+table.chain-grid thead th {
+  padding: 5px 7px;
+  font-size: 10.5px;
+}
+
+table.chain-grid thead tr:first-child th {
+  top: 0;
+}
+
+table.chain-grid thead tr:nth-child(2) th {
+  top: 30px;
+}
+
+table.chain-grid thead th.calls-band {
+  background: #173b63;
+  color: #dbeafe;
+  text-align: center;
+  letter-spacing: 0.14em;
+}
+
+table.chain-grid thead th.puts-band {
+  background: #5a2a12;
+  color: #ffedd5;
+  text-align: center;
+  letter-spacing: 0.14em;
+}
+
+table.chain-grid thead th.strike-band {
+  background: #8a5a06;
+  color: #fff7e6;
+  text-align: center;
+  z-index: 2;
+  box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.35), inset -1px 0 0 rgba(0, 0, 0, 0.35);
+}
+
+table.chain-grid tbody td {
+  padding: 4px 7px;
+  position: relative;
+  overflow: hidden;
+}
+
+table.chain-grid tbody td.itm {
+  background: rgba(61, 199, 126, 0.07);
+}
+
+table.chain-grid tbody td.otm {
+  background: rgba(125, 142, 163, 0.045);
+}
+
+table.chain-grid tbody td.atm {
+  background: rgba(217, 164, 65, 0.09);
+}
+
+table.chain-grid tr.atm-row td {
+  background: rgba(217, 164, 65, 0.12);
+  border-top: 1px solid rgba(217, 164, 65, 0.45);
+  border-bottom: 1px solid rgba(217, 164, 65, 0.45);
+}
+
+table.chain-grid tbody td.strike-cell {
+  background: #8a5a06;
+  color: #fff7e6;
+  font-weight: 600;
+  text-align: center;
+  box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.35), inset -1px 0 0 rgba(0, 0, 0, 0.35);
+}
+
+table.chain-grid tbody td.strike-cell.strike-atm {
+  background: #d9a441;
+  color: #1a1205;
+}
+
+.chain-fill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.chain-fill.fill-left {
+  left: 2px;
+}
+
+.chain-fill.fill-right {
+  right: 2px;
+}
+
+.chain-fill.oi-fill {
+  background: rgba(217, 164, 65, 0.34);
+}
+
+.chain-fill.vol-fill {
+  background: rgba(75, 155, 216, 0.3);
+}
+
+.cell-text {
+  position: relative;
+  z-index: 1;
+}
+
+.chain-summary {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.chain-summary .spacer {
+  flex: 1;
+}
+
+.chain-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.chain-legend .swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
+.swatch.itm {
+  background: rgba(61, 199, 126, 0.55);
+}
+
+.swatch.atm {
+  background: rgba(217, 164, 65, 0.7);
+}
+
+.swatch.otm {
+  background: rgba(125, 142, 163, 0.35);
+}
+

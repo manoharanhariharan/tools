@@ -17,6 +17,7 @@
   import SnapQuote from "./lib/features/market/SnapQuote.svelte";
   import OptionChain from "./lib/features/chain/OptionChain.svelte";
   import IndexWatch from "./lib/features/indices/IndexWatch.svelte";
+  import Stocks from "./lib/features/stocks/Stocks.svelte";
   import InstrumentSearch from "./lib/features/instruments/InstrumentSearch.svelte";
   import Positions from "./lib/features/positions/Positions.svelte";
   import Orders from "./lib/features/orders/Orders.svelte";
@@ -25,6 +26,7 @@
 
   type Page =
     | "index"
+    | "stocks"
     | "chain"
     | "instruments"
     | "market"
@@ -295,10 +297,16 @@
 </script>
 
 <div class="shell">
-  <AccountStrip {summary} loading={summaryLoading} onrefresh={refreshSummary} />
+  <AccountStrip
+    {summary}
+    loading={summaryLoading}
+    onrefresh={refreshSummary}
+    source={status?.source ?? "idle"}
+  />
 
   <div class="workspace-tabs">
     <button class="ws-tab" class:active={page === "index"} onclick={() => go("index")}>Index</button>
+    <button class="ws-tab" class:active={page === "stocks"} onclick={() => go("stocks")}>Stocks</button>
     <button class="ws-tab" class:active={page === "chain"} onclick={() => go("chain")}>
       Option chain
     </button>
@@ -344,10 +352,15 @@
         onchain={openChain}
         refreshToken={watchedKeys.length}
       />
-    {:else if page === "chain"}
-      <OptionChain
+    {:else if page === "stocks"}
+      <Stocks
         watched={watchedKeys}
         onadd={addInstrument}
+        onremove={removeInstrument}
+        onchain={openChain}
+      />
+    {:else if page === "chain"}
+      <OptionChain
         pending={chainRequest}
         onconsumed={() => (chainRequest = null)}
       />

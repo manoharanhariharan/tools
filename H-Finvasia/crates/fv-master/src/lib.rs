@@ -13,5 +13,5 @@ pub mod index;
 #[cfg(feature = "mongo")]
 pub mod mongo;
 
-pub use index::{is_index, Instrument};
+pub use index::{is_cash_equity, is_index, stock_display_symbol, Instrument};
 pub use index::{MasterError, MemoryMaster, StrikeType};

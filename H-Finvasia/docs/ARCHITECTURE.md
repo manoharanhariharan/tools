@@ -124,6 +124,17 @@ hard to reason about at 60 Hz.
 Watched instruments get a **placeholder row immediately**, so adding an illiquid scrip shows up
 rather than appearing to do nothing until its first tick.
 
+### 4.8 Universe and ladder views are local
+
+The **Stocks** tab is built from `MemoryMaster::cash_equities()` (NSE EQ series), not from a broker
+query. `MarketData::stock_rows()` adds a quote only when the symbol is already in the quote book, so
+browsing 2,786 rows costs nothing; the UI virtualises the list and pins watched symbols to the top.
+
+The option chain's `groupStrikes`, `pickAtm`, `windowAround`, `deltaOi` and `fillPercent` are pure
+TypeScript in `ui/src/lib/features/chain/chain.ts` and unit-tested. The component only maps data to
+the quad table; the ATM reference (watched spot, typed ATM, or middle strike) is resolved by those
+functions rather than scattered through markup.
+
 ## 5. Threading and lifecycle (src-tauri)
 
 ```
@@ -187,11 +198,11 @@ product rule, not a venue limit, and it is enforced in three places:
 | Place | Rule |
 |---|---|
 | `MarketData` | `MAX_TOTAL_SUBSCRIPTIONS = 100` across watch **and** chain; `set_chain` clamps, `set_watch` trims the chain group |
-| `chain_load` | subscribes only `chain_window(...)` (±N strikes around the ATM, default ±10), never the whole expiry |
-| UI | nothing is subscribed on page open; *Load and subscribe* is an explicit action, and the status bar shows `subscribed N/100` |
+| `chain_load` | subscribes only `chain_window(...)` (+/-N strikes around the ATM, default +/-10), never the whole expiry |
+| UI | nothing is subscribed on page open; *Load and subscribe* or an explicit context-menu action is required, and the status bar shows `subscribed N/100` |
 
 Overflow is returned in the `PlanDto` (`rejected`, `truncated`) and shown, never silently dropped.
-The full chain is still browsable because it comes from the local master, not the venue.
+The rest of the expiry stays in the local master and is served as metadata; it is not streamed.
 
 ## 6. Cross-platform rules| Rule | Reason |
 |---|---|

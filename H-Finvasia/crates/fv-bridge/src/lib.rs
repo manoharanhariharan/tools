@@ -1,4 +1,4 @@
-﻿//! UI-facing bridge between the market engine and the desktop shell.
+//! UI-facing bridge between the market engine and the desktop shell.
 //!
 //! This crate intentionally has **no Tauri dependency**: `src-tauri` is a thin
 //! adapter, and everything here is exercised by plain unit tests.
@@ -8,7 +8,7 @@ pub mod market;
 
 pub use dto::{
     ChainRowDto, DeltaDto, IndexRowDto, InstrumentDto, PlanDto, PriceDto, QuoteDto, SourceKind,
-    StatusDto, Trend,
+    StatusDto, StockRowDto, Trend,
 };
 pub use market::{
     build_label, chain_window, MarketData, DEFAULT_CHAIN_LIMIT, DEFAULT_MAX_PER_FRAME,
@@ -187,6 +187,48 @@ mod tests {
         assert!(row.ltp.is_none());
         assert_eq!(row.underlying.as_deref(), Some("ZYDUSLIFE"));
         assert!(row.has_fno);
+    }
+
+    #[test]
+    fn open_interest_survives_the_dto_boundary() {
+        let mut md = market();
+        apply(
+            &mut md,
+            br#"{"t":"tk","e":"NFO","tk":"158614","lp":"12.35","v":"15230","oi":"1875","poi":"1620"}"#,
+        );
+        let q = md.snapshot("NFO|158614").expect("quote exists");
+        assert_eq!(q.oi, Some(1875));
+        assert_eq!(q.prev_oi, Some(1620));
+    }
+
+    #[test]
+    fn stock_rows_cover_nse_cash_equities_and_carry_watch_state() {
+        let mut md = market();
+        md.set_master(master());
+        let reliance = SymbolKey::parse("NSE|2885").unwrap();
+        md.set_watch(vec![reliance.clone()]);
+        apply(
+            &mut md,
+            br#"{"t":"tk","e":"NSE","tk":"2885","ts":"RELIANCE-EQ","lp":"1287.30","v":"980515"}"#,
+        );
+
+        let rows = md.stock_rows();
+        assert_eq!(rows.len(), 1, "only the NSE cash equity qualifies");
+        assert_eq!(rows[0].key, "NSE|2885");
+        assert_eq!(rows[0].symbol, "RELIANCE");
+        assert!(rows[0].live);
+        assert_eq!(
+            rows[0].quote.as_ref().unwrap().ltp.as_ref().unwrap().text,
+            "1287.30"
+        );
+
+        md.remove_from_watch("NSE|2885");
+        let rows = md.stock_rows();
+        assert!(!rows[0].live);
+        assert!(
+            rows[0].quote.is_none(),
+            "the quote is evicted with the watch"
+        );
     }
 
     #[test]

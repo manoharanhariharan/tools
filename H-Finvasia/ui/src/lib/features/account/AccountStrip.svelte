@@ -1,15 +1,26 @@
 <script lang="ts">
-  import type { AccountSummaryDto } from "../../api";
+  import type { AccountSummaryDto, SourceKind } from "../../api";
 
   interface Props {
     summary: AccountSummaryDto | null;
     loading: boolean;
     onrefresh: () => void;
+    source: SourceKind;
   }
-  let { summary, loading, onrefresh }: Props = $props();
+  let { summary, loading, onrefresh, source }: Props = $props();
 
   const funds = $derived(summary?.funds ?? null);
   const session = $derived(summary?.session ?? null);
+  const feedLabel = $derived(
+    source === "replay" ? "replay" : summary?.connected ? "logged in" : "offline",
+  );
+  const feedTitle = $derived(
+    source === "replay"
+      ? "replaying a capture, no broker connection"
+      : summary?.connected
+        ? "websocket connected"
+        : "not connected",
+  );
 
   function signed(value: string | null | undefined): string {
     if (!value) return "-";
@@ -30,10 +41,10 @@
     <div class="acct-head">
       <span class="acct-label">Account details</span>
       <span
-        class="badge {summary?.connected ? 'ok' : 'warn'}"
-        title={summary?.connected ? "websocket connected" : "not connected"}
+        class="badge {source === 'replay' ? 'warn' : summary?.connected ? 'ok' : 'warn'}"
+        title={feedTitle}
       >
-        <span class="dot"></span>{summary?.connected ? "logged in" : "offline"}
+        <span class="dot"></span>{feedLabel}
       </span>
     </div>
     <div class="acct-value mono">{session?.uid || "-"}</div>

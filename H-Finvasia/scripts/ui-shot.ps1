@@ -1,4 +1,4 @@
-# Capture the current UI to a PNG without touching the broker.
+﻿# Capture the current UI to a PNG without touching the broker.
 #
 # Starts the release app with auto-connect disabled, drives the DevTools protocol,
 # screenshots the window and stops the app.
@@ -9,7 +9,8 @@
 [CmdletBinding()]
 param(
     [string]$Out = "ui-shot.png",
-    [string]$Page = ""
+    [string]$Page = "",
+    [string]$Action = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -58,6 +59,7 @@ try {
 
     $args = @((Join-Path $PSScriptRoot "ui-shot.mjs"), $Out)
     if ($Page -ne "") { $args += $Page }
+    if ($Action -ne "") { $args += $Action }
     & node @args
     if ($LASTEXITCODE -ne 0) { throw "screenshot failed" }
     Write-Host "Screenshot: $(Join-Path (Get-Location) $Out)"

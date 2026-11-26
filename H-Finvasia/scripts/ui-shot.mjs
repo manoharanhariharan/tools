@@ -1,6 +1,6 @@
 // Capture a PNG of the running app over the Chrome DevTools Protocol.
 // usage: node ui-shot.mjs <out.png> [navLabel]
-const [, , outPath, navLabel] = process.argv;
+const [, , outPath, navLabel, action] = process.argv;
 const BASE = "http://127.0.0.1:9222";
 
 const targets = await (await fetch(`${BASE}/json`)).json();
@@ -62,6 +62,17 @@ if (navLabel) {
   const status = res.result?.result?.value;
   console.log(`nav "${navLabel}": ${status}`);
   await new Promise((r) => setTimeout(r, 900));
+}
+
+// Optional UI drive step, e.g. pressing "Load and subscribe" on the chain.
+if (action) {
+  const res = await send("Runtime.evaluate", {
+    expression: action,
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  console.log(`action: ${res.result?.result?.value ?? "no-result"}`);
+  await new Promise((r) => setTimeout(r, 2500));
 }
 
 const shot = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });

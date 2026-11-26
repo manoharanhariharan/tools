@@ -20,6 +20,8 @@ export interface QuoteDto {
   low: PriceDto | null;
   prev_close: PriceDto | null;
   volume: number | null;
+  oi: number | null;
+  prev_oi: number | null;
   bid: PriceDto | null;
   ask: PriceDto | null;
   bid_qty: number | null;
@@ -152,6 +154,17 @@ export interface ChainRowDto {
   live: boolean;
 }
 
+export interface StockRowDto {
+  key: string;
+  symbol: string;
+  name: string | null;
+  exchange: string;
+  live: boolean;
+  underlying: string | null;
+  has_fno: boolean;
+  quote: QuoteDto | null;
+}
+
 export interface DeltaDto {
   seq: number;
   timestamp_ms: number;
@@ -230,6 +243,7 @@ export const api = {
   groupLoad: (name: string) => invoke<PlanDto>("group_load", { name }),
   groupDelete: (name: string) => invoke<void>("group_delete", { name }),
   indicesList: () => invoke<IndexRowDto[]>("indices_list"),
+  stocksList: () => invoke<StockRowDto[]>("stocks_list"),
   stopFeed: () => invoke<void>("stop_feed"),
 };
 

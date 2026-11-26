@@ -501,6 +501,11 @@ fn indices_list(state: State<'_, Arc<AppState>>) -> Vec<fv_bridge::IndexRowDto> 
     state.market.lock().unwrap().index_rows(300)
 }
 
+#[tauri::command]
+fn stocks_list(state: State<'_, Arc<AppState>>) -> Vec<fv_bridge::StockRowDto> {
+    state.market.lock().unwrap().stock_rows()
+}
+
 // ---------------------------------------------------------------------------
 // Account strip summary
 // ---------------------------------------------------------------------------
@@ -526,6 +531,18 @@ async fn account_summary(state: State<'_, Arc<AppState>>) -> Result<AccountSumma
         .unwrap()
         .status(Instant::now())
         .connected;
+
+    // Screenshot and release probes set this so a render never touches the
+    // broker. `session::peek` only reads the local session file/Mongo record.
+    if std::env::var("FV_NO_AUTOCONNECT").as_deref() == Ok("1") {
+        return Ok(AccountSummaryDto {
+            session: session::peek().await,
+            funds: None,
+            totals: account::PositionTotals::default(),
+            positions: 0,
+            connected,
+        });
+    }
 
     if shared.session.lock().unwrap().is_none() {
         if let Some(resolved) = session::resolve_existing().await {
@@ -933,6 +950,7 @@ fn main() {
             group_load,
             group_delete,
             indices_list,
+            stocks_list,
             account_summary,
             stop_feed,
         ])

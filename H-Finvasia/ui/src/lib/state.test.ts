@@ -14,6 +14,8 @@ function quote(overrides: Partial<QuoteDto> = {}): QuoteDto {
     low: null,
     prev_close: { text: "1275.20", e6: 1_275_200_000 },
     volume: 980_515,
+    oi: null,
+    prev_oi: null,
     bid: { text: "1287.25", e6: 1_287_250_000 },
     ask: { text: "1287.35", e6: 1_287_350_000 },
     bid_qty: 26,

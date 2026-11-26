@@ -100,6 +100,40 @@ impl Instrument {
     }
 }
 
+/// True when this is an NSE cash equity (the "Stocks" universe).
+///
+/// The two local master shapes mark it differently:
+/// * `FINVASIA_SYMBOL` has no segment and appends the series to the symbol
+///   (`ACC-EQ`), while bonds use other suffixes (`0ABCL30-N0`).
+/// * `INSTRUMENT` (Kite-shaped) uses `segment: "NSE-EQ"`.
+///
+/// Indices, options and futures are excluded. ETFs are EQ-series instruments
+/// and therefore included, which matches how the venue lists the cash segment.
+pub fn is_cash_equity(instrument: &Instrument) -> bool {
+    if is_index(instrument) {
+        return false;
+    }
+    if !instrument.key.exchange().eq_ignore_ascii_case("NSE") {
+        return false;
+    }
+    if instrument.is_option() || instrument.is_future() {
+        return false;
+    }
+    if instrument
+        .segment
+        .as_deref()
+        .map(|s| s.trim().eq_ignore_ascii_case("NSE-EQ"))
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    instrument
+        .trading_symbol
+        .trim()
+        .to_ascii_uppercase()
+        .ends_with("-EQ")
+}
+
 /// Ranking signal for a search hit: lower is better.
 ///
 /// Replaced the old fixed enum with a score because queries are now multi-term
@@ -353,6 +387,45 @@ impl MemoryMaster {
     pub fn indices(&self) -> Vec<&Instrument> {
         self.items.iter().filter(|item| is_index(item)).collect()
     }
+
+    /// NSE cash equities, for the Stocks tab. Sorted by display symbol so the
+    /// caller can render the list without another pass.
+    pub fn cash_equities(&self) -> Vec<&Instrument> {
+        let mut list: Vec<&Instrument> = self
+            .items
+            .iter()
+            .filter(|item| is_cash_equity(item))
+            .collect();
+        list.sort_by(|a, b| {
+            stock_display_symbol(a)
+                .cmp(&stock_display_symbol(b))
+                .then_with(|| a.key.as_wire().cmp(&b.key.as_wire()))
+        });
+        list
+    }
+}
+
+/// Symbol shown in the Stocks tab: `ACC-EQ` becomes `ACC`, while the Kite
+/// shape (lower-case `tradingsymbol`, company name in `name`) is uppercased.
+pub fn stock_display_symbol(instrument: &Instrument) -> String {
+    let raw = instrument.trading_symbol.trim();
+    if let Some(stripped) = raw.strip_suffix("-EQ").or_else(|| raw.strip_suffix("-eq")) {
+        return stripped.to_ascii_uppercase();
+    }
+    if instrument
+        .segment
+        .as_deref()
+        .map(|s| s.trim().eq_ignore_ascii_case("NSE-EQ"))
+        .unwrap_or(false)
+    {
+        return raw.to_ascii_uppercase();
+    }
+    instrument
+        .name
+        .as_deref()
+        .unwrap_or(raw)
+        .trim()
+        .to_ascii_uppercase()
 }
 
 /// Wire shape used by the loader/tests. Both source collections are normalised
@@ -586,6 +659,42 @@ mod tests {
         assert!(m
             .derivative_underlyings()
             .contains(&"ZYDUSLIFE".to_string()));
+    }
+
+    #[test]
+    fn cash_equities_are_nse_eq_series_only() {
+        let m = master();
+        let stocks = m.cash_equities();
+        let symbols: Vec<String> = stocks.iter().map(|i| stock_display_symbol(i)).collect();
+        assert_eq!(
+            symbols,
+            vec!["RELIANCE"],
+            "BSE listing, NIFTY index and NFO contracts are excluded"
+        );
+        assert_eq!(stocks[0].key.as_wire(), "NSE|2885");
+
+        // FINVASIA_SYMBOL has no segment; the series suffix is the signal.
+        let finvasia = Instrument {
+            key: SymbolKey::parse("NSE|22").unwrap(),
+            trading_symbol: "ACC-EQ".into(),
+            name: Some("ACC".into()),
+            underlying: Some("ACC".into()),
+            expiry: None,
+            strike: Price::ZERO,
+            strike_type: StrikeType::Other,
+            lot_size: 1,
+            instrument_type: String::new(),
+            segment: None,
+            tick_size: None,
+        };
+        assert!(is_cash_equity(&finvasia));
+        assert_eq!(stock_display_symbol(&finvasia), "ACC");
+
+        let bond = Instrument {
+            trading_symbol: "0ABCL30-N0".into(),
+            ..finvasia.clone()
+        };
+        assert!(!is_cash_equity(&bond), "bond series is not a stock");
     }
 
     #[test]

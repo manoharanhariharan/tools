@@ -1091,6 +1091,49 @@ The first layout pass replaces the sidebar shell with the structure the operator
   NIFTY index row showed `Open option chain (NIFTY)`, switched to the Option chain tab with `NIFTY`
   selected, and loaded 550 legs with 42 subscribed.
 
+### Phase 2h - Stocks tab (implemented)
+
+The tab after Index lists the NSE cash-equity universe, all from the local master:
+
+- Detection is `is_cash_equity`: NSE, not an index/option/future, and either
+  `segment = "NSE-EQ"` (Kite shape) or a `-EQ` series suffix (`FINVASIA_SYMBOL`). Bonds such as
+  `0ABCL30-N0` and the other NSE series are excluded. Current universe: **2,786 symbols**, including
+  ETFs, which the venue itself lists in the cash EQ segment.
+- Watched symbols are pinned to the top (watch-list order), the rest alphabetical. Adding or removing
+  a watch re-sorts immediately; no broker call is involved.
+- The table is virtualised (only ~20 rows in the DOM regardless of universe size), with symbol/name
+  filtering and the shared right-click menu (open chain when F&O exists, add/remove watch).
+- Quotes only exist for watched rows; everything else shows metadata and dashes.
+- Verified with the bundled replay: NTPC and ACC moved to the top with live LTP/change/volume while
+  the remaining 2,784 rows stayed alphabetical.
+
+### Phase 2i - option-chain quad layout (implemented)
+
+The chain grid is now the standard calls/strike/puts ladder:
+
+- **Calls left, puts right, strike in the middle.** Both sides are mirrored: OI, d OI, volume, LTP,
+  change, bid qty, bid, ask, ask qty (the bid/ask pair sits next to the strike on both sides).
+- **Default window:** 10 strikes either side of the ATM (21 rows), controlled by *Far strikes*. The
+  backend still subscribes only `strikes*2+1` strikes (42 legs at the default), so the 100-instrument
+  budget is untouched.
+- **ATM/spot:** the chain asks the local watch quotes for the underlying spot and passes it to
+  `chain_load`, so the window centres on the market rather than the middle of the chain. The ATM is
+  frozen at load so ticks do not shift the ladder under the cursor. If the underlying is not watched
+  (and no ATM is typed), the middle strike is used.
+- **Moneyness:** CE ITM below the reference, PE ITM above it; ATM row and strike cell are highlighted.
+- **Size fills:** OI and volume cells carry a proportional background bar, mirrored (calls fill toward
+  the strike from the right, puts from the left). Same scale across both sides.
+- **d OI:** `oi - poi` from the venue's own previous-OI field, coloured green/red. IV is intentionally
+  absent because the WS frames we receive do not carry it.
+- Verified against a 43-frame synthetic NIFTY replay (NSE|26000 spot + 42 legs), no broker contact:
+  spot 25,884.50, ATM 25,900.00, 42 live, 21 strikes, fills and d OI populated.
+
+### Phase 2j - probe safety (implemented)
+
+`FV_NO_AUTOCONNECT=1` now also short-circuits `account_summary`, so screenshots and the release
+dev-URL probe cannot make REST calls even when a stored session exists. Previously the header cards
+refreshed and hit `Limits`/`PositionBook` on every probe run.
+
 ---
 
 ### Provenance of this document

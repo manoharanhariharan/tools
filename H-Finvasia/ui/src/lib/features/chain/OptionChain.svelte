@@ -1,21 +1,27 @@
 ﻿<script lang="ts">
   import { onMount } from "svelte";
-  import { api, events, type ChainRowDto } from "../../api";
+  import { api, events, type ChainRowDto, type QuoteDto } from "../../api";
   import { formatVolume } from "../../state";
   import Badge from "../../components/Badge.svelte";
+  import {
+    deltaOi,
+    fillPercent,
+    groupStrikes,
+    pickAtm,
+    sideMoneyness,
+    windowAround,
+    type StrikeLadderRow,
+  } from "./chain";
 
   interface Props {
-    watched: string[];
-    onadd: (key: string) => void;
     pending?: { underlying: string; nonce: number } | null;
     onconsumed?: () => void;
   }
-  let { watched, onadd, pending = null, onconsumed }: Props = $props();
+  let { pending = null, onconsumed }: Props = $props();
 
   let underlying = $state("NIFTY");
   let expiries = $state<string[]>([]);
   let expiry = $state("");
-  let side = $state<"ALL" | "CE" | "PE">("ALL");
   let strikes = $state(10);
   let atm = $state("");
   let quick = $state("");
@@ -24,10 +30,109 @@
   let error = $state<string | null>(null);
   let loaded = $state(false);
 
-  // key -> index, so a delta updates one row without scanning the chain.
+  // The underlying spot is only known when it is on the watch list. Without it
+  // the ATM strike is used as the ITM/OTM reference, which is the same boundary.
+  let spot = $state<QuoteDto | null>(null);
+  let spotKey = $state<string | null>(null);
+  // Frozen when the chain loads, so ticks do not shift the ladder under the cursor.
+  let centreE6 = $state<number | null>(null);
+
   let index = new Map<string, number>();
 
+  const ladder = $derived(groupStrikes(rows));
+  const atmE6 = $derived(
+    centreE6 ?? pickAtm(ladder, atm.trim() !== '' ? atm : (spot?.ltp?.text ?? null)),
+  );
+  const visibleRows = $derived.by(() => {
+    const window = windowAround(ladder, atmE6, Number(strikes));
+    const needle = quick.trim().toUpperCase();
+    if (needle === "") return window;
+    return window.filter((row) => row.strike.toUpperCase().includes(needle));
+  });
+  const referenceE6 = $derived(spot?.ltp?.e6 ?? atmE6);
+
+  const extremes = $derived.by(() => {
+    let oi = 0;
+    let volume = 0;
+    for (const row of visibleRows) {
+      for (const leg of [row.ce, row.pe]) {
+        if (leg?.quote?.oi) oi = Math.max(oi, leg.quote.oi);
+        if (leg?.quote?.volume) volume = Math.max(volume, leg.quote.volume);
+      }
+    }
+    return { oi, volume };
+  });
+
   const liveCount = $derived(rows.filter((row) => row.live).length);
+
+  interface ChainCell {
+    text: string;
+    cls: string;
+    fill: number;
+    fillClass: string;
+  }
+
+  function compact(value: number | null | undefined): string {
+    return value === null || value === undefined ? "-" : formatVolume(value);
+  }
+
+  function signed(value: number | null): string {
+    if (value === null) return "-";
+    if (value === 0) return "0";
+    return value > 0 ? `+${formatVolume(value)}` : `-${formatVolume(Math.abs(value))}`;
+  }
+
+  function fmtStrike(value: number | null): string {
+    if (value === null) return "-";
+    return (value / 1_000_000).toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  function cells(row: StrikeLadderRow, side: "CE" | "PE"): ChainCell[] {
+    const leg = side === "CE" ? row.ce : row.pe;
+    const q = leg?.quote ?? null;
+    const trend = q?.trend ?? "flat";
+    const shade = sideMoneyness(side, row.strikeE6, referenceE6 ?? row.strikeE6);
+    const base = `num mono ${shade}`;
+    const anchor = side === "CE" ? "fill-right" : "fill-left";
+    const change = deltaOi(q);
+    const changeTone = change === null || change === 0 ? "flat" : change > 0 ? "up" : "down";
+
+    const column: Record<string, ChainCell> = {
+      oi: {
+        text: compact(q?.oi),
+        cls: `${base} fillable`,
+        fill: fillPercent(q?.oi ?? null, extremes.oi),
+        fillClass: `${anchor} oi-fill`,
+      },
+      doi: {
+        text: signed(change),
+        cls: `${base} ${changeTone}`,
+        fill: 0,
+        fillClass: "",
+      },
+      vol: {
+        text: compact(q?.volume),
+        cls: `${base} dim fillable`,
+        fill: fillPercent(q?.volume ?? null, extremes.volume),
+        fillClass: `${anchor} vol-fill`,
+      },
+      ltp: { text: q?.ltp?.text ?? "-", cls: `${base} ${trend}`, fill: 0, fillClass: "" },
+      chg: { text: q?.change?.text ?? "-", cls: `${base} ${trend}`, fill: 0, fillClass: "" },
+      bq: { text: q?.bid_qty === null || q?.bid_qty === undefined ? "-" : String(q.bid_qty), cls: `${base} dim`, fill: 0, fillClass: "" },
+      bid: { text: q?.bid?.text ?? "-", cls: `${base} dim`, fill: 0, fillClass: "" },
+      ask: { text: q?.ask?.text ?? "-", cls: `${base} dim`, fill: 0, fillClass: "" },
+      aq: { text: q?.ask_qty === null || q?.ask_qty === undefined ? "-" : String(q.ask_qty), cls: `${base} dim`, fill: 0, fillClass: "" },
+    };
+
+    const order =
+      side === "CE"
+        ? ["oi", "doi", "vol", "ltp", "chg", "bq", "bid", "ask", "aq"]
+        : ["bq", "bid", "ask", "aq", "ltp", "chg", "vol", "doi", "oi"];
+    return order.map((key) => column[key]);
+  }
 
   async function loadExpiries() {
     error = null;
@@ -45,47 +150,63 @@
     }
   }
 
+  async function refreshSpot() {
+    const wanted = underlying.trim().toUpperCase();
+    if (!wanted) {
+      spot = null;
+      spotKey = null;
+      return;
+    }
+    try {
+      const quotes = await api.watchQuotes();
+      const candidates = quotes.filter(
+        (quote) => (quote.underlying ?? "").toUpperCase() === wanted,
+      );
+      const best =
+        candidates.find((quote) => quote.is_index) ??
+        candidates.find((quote) => {
+          const symbol = (quote.trading_symbol ?? "").toUpperCase();
+          return symbol === wanted || symbol === `${wanted}-EQ`;
+        }) ??
+        candidates[0] ??
+        null;
+      spot = best;
+      spotKey = best?.key ?? null;
+    } catch {
+      spot = null;
+      spotKey = null;
+    }
+  }
+
   async function loadChain() {
     if (!underlying.trim() || !expiry) return;
     loading = true;
     error = null;
     try {
-      // Subscribes only a window around the money; the rest is metadata only.
+      // Prefer a live index/stock quote as the ATM when one is watched; the
+      // backend otherwise centres on the middle of the full chain, which is
+      // rarely where the market is.
+      await refreshSpot();
+      const centre = atm.trim() !== "" ? atm.trim() : (spot?.ltp?.text ?? null);
       const data = await api.chainLoad(
         underlying.trim(),
         expiry,
-        Math.max(1, Math.min(20, Math.round(strikes))),
-        atm.trim() === "" ? null : atm.trim(),
+        Math.max(1, Math.min(20, Math.round(Number(strikes) || 10))),
+        centre,
       );
       rows = data;
       index = new Map(data.map((row, i) => [row.key, i]));
+      centreE6 = pickAtm(groupStrikes(data), centre);
       loaded = true;
     } catch (e) {
       error = String(e);
       rows = [];
+      centreE6 = null;
       loaded = false;
     } finally {
       loading = false;
     }
   }
-
-  const visible = $derived.by(() => {
-    const needle = quick.trim().toUpperCase();
-    return rows.filter((row) => {
-      if (side !== "ALL" && row.strike_type !== side) return false;
-      if (needle.length === 0) return true;
-      return (
-        row.symbol.toUpperCase().includes(needle) ||
-        row.strike.includes(needle) ||
-        row.strike_type.includes(needle)
-      );
-    });
-  });
-
-  const bid = (row: ChainRowDto) => row.quote?.bid?.text ?? "-";
-  const ask = (row: ChainRowDto) => row.quote?.ask?.text ?? "-";
-  const ltp = (row: ChainRowDto) => row.quote?.ltp?.text ?? "-";
-  const trend = (row: ChainRowDto) => row.quote?.trend ?? "flat";
 
   onMount(() => {
     let disposed = false;
@@ -93,15 +214,22 @@
 
     (async () => {
       try {
-        const unlisten = await events.onDelta((delta) => {
+        const onDelta = await events.onDelta((delta) => {
           if (disposed) return;
           for (const quote of delta.quotes) {
             const at = index.get(quote.key);
             if (at !== undefined) rows[at] = { ...rows[at], quote };
+            if (spotKey && quote.key === spotKey) spot = quote;
           }
         });
-        if (disposed) unlisten();
-        else unlisteners.push(unlisten);
+        if (disposed) onDelta();
+        else unlisteners.push(onDelta);
+
+        const onWatch = await events.onWatch(() => {
+          if (!disposed) void refreshSpot();
+        });
+        if (disposed) onWatch();
+        else unlisteners.push(onWatch);
 
         // Expiries are local. The chain is NOT loaded automatically: subscribing
         // is an explicit action so the broker is only touched on request.
@@ -110,6 +238,9 @@
         // Opened from a row context menu: load that underlying straight away.
         if (pending) {
           underlying = pending.underlying;
+          atm = "";
+          quick = "";
+          centreE6 = null;
           await loadExpiries();
           await loadChain();
           onconsumed?.();
@@ -159,8 +290,8 @@
       </select>
     </div>
 
-    <div class="field" style="width: 105px">
-      <label for="chain-strikes">Strikes +/-</label>
+    <div class="field" style="width: 125px">
+      <label for="chain-strikes">Far strikes</label>
       <input id="chain-strikes" type="number" min="1" max="20" bind:value={strikes} />
     </div>
 
@@ -169,18 +300,9 @@
       <input id="chain-atm" bind:value={atm} placeholder="e.g. 25800" />
     </div>
 
-    <div class="field" style="width: 105px">
-      <label for="chain-side">Type</label>
-      <select id="chain-side" bind:value={side}>
-        <option value="ALL">ALL</option>
-        <option value="CE">CE</option>
-        <option value="PE">PE</option>
-      </select>
-    </div>
-
-    <div class="field" style="flex: 1; min-width: 130px">
-      <label for="chain-quick">Quick search</label>
-      <input id="chain-quick" bind:value={quick} placeholder="strike or symbol" />
+    <div class="field" style="width: 130px">
+      <label for="chain-quick">Filter strike</label>
+      <input id="chain-quick" bind:value={quick} placeholder="258" />
     </div>
 
     <button class="primary" disabled={loading || !expiry} onclick={loadChain}>
@@ -192,64 +314,89 @@
     <div class="banner"><span>{error}</span></div>
   {/if}
 
-  {#if visible.length === 0}
+  {#if loaded}
+    <div class="chain-summary">
+      <span class="spot-item">Spot <strong>{spot?.ltp?.text ?? "-"}</strong></span>
+      <span class="spot-item">ATM <strong>{fmtStrike(atmE6)}</strong></span>
+      <span class="spot-item">Expiry <strong>{expiry || "-"}</strong></span>
+      <span class="spacer"></span>
+      <span class="chain-legend">
+        <i class="swatch itm"></i>ITM
+        <i class="swatch atm"></i>ATM
+        <i class="swatch otm"></i>OTM
+      </span>
+    </div>
+  {/if}
+
+  {#if !loaded}
     <div class="empty">
-      <h3>{loaded ? "No contracts match" : "Nothing loaded"}</h3>
+      <h3>Nothing loaded</h3>
       <p class="hint">
-        {loaded
-          ? "Adjust the type filter or quick search."
-          : "Pick an underlying and expiry, then press Load and subscribe. Only the strikes window is subscribed (100 instruments max across the whole app); the full chain is browsable as metadata."}
+        Pick an underlying and expiry, then press Load and subscribe. Only the strikes window is
+        subscribed (100 instruments max across the whole app); other strikes stay in the local
+        master as metadata and are not streamed.
       </p>
     </div>
+  {:else if visibleRows.length === 0}
+    <div class="empty">
+      <h3>No contracts match</h3>
+      <p class="hint">Widen the strike range or clear the strike filter.</p>
+    </div>
   {:else}
-    <div class="grid-wrap">
-      <table class="grid">
+    <div class="grid-wrap chain-wrap">
+      <table class="grid chain-grid">
         <thead>
           <tr>
-            <th class="l">Exch</th>
-            <th class="l">Symbol</th>
-            <th class="l">ExpDate</th>
-            <th>Strike</th>
-            <th class="l">Type</th>
-            <th>Bid</th>
-            <th>BidQty</th>
+            <th colspan="9" class="calls-band">CALLS</th>
+            <th rowspan="2" class="strike-band">Strike price</th>
+            <th colspan="9" class="puts-band">PUTS</th>
+          </tr>
+          <tr>
+            <th>OI</th>
+            <th>d OI</th>
+            <th>Volume</th>
             <th>LTP</th>
+            <th>Chg</th>
+            <th>Bid Qty</th>
+            <th>Bid</th>
             <th>Ask</th>
-            <th>AskQty</th>
-            <th>NetChg</th>
-            <th>%Chg</th>
-            <th>Vol</th>
-            <th></th>
+            <th>Ask Qty</th>
+
+            <th>Bid Qty</th>
+            <th>Bid</th>
+            <th>Ask</th>
+            <th>Ask Qty</th>
+            <th>LTP</th>
+            <th>Chg</th>
+            <th>Volume</th>
+            <th>d OI</th>
+            <th>OI</th>
           </tr>
         </thead>
         <tbody>
-          {#each visible as row (row.key)}
-            <tr class:dim-row={!row.live}>
-              <td class="l dim">{row.exchange}</td>
-              <td class="l mono">{row.symbol}</td>
-              <td class="l mono dim">{row.expiry ?? "-"}</td>
-              <td class="num mono">{row.strike}</td>
-              <td
-                class="l"
-                style="color: {row.strike_type === 'CE' ? 'var(--up)' : 'var(--down)'}"
-              >
-                {row.strike_type}
+          {#each visibleRows as row (row.strike)}
+            <tr class:atm-row={atmE6 !== null && row.strikeE6 === atmE6}>
+              {#each cells(row, "CE") as cell}
+                <td class={cell.cls}>
+                  {#if cell.fill > 0}
+                    <span class="chain-fill {cell.fillClass}" style="width: {cell.fill}%"></span>
+                  {/if}
+                  <span class="cell-text">{cell.text}</span>
+                </td>
+              {/each}
+
+              <td class="num mono strike-cell" class:strike-atm={atmE6 !== null && row.strikeE6 === atmE6}>
+                {row.strike}
               </td>
-              <td class="num mono dim">{bid(row)}</td>
-              <td class="num mono dim">{row.quote?.bid_qty ?? "-"}</td>
-              <td class="num mono {trend(row)}">{ltp(row)}</td>
-              <td class="num mono dim">{ask(row)}</td>
-              <td class="num mono dim">{row.quote?.ask_qty ?? "-"}</td>
-              <td class="num mono {trend(row)}">{row.quote?.change?.text ?? "-"}</td>
-              <td class="num mono {trend(row)}">{row.quote?.pct ?? "-"}</td>
-              <td class="num mono dim">{formatVolume(row.quote?.volume ?? null)}</td>
-              <td class="num">
-                {#if watched.includes(row.key)}
-                  <span class="dim" style="font-size: 11px">watching</span>
-                {:else}
-                  <button title="Add to market watch" onclick={() => onadd(row.key)}>Add</button>
-                {/if}
-              </td>
+
+              {#each cells(row, "PE") as cell}
+                <td class={cell.cls}>
+                  {#if cell.fill > 0}
+                    <span class="chain-fill {cell.fillClass}" style="width: {cell.fill}%"></span>
+                  {/if}
+                  <span class="cell-text">{cell.text}</span>
+                </td>
+              {/each}
             </tr>
           {/each}
         </tbody>

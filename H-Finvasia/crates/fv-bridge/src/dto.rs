@@ -38,6 +38,10 @@ pub struct QuoteDto {
     pub prev_close: Option<PriceDto>,
 
     pub volume: Option<i64>,
+    /// Open interest, when the venue sends it (options and futures).
+    pub oi: Option<i64>,
+    /// Previous-session open interest, when the venue sends `poi`.
+    pub prev_oi: Option<i64>,
     pub bid: Option<PriceDto>,
     pub ask: Option<PriceDto>,
     pub bid_qty: Option<i64>,
@@ -108,6 +112,22 @@ pub struct IndexRowDto {
     pub name: Option<String>,
     pub exchange: String,
     /// Subscribed (and therefore streaming) right now.
+    pub live: bool,
+    pub underlying: Option<String>,
+    pub has_fno: bool,
+    pub quote: Option<QuoteDto>,
+}
+
+/// One cash-equity row for the Stocks tab. The full universe comes from the
+/// local master; only watched rows carry a live quote, so browsing is free.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StockRowDto {
+    pub key: String,
+    /// Display symbol without the exchange series suffix (`ACC-EQ` -> `ACC`).
+    pub symbol: String,
+    pub name: Option<String>,
+    pub exchange: String,
+    /// Subscribed through the watch list right now.
     pub live: bool,
     pub underlying: Option<String>,
     pub has_fno: bool,

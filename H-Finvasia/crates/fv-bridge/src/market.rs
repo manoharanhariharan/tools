@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use crate::dto::{
     ChainRowDto, DeltaDto, IndexRowDto, InstrumentDto, PlanDto, PriceDto, QuoteDto, SourceKind,
-    StatusDto, Trend,
+    StatusDto, StockRowDto, Trend,
 };
 
 /// Default watch budget.
@@ -267,6 +267,36 @@ impl MarketData {
 
     pub fn watched(&self) -> Vec<String> {
         self.watch.active().iter().map(|k| k.as_wire()).collect()
+    }
+
+    /// The NSE cash-equity universe for the Stocks tab. Metadata is local; only
+    /// watched symbols have a quote, so opening the tab never touches the venue.
+    pub fn stock_rows(&self) -> Vec<StockRowDto> {
+        let Some(master) = self.master.as_deref() else {
+            return Vec::new();
+        };
+        let watched = self.watch.active();
+        master
+            .cash_equities()
+            .into_iter()
+            .map(|instrument| StockRowDto {
+                key: instrument.key.as_wire(),
+                symbol: fv_master::stock_display_symbol(instrument),
+                name: instrument.name.clone(),
+                exchange: instrument.key.exchange().to_string(),
+                live: watched.contains(&instrument.key),
+                underlying: instrument.underlying.clone(),
+                has_fno: instrument
+                    .underlying
+                    .as_deref()
+                    .map(|u| master.has_derivatives(u))
+                    .unwrap_or(false),
+                quote: self
+                    .book
+                    .get(&instrument.key)
+                    .map(|q| quote_dto(q, self.master.as_deref())),
+            })
+            .collect()
     }
 
     /// The union of every subscribed instrument: the watch list plus the option
@@ -518,6 +548,8 @@ fn quote_dto(quote: &Quote, master: Option<&MemoryMaster>) -> QuoteDto {
         low: quote.low.map(|p| price_dto(p, d)),
         prev_close: quote.prev_close.map(|p| price_dto(p, d)),
         volume: quote.volume,
+        oi: quote.oi,
+        prev_oi: quote.prev_oi,
         bid: quote.best_bid.map(|p| price_dto(p, d)),
         ask: quote.best_ask.map(|p| price_dto(p, d)),
         bid_qty: quote.best_bid_qty,
@@ -548,6 +580,8 @@ fn placeholder_dto(instrument: &Instrument, master: Option<&MemoryMaster>) -> Qu
         low: None,
         prev_close: None,
         volume: None,
+        oi: None,
+        prev_oi: None,
         bid: None,
         ask: None,
         bid_qty: None,
