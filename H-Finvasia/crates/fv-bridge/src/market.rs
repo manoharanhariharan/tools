@@ -275,28 +275,69 @@ impl MarketData {
         let Some(master) = self.master.as_deref() else {
             return Vec::new();
         };
-        let watched = self.watch.active();
         master
             .cash_equities()
             .into_iter()
-            .map(|instrument| StockRowDto {
-                key: instrument.key.as_wire(),
-                symbol: fv_master::stock_display_symbol(instrument),
-                name: instrument.name.clone(),
-                exchange: instrument.key.exchange().to_string(),
-                live: watched.contains(&instrument.key),
-                underlying: instrument.underlying.clone(),
-                has_fno: instrument
-                    .underlying
-                    .as_deref()
-                    .map(|u| master.has_derivatives(u))
-                    .unwrap_or(false),
-                quote: self
-                    .book
-                    .get(&instrument.key)
-                    .map(|q| quote_dto(q, self.master.as_deref())),
-            })
+            .map(|instrument| self.stock_row(instrument, master))
             .collect()
+    }
+
+    /// Stocks currently in the active container (i.e. the watch list). This is
+    /// what the Stocks tab shows by default; the rest of the universe is only
+    /// reached through search.
+    pub fn watched_stock_rows(&self) -> Vec<StockRowDto> {
+        let Some(master) = self.master.as_deref() else {
+            return Vec::new();
+        };
+        let mut rows: Vec<StockRowDto> = self
+            .watch
+            .active()
+            .iter()
+            .filter_map(|key| master.get(key))
+            .filter(|instrument| fv_master::is_cash_equity(instrument))
+            .map(|instrument| self.stock_row(instrument, master))
+            .collect();
+        rows.sort_by(|a, b| a.symbol.cmp(&b.symbol).then_with(|| a.key.cmp(&b.key)));
+        rows
+    }
+
+    /// Search restricted to NSE cash equities. Used by the Stocks tab flyout so
+    /// an option or index cannot be added from this screen by accident.
+    pub fn search_stocks(&self, query: &str, limit: usize) -> Vec<StockRowDto> {
+        let Some(master) = self.master.as_deref() else {
+            return Vec::new();
+        };
+        if query.trim().is_empty() {
+            return Vec::new();
+        }
+        let limit = limit.clamp(1, 50);
+        master
+            .search(query, (limit * 20).clamp(limit, 500))
+            .into_iter()
+            .filter(|(instrument, _)| fv_master::is_cash_equity(instrument))
+            .take(limit)
+            .map(|(instrument, _)| self.stock_row(instrument, master))
+            .collect()
+    }
+
+    fn stock_row(&self, instrument: &Instrument, master: &MemoryMaster) -> StockRowDto {
+        StockRowDto {
+            key: instrument.key.as_wire(),
+            symbol: fv_master::stock_display_symbol(instrument),
+            name: instrument.name.clone(),
+            exchange: instrument.key.exchange().to_string(),
+            live: self.watch.active().contains(&instrument.key),
+            underlying: instrument.underlying.clone(),
+            has_fno: instrument
+                .underlying
+                .as_deref()
+                .map(|u| master.has_derivatives(u))
+                .unwrap_or(false),
+            quote: self
+                .book
+                .get(&instrument.key)
+                .map(|q| quote_dto(q, Some(master))),
+        }
     }
 
     /// The union of every subscribed instrument: the watch list plus the option

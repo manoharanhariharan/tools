@@ -1,4 +1,4 @@
-﻿//! Read-only account data over REST.
+//! Read-only account data over REST.
 //!
 //! The persisted session is **web-scoped**, so account endpoints answer on
 //! `NorenWClientWeb` while `NorenWClientAPI` returns 401 for them. The client
@@ -17,6 +17,23 @@ pub const API_BASE: &str = "https://api.shoonya.com/NorenWClientAPI";
 
 /// Which base last worked: 0 unknown, 1 web, 2 api.
 static PREFERRED: AtomicU8 = AtomicU8::new(0);
+
+/// Percent-encode a form value. `PlaceOrder` payloads can contain `&` in the
+/// trading symbol (`M&M`), which would otherwise split the form body.
+fn encode_component(value: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut out = String::with_capacity(value.len() * 3);
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            out.push(byte as char);
+        } else {
+            out.push('%');
+            out.push(HEX[(byte >> 4) as usize] as char);
+            out.push(HEX[(byte & 0x0f) as usize] as char);
+        }
+    }
+    out
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct FundsDto {
@@ -259,6 +276,25 @@ impl RestClient {
         token: &str,
     ) -> Result<Value, String> {
         let body = format!("jData={json}&jKey={token}");
+        self.post_raw_at(base, route, body).await
+    }
+
+    async fn post_form_at(
+        &self,
+        base: &str,
+        route: &str,
+        json: &str,
+        token: &str,
+    ) -> Result<Value, String> {
+        let body = format!(
+            "jData={}&jKey={}",
+            encode_component(json),
+            encode_component(token)
+        );
+        self.post_raw_at(base, route, body).await
+    }
+
+    async fn post_raw_at(&self, base: &str, route: &str, body: String) -> Result<Value, String> {
         let response = self
             .http
             .post(format!("{base}/{route}"))
@@ -277,7 +313,7 @@ impl RestClient {
             .map_err(|_| format!("{route}: HTTP {status}, non-JSON body"))
     }
 
-    /// POST with automatic base fallback (web â‡„ api) when the session scope is
+    /// POST with automatic base fallback (web, api) when the session scope is
     /// wrong for the chosen host.
     pub async fn post(&self, route: &str, json: &str, token: &str) -> Result<Value, String> {
         let preferred = match PREFERRED.load(Ordering::Relaxed) {
@@ -296,9 +332,36 @@ impl RestClient {
                 Ok(value)
             }
             Err(err) if err.starts_with("SESSION:") => {
-                // Retry once against the other host; a mismatched scope looks
-                // exactly like an expired session.
                 let value = self.post_at(other, route, json, token).await?;
+                PREFERRED.store(if other == WEB_BASE { 1 } else { 2 }, Ordering::Relaxed);
+                Ok(value)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Write request. `jData` is form-encoded because trading symbols can
+    /// contain `&` (e.g. `M&M`); account reads keep their proven raw body. A
+    /// 401 is safe to retry on the other host; network failures are not retried,
+    /// so an ambiguous send is never duplicated.
+    pub async fn post_write(&self, route: &str, json: &str, token: &str) -> Result<Value, String> {
+        let preferred = match PREFERRED.load(Ordering::Relaxed) {
+            2 => API_BASE,
+            _ => WEB_BASE,
+        };
+        let other = if preferred == WEB_BASE {
+            API_BASE
+        } else {
+            WEB_BASE
+        };
+
+        match self.post_form_at(preferred, route, json, token).await {
+            Ok(value) => {
+                PREFERRED.store(if preferred == WEB_BASE { 1 } else { 2 }, Ordering::Relaxed);
+                Ok(value)
+            }
+            Err(err) if err.starts_with("SESSION:") => {
+                let value = self.post_form_at(other, route, json, token).await?;
                 PREFERRED.store(if other == WEB_BASE { 1 } else { 2 }, Ordering::Relaxed);
                 Ok(value)
             }
@@ -361,6 +424,13 @@ pub async fn orders(client: &RestClient, uid: &str, token: &str) -> Result<Vec<O
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn write_payloads_are_form_encoded() {
+        assert_eq!(encode_component("M&M"), "M%26M");
+        assert_eq!(encode_component(r#"{"a":"b"}"#), "%7B%22a%22%3A%22b%22%7D");
+        assert_eq!(encode_component("a-b_c.d~"), "a-b_c.d~");
+    }
 
     fn sample_positions() -> Vec<Value> {
         let raw = r#"[

@@ -757,7 +757,7 @@ deployment. Keep the repository layer free of version-specific aggregation so bo
 | Item | Observation | Action |
 |---|---|---|
 | Transport | Session log shows `tcp://` (plaintext) for FEED/ORDER/REQUEST/TCHLINE on :5817/:5801/:5809/:5813. CozyMQ *supports* `ssl://` and exposes `ValidateServerCertificate` | New client uses `wss://` only; no plaintext order path (DR-1) |
-| Credentials | Login uses user id + PIN/password + OTP/TOTP (`OTP_TOTP=True`); the **public API is OAuth 2.0** (app key + secret â†’ auth code â†’ access token) | Store tokens/secrets in OS keychain via `keyring`, never on disk in plaintext |
+| Credentials | Login uses user id + PIN/password + OTP/TOTP (`OTP_TOTP=True`). The **public API** documents OAuth 2.0, but this app deliberately **adopts the existing web session** instead of creating an OAuth session | Store tokens/secrets in OS keychain via `keyring`, never on disk in plaintext |
 | Local plaintext | Session logs contain client ids, order ids, scrip and exchange messages | Encrypt or redact logs; cap retention (see Â§6.5) |
 | Shared crypto constants | `CozyMQ` embeds a static key/IV-looking literal (`D2D6A3D98346956B22CA59795E4A181C`) and a license-SHA literal | Vendor-internal; **not** used by the new codebase (DR-1) |
 | Licensing | Vendor is Kambala Solutions; redistribution of their DLLs is likely prohibited | Not applicable to the rewrite â€” official API only (DR-1) |
@@ -981,8 +981,8 @@ Notable defects found and fixed during implementation â€” each is a class o
 4. **`Quote` derived `Default`**, which would have allowed a quote with an empty `SymbolKey`. Removed;
    construction goes through `Quote::empty(key)` so the invariant cannot be violated.
 
-Deliberately still absent: `fv-bridge`, `src-tauri`, `ui/`, `fv-market` (REST). Those are Phase 2 and
-need the P0 UI decisions in Â§5.1â€“5.4 plus OAuth app registration.
+Completed in later phases. **No OAuth session is created by this app.** It adopts the web-scoped
+session already persisted in MongoDB; the public-API OAuth handshake is not used.
 
 ---
 
@@ -1132,7 +1132,54 @@ The chain grid is now the standard calls/strike/puts ladder:
 
 `FV_NO_AUTOCONNECT=1` now also short-circuits `account_summary`, so screenshots and the release
 dev-URL probe cannot make REST calls even when a stored session exists. Previously the header cards
-refreshed and hit `Limits`/`PositionBook` on every probe run.
+refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, `orders_load` and
+`place_order` use the same offline guard.
+
+---
+
+### Phase 2k - watched stocks and containers (implemented)
+
+- The Stocks tab no longer loads the full universe. It shows **only the stocks in the active
+  container** (`stocks_watched`); the rest are reached through the search flyout (`stocks_search`,
+  restricted to NSE cash equities).
+- Containers are the existing named watch lists with an `active` pointer. A default `Watchlist` is
+  created from the persisted watch list at startup. Create (copies the current watch), delete,
+  switch and inline rename (double-click) are supported. Every `watch_add`/`watch_remove` writes the
+  live list back into the active container, so the sidebar count and watch list cannot drift.
+- Switching a container replaces the watch list and re-subscribes within the 100-instrument budget;
+  the file work is local and broker-free.
+- Search is debounced and ignores stale responses; the flyout marks already-watched rows and adds
+  directly to the active container.
+
+### Phase 2l - resizable bottom dock (implemented)
+
+- Positions and the order book moved out of the More menu into a bottom dock. They sit side by side
+  with a draggable vertical divider; the whole dock resizes by dragging its top edge and persists
+  height/split/open state in `localStorage`.
+- The dock is **collapsed by default**, and the books mount only when it is opened. Positions and
+  orders therefore make no REST calls until explicitly opened; each panel has manual refresh.
+- `positions_load`/`orders_load` return empty results under `FV_NO_AUTOCONNECT=1`, keeping
+  screenshots and release probes broker-free. The order book refreshes on the `orders:changed`
+  event after a confirmed placement.
+
+### Phase 2m - prepared order tickets (implemented)
+
+- Each option row exposes a trade column on both sides; **B/S appear on row hover** (low opacity
+  otherwise). They open a ticket; nothing is sent until **Confirm**.
+- Defaults are global and persisted in `order-defaults.json`: lots, product (`I`/`C`/`M`), validity
+  (`DAY`/`IOC`). Shoonya rejects `MKT`, so the ticket and defaults expose **LMT only** and price is
+  mandatory. Buy defaults to the current ask, sell to the current bid (LTP fallback).
+- The backend validates the instrument/key, lot size, side, product, price and quantity before any
+  wire call, uses `ordersource: "API"`, and tags each order with a unique `remarks` for
+  reconciliation. `jData` is form-encoded on the write path because symbols such as `M&M` contain
+  `&`; the read path keeps its proven raw body.
+- **Source guard:** orders are accepted only when the feed source is `Live`. Replay/idle tickets can
+  be reviewed but Confirm is disabled, and the backend rejects them. `FV_NO_AUTOCONNECT=1` rejects
+  every order. A 401 may retry once on the other REST host; network failures are never retried, so
+  an ambiguous send cannot be duplicated.
+- No real order is sent by the test suite; payload building, LMT enforcement, response parsing,
+  defaults persistence and form encoding are unit-tested, and the UI was exercised with a
+  broker-free synthetic replay (ticket opens, Confirm disabled, no order).
 
 ---
 

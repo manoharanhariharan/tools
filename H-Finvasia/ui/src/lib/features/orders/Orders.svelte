@@ -1,7 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, type OrderDto } from "../../api";
+  import { api, events, type OrderDto } from "../../api";
   import EmptyState from "../../components/EmptyState.svelte";
+
+  interface Props {
+    embedded?: boolean;
+  }
+  let { embedded = false }: Props = $props();
 
   let orders = $state<OrderDto[]>([]);
   let loading = $state(false);
@@ -24,6 +29,18 @@
 
   onMount(() => {
     void refresh();
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    void events.onOrdersChanged(() => {
+      if (!disposed) void refresh();
+    }).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      if (unlisten) unlisten();
+    };
   });
 
   const pending = $derived(orders.filter((o) => !CLOSED.has(o.status.toUpperCase())));
@@ -100,8 +117,10 @@
     </div>
   {/if}
 
-  <p class="hint" style="padding: 10px 14px; border-top: 1px solid var(--border)">
-    Modify, cancel and exit are intentionally absent: they are write operations and need the order
-    path plus your explicit go-ahead.
-  </p>
+  {#if !embedded}
+    <p class="hint" style="padding: 10px 14px; border-top: 1px solid var(--border)">
+      Modify, cancel and exit are intentionally absent: they are write operations and need the order
+      path plus your explicit go-ahead.
+    </p>
+  {/if}
 </section>

@@ -126,14 +126,24 @@ rather than appearing to do nothing until its first tick.
 
 ### 4.8 Universe and ladder views are local
 
-The **Stocks** tab is built from `MemoryMaster::cash_equities()` (NSE EQ series), not from a broker
-query. `MarketData::stock_rows()` adds a quote only when the symbol is already in the quote book, so
-browsing 2,786 rows costs nothing; the UI virtualises the list and pins watched symbols to the top.
+The **Stocks** tab asks for `MarketData::watched_stock_rows()` (only the active container's NSE EQ
+symbols) and `search_stocks()` for the flyout. Browsing and searching come from the local master, so
+they cost no broker calls. Containers are named watch lists with a persisted `active` pointer;
+`watch_add`/`watch_remove` write the live list back into the active container, keeping the sidebar
+count and the watch list in sync. Switching a container replaces the watch set and re-subscribes
+within the 100-instrument budget.
 
-The option chain's `groupStrikes`, `pickAtm`, `windowAround`, `deltaOi` and `fillPercent` are pure
-TypeScript in `ui/src/lib/features/chain/chain.ts` and unit-tested. The component only maps data to
-the quad table; the ATM reference (watched spot, typed ATM, or middle strike) is resolved by those
-functions rather than scattered through markup.
+The option chain's `groupStrikes`, `pickAtm`, `windowAround`, `deltaOi`, `fillPercent` and
+`defaultTicketPrice` are pure TypeScript in `ui/src/lib/features/chain/chain.ts` and unit-tested. The
+component only maps data to the quad table; the ATM reference (watched spot, typed ATM, or middle
+strike) is resolved by those functions rather than scattered through markup.
+
+### 4.9 The bottom dock is lazy
+
+Positions and the order book are mounted only while the bottom dock is open. Opening it is the
+explicit signal to make the account REST calls; closing it unmounts both panels and releases their
+listeners. There is no polling. `FV_NO_AUTOCONNECT=1` makes both commands return empty results, so
+screenshots and release probes stay broker-free.
 
 ## 5. Threading and lifecycle (src-tauri)
 
@@ -183,7 +193,9 @@ Rules:
 - `actid` is the **user id**, not `report_schoonya` (that field holds a password).
 - The credential file is found via `FV_CRED_FILE`, then beside the exe, then `~/.fv/`, then
   `C:/repo/`; secrets are never logged.
-- The REST base is `NorenWClientAPI` (`NorenWClientTP` is 502).
+- The REST client tries `NorenWClientWeb` first for the web-scoped account/order routes, falling back
+  to `NorenWClientAPI` on a 401; `NorenWClientTP` is 502. Order writes form-encode `jData` because
+  symbols can contain `&`.
 - **One websocket per token.** The app opens a single socket and reports lifecycle through
   `FeedState::{Connected, Rejected, Error, Reconnecting}`; it never opens a probe socket first, and
   `connected` in the status bar only becomes true after the handshake is accepted.
@@ -203,6 +215,20 @@ product rule, not a venue limit, and it is enforced in three places:
 
 Overflow is returned in the `PlanDto` (`rejected`, `truncated`) and shown, never silently dropped.
 The rest of the expiry stays in the local master and is served as metadata; it is not streamed.
+
+### 5.3 Order write path
+
+`PlaceOrder` is the only write route. The path is deliberately narrow:
+
+- The UI prepares a ticket first; `place_order` re-validates instrument, lot size, side, product,
+  LMT price and quantity before building `jData`. `ordersource` is `API` and `remarks` carries a
+  unique reconciliation tag.
+- The feed source must be `Live`; replay/idle and `FV_NO_AUTOCONNECT=1` are rejected. The command
+  never logs in: it uses the session already cached by the live connection.
+- `post_write` form-encodes `jData` (symbols such as `M&M` contain `&`) and may retry once on a 401
+  against the other REST host. Network failures are **not** retried, so an ambiguous send cannot be
+  duplicated; the user reconciles via the unique remarks in the order book.
+- The ticket is the confirmation step. There is no one-click live order and no background trading.
 
 ## 6. Cross-platform rules| Rule | Reason |
 |---|---|

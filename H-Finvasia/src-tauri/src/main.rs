@@ -6,7 +6,7 @@
 //! Thin adapter over [`fv_bridge::MarketData`]: owns no market logic itself, only
 //! the Tauri plumbing (commands, events, task lifecycle).
 //!
-//! Threading model ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â deliberately simple and leak-free:
+//! Threading model ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â deliberately simple and leak-free:
 //! * one producer task feeds decoded [`Frame`]s into an mpsc channel;
 //! * one consumer task owns the state lock, absorbs frames, and emits bounded
 //!   `quotes:delta` batches at ~60 Hz;
@@ -25,6 +25,7 @@ use tauri::async_runtime::JoinHandle;
 
 mod account;
 mod groups;
+mod orders;
 mod session;
 
 /// Bundled master used when MongoDB is unavailable, so first-run search works.
@@ -68,6 +69,12 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+/// Screenshot / release-probe mode. Every broker-backed path must check this so
+/// a render can never place an order or read an account.
+fn offline_mode() -> bool {
+    std::env::var("FV_NO_AUTOCONNECT").as_deref() == Ok("1")
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +146,7 @@ fn watch_add(
     };
     forward_plan_to_live(&state, &plan);
     save_watch(&app, state.inner());
+    persist_active_container(&app, state.inner());
     let _ = app.emit("watch:changed", payload);
     Ok(plan)
 }
@@ -160,6 +168,7 @@ fn watch_remove(
     };
     forward_plan_to_live(&state, &plan);
     save_watch(&app, state.inner());
+    persist_active_container(&app, state.inner());
     let _ = app.emit("watch:changed", payload);
     Ok(plan)
 }
@@ -388,6 +397,13 @@ async fn ensure_session(state: &Arc<AppState>) -> Result<session::Session, Strin
 
 #[tauri::command]
 async fn positions_load(state: State<'_, Arc<AppState>>) -> Result<account::PositionsView, String> {
+    if offline_mode() {
+        return Ok(account::PositionsView {
+            funds: None,
+            positions: Vec::new(),
+            totals: account::PositionTotals::default(),
+        });
+    }
     let shared = state.inner().clone();
     let mut session = ensure_session(&shared).await?;
     match account::positions(&shared.rest, &session.uid, &session.actid, &session.token).await {
@@ -404,6 +420,9 @@ async fn positions_load(state: State<'_, Arc<AppState>>) -> Result<account::Posi
 
 #[tauri::command]
 async fn orders_load(state: State<'_, Arc<AppState>>) -> Result<Vec<account::OrderDto>, String> {
+    if offline_mode() {
+        return Ok(Vec::new());
+    }
     let shared = state.inner().clone();
     let mut session = ensure_session(&shared).await?;
     match account::orders(&shared.rest, &session.uid, &session.token).await {
@@ -443,6 +462,19 @@ fn save_watch(app: &AppHandle, state: &Arc<AppState>) {
     }
 }
 
+/// Mirror the live watch list into the active container. Called after explicit
+/// add/remove actions; replay/demo hydration deliberately does not use it, so a
+/// demo never overwrites the user's saved container.
+fn persist_active_container(app: &AppHandle, state: &Arc<AppState>) {
+    let keys = state.market.lock().unwrap().watched();
+    let path = groups_file(app);
+    let result =
+        groups::ensure_default(&path, keys.clone()).and_then(|_| groups::save_active(&path, keys));
+    if let Err(err) = result {
+        tracing::warn!(error = %err, "could not persist the active container");
+    }
+}
+
 #[tauri::command]
 fn groups_list(app: AppHandle) -> Vec<groups::GroupSummary> {
     groups::list(&groups_file(&app))
@@ -454,7 +486,9 @@ fn group_save(app: AppHandle, state: State<'_, Arc<AppState>>, name: String) -> 
     if keys.is_empty() {
         return Err("the watch list is empty, nothing to save".into());
     }
-    groups::save(&groups_file(&app), &name, keys)
+    let path = groups_file(&app);
+    groups::save(&path, &name, keys)?;
+    groups::set_active(&path, &name)
 }
 
 #[tauri::command]
@@ -483,13 +517,203 @@ fn group_load(
     };
     forward_plan_to_live(&state, &plan);
     save_watch(&app, state.inner());
+    let _ = groups::set_active(&groups_file(&app), &name);
     let _ = app.emit("watch:changed", payload);
     Ok(plan)
 }
 
 #[tauri::command]
-fn group_delete(app: AppHandle, name: String) -> Result<(), String> {
-    groups::delete(&groups_file(&app), &name)
+fn group_delete(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    name: String,
+) -> Result<(), String> {
+    let path = groups_file(&app);
+    let (_, next) = groups::remove(&path, &name)?;
+    if let Some(active) = next {
+        let stored = groups::read(&path)
+            .groups
+            .get(&active)
+            .cloned()
+            .unwrap_or_default();
+        apply_watch(&app, state.inner(), parse_watch_keys(&stored));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Containers (named watch lists used by the Stocks tab)
+// ---------------------------------------------------------------------------
+
+fn parse_watch_keys(stored: &[String]) -> Vec<SymbolKey> {
+    stored
+        .iter()
+        .filter_map(|key| SymbolKey::parse(key).ok())
+        .collect()
+}
+
+fn apply_watch(app: &AppHandle, state: &Arc<AppState>, keys: Vec<SymbolKey>) -> PlanDto {
+    let (plan, payload) = {
+        let mut market = state.market.lock().unwrap();
+        let plan = market.set_watch(keys);
+        let payload = WatchChanged {
+            keys: market.watched(),
+            quotes: market.watch_quotes(),
+        };
+        (plan, payload)
+    };
+    forward_plan_to_live(state, &plan);
+    save_watch(app, state);
+    let _ = app.emit("watch:changed", payload);
+    plan
+}
+
+#[tauri::command]
+fn containers_list(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<groups::ContainersView, String> {
+    let keys = state.market.lock().unwrap().watched();
+    let path = groups_file(&app);
+    match groups::ensure_default(&path, keys) {
+        Ok(view) => Ok(view),
+        Err(err) => {
+            tracing::warn!(error = %err, "could not initialise containers");
+            Ok(groups::view(&path))
+        }
+    }
+}
+
+#[tauri::command]
+fn container_create(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    name: String,
+) -> Result<groups::ContainersView, String> {
+    let keys = state.market.lock().unwrap().watched();
+    let path = groups_file(&app);
+    groups::ensure_default(&path, keys.clone())?;
+    groups::create(&path, &name, keys)
+}
+
+#[tauri::command]
+fn container_activate(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    name: String,
+) -> Result<PlanDto, String> {
+    let path = groups_file(&app);
+    let stored = groups::read(&path)
+        .groups
+        .get(&name)
+        .cloned()
+        .ok_or_else(|| format!("container \"{name}\" does not exist"))?;
+    groups::set_active(&path, &name)?;
+    Ok(apply_watch(&app, state.inner(), parse_watch_keys(&stored)))
+}
+
+#[tauri::command]
+fn container_rename(
+    app: AppHandle,
+    old: String,
+    new: String,
+) -> Result<groups::ContainersView, String> {
+    groups::rename(&groups_file(&app), &old, &new)
+}
+
+#[tauri::command]
+fn container_delete(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    name: String,
+) -> Result<groups::ContainersView, String> {
+    let path = groups_file(&app);
+    let (view, next) = groups::remove(&path, &name)?;
+    if let Some(active) = next {
+        let stored = groups::read(&path)
+            .groups
+            .get(&active)
+            .cloned()
+            .unwrap_or_default();
+        apply_watch(&app, state.inner(), parse_watch_keys(&stored));
+    }
+    Ok(view)
+}
+
+// ---------------------------------------------------------------------------
+// Orders
+// ---------------------------------------------------------------------------
+
+fn order_defaults_file(app: &AppHandle) -> std::path::PathBuf {
+    orders::file_path(&config_dir(app))
+}
+
+#[tauri::command]
+fn order_defaults_get(app: AppHandle) -> orders::OrderDefaults {
+    orders::read_defaults(&order_defaults_file(&app))
+}
+
+#[tauri::command]
+fn order_defaults_set(
+    app: AppHandle,
+    defaults: orders::OrderDefaults,
+) -> Result<orders::OrderDefaults, String> {
+    let path = order_defaults_file(&app);
+    orders::write_defaults(&path, &defaults)?;
+    Ok(orders::read_defaults(&path))
+}
+
+/// Prepare and submit one live order. The UI has already shown a ticket; this
+/// command validates again and never logs in or retries an ambiguous send.
+#[tauri::command]
+async fn place_order(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    request: orders::PlaceOrderRequest,
+) -> Result<orders::OrderResult, String> {
+    if offline_mode() {
+        return Err("live orders are disabled in offline/probe mode".into());
+    }
+    let shared = state.inner().clone();
+    let source = shared.market.lock().unwrap().status(Instant::now()).source;
+    if source != SourceKind::Live {
+        return Err("orders are allowed only on the live feed (not replay/idle)".into());
+    }
+    let session = shared
+        .session
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "no active session; connect to the venue first".to_string())?;
+
+    let (instrument, exchange) = {
+        let market = shared.market.lock().unwrap();
+        let instrument = market
+            .instrument(&request.key)
+            .ok_or_else(|| format!("instrument {} is not in the master", request.key))?;
+        let key = SymbolKey::parse(&request.key).map_err(|e| e.to_string())?;
+        (instrument, key.exchange().to_string())
+    };
+
+    let payload = orders::build_payload(
+        &request,
+        &session.uid,
+        &session.actid,
+        &exchange,
+        &instrument.trading_symbol,
+        instrument.lot_size,
+    )?;
+
+    let result = orders::submit(&shared.rest, &session.token, &payload).await?;
+    tracing::info!(
+        order_no = %result.order_no,
+        key = %request.key,
+        side = %request.side,
+        lots = request.lots,
+        "order submitted"
+    );
+    let _ = app.emit("orders:changed", &result.order_no);
+    Ok(result)
 }
 
 // ---------------------------------------------------------------------------
@@ -504,6 +728,24 @@ fn indices_list(state: State<'_, Arc<AppState>>) -> Vec<fv_bridge::IndexRowDto> 
 #[tauri::command]
 fn stocks_list(state: State<'_, Arc<AppState>>) -> Vec<fv_bridge::StockRowDto> {
     state.market.lock().unwrap().stock_rows()
+}
+
+#[tauri::command]
+fn stocks_watched(state: State<'_, Arc<AppState>>) -> Vec<fv_bridge::StockRowDto> {
+    state.market.lock().unwrap().watched_stock_rows()
+}
+
+#[tauri::command]
+fn stocks_search(
+    state: State<'_, Arc<AppState>>,
+    query: String,
+    limit: Option<usize>,
+) -> Vec<fv_bridge::StockRowDto> {
+    state
+        .market
+        .lock()
+        .unwrap()
+        .search_stocks(&query, limit.unwrap_or(20))
 }
 
 // ---------------------------------------------------------------------------
@@ -534,7 +776,7 @@ async fn account_summary(state: State<'_, Arc<AppState>>) -> Result<AccountSumma
 
     // Screenshot and release probes set this so a render never touches the
     // broker. `session::peek` only reads the local session file/Mongo record.
-    if std::env::var("FV_NO_AUTOCONNECT").as_deref() == Ok("1") {
+    if offline_mode() {
         return Ok(AccountSummaryDto {
             session: session::peek().await,
             funds: None,
@@ -576,7 +818,7 @@ async fn account_summary(state: State<'_, Arc<AppState>>) -> Result<AccountSumma
 }
 
 /// Connect to the venue. The session is resolved automatically:
-/// env token ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ persisted Mongo token (validated) ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ TOTP login.
+/// env token ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ persisted Mongo token (validated) ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ TOTP login.
 #[tauri::command]
 async fn start_live(
     app: AppHandle,
@@ -873,6 +1115,18 @@ fn main() {
                 let resume_handle = handle.clone();
                 tauri::async_runtime::spawn(async move {
                     let stored = groups::read_watch(&watch_file(&resume_handle));
+                    // Initialise containers from the persisted watch list before
+                    // any demo/replay can replace the in-memory watch set.
+                    if let Err(err) =
+                        groups::ensure_default(&groups_file(&resume_handle), stored.clone())
+                    {
+                        tracing::warn!(error = %err, "could not initialise containers");
+                    }
+                    if let Err(err) =
+                        groups::save_active(&groups_file(&resume_handle), stored.clone())
+                    {
+                        tracing::warn!(error = %err, "could not sync the active container");
+                    }
                     let keys: Vec<SymbolKey> = stored
                         .iter()
                         .filter_map(|key| SymbolKey::parse(key).ok())
@@ -949,8 +1203,18 @@ fn main() {
             group_save,
             group_load,
             group_delete,
+            containers_list,
+            container_create,
+            container_activate,
+            container_rename,
+            container_delete,
+            order_defaults_get,
+            order_defaults_set,
+            place_order,
             indices_list,
             stocks_list,
+            stocks_watched,
+            stocks_search,
             account_summary,
             stop_feed,
         ])

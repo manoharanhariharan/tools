@@ -1,6 +1,13 @@
-import type { ChainRowDto, QuoteDto } from "../../api";
+﻿import type { ChainRowDto, QuoteDto } from "../../api";
 
 export type Moneyness = "itm" | "atm" | "otm";
+
+/** A prepared order ticket; nothing is sent until the user confirms. */
+export interface Ticket {
+  leg: ChainRowDto;
+  side: "B" | "S";
+  price: string;
+}
 
 /** Strike in the same integer unit as `PriceDto.e6` (1e-6). */
 export function strikeE6(strike: string): number {
@@ -105,6 +112,14 @@ export function sideMoneyness(side: "CE" | "PE", strike: number, reference: numb
 export function deltaOi(quote: QuoteDto | null | undefined): number | null {
   if (!quote || quote.oi === null || quote.prev_oi === null) return null;
   return quote.oi - quote.prev_oi;
+}
+
+/** Default limit price for a ticket: buy at ask, sell at bid, then LTP. */
+export function defaultTicketPrice(leg: ChainRowDto, side: "B" | "S"): string {
+  const quote = leg.quote;
+  return side === "B"
+    ? (quote?.ask?.text ?? quote?.ltp?.text ?? "")
+    : (quote?.bid?.text ?? quote?.ltp?.text ?? "");
 }
 
 /** Percentage of `max` used for the background fill, clamped to 0..100. */

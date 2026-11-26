@@ -12,6 +12,7 @@
   } from "./lib/api";
   import { QuoteTable, type QuoteRow } from "./lib/state";
   import StatusBar from "./lib/components/StatusBar.svelte";
+  import BottomDock from "./lib/components/BottomDock.svelte";
   import AccountStrip from "./lib/features/account/AccountStrip.svelte";
   import MarketWatch from "./lib/features/market/MarketWatch.svelte";
   import SnapQuote from "./lib/features/market/SnapQuote.svelte";
@@ -19,8 +20,6 @@
   import IndexWatch from "./lib/features/indices/IndexWatch.svelte";
   import Stocks from "./lib/features/stocks/Stocks.svelte";
   import InstrumentSearch from "./lib/features/instruments/InstrumentSearch.svelte";
-  import Positions from "./lib/features/positions/Positions.svelte";
-  import Orders from "./lib/features/orders/Orders.svelte";
   import Groups from "./lib/features/groups/Groups.svelte";
   import Diagnostics from "./lib/features/diagnostics/Diagnostics.svelte";
 
@@ -30,8 +29,6 @@
     | "chain"
     | "instruments"
     | "market"
-    | "positions"
-    | "orders"
     | "groups"
     | "diagnostics";
 
@@ -326,8 +323,6 @@
       </button>
       {#if moreOpen}
         <div class="menu" role="menu">
-          <button role="menuitem" onclick={() => go("positions")}>Positions</button>
-          <button role="menuitem" onclick={() => go("orders")}>Order book</button>
           <button role="menuitem" onclick={() => go("groups")}>Groups</button>
           <button role="menuitem" onclick={() => go("diagnostics")}>Diagnostics</button>
           <div class="menu-sep"></div>
@@ -361,6 +356,7 @@
       />
     {:else if page === "chain"}
       <OptionChain
+        source={status?.source ?? "idle"}
         pending={chainRequest}
         onconsumed={() => (chainRequest = null)}
       />
@@ -379,10 +375,6 @@
         />
         <SnapQuote quote={selectedQuote} instrument={instrumentMeta} onremove={removeInstrument} />
       </div>
-    {:else if page === "positions"}
-      <Positions />
-    {:else if page === "orders"}
-      <Orders />
     {:else if page === "groups"}
       <Groups watchCount={rows.length} />
     {:else}
@@ -399,6 +391,8 @@
       />
     {/if}
   </div>
+
+  <BottomDock />
 
   <StatusBar {status} />
 </div>

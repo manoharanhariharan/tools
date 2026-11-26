@@ -1,7 +1,12 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { onMount } from "svelte";
   import { api, type PositionsView } from "../../api";
   import EmptyState from "../../components/EmptyState.svelte";
+
+  interface Props {
+    embedded?: boolean;
+  }
+  let { embedded = false }: Props = $props();
 
   let view = $state<PositionsView | null>(null);
   let loading = $state(false);
@@ -104,8 +109,10 @@
     </div>
   {/if}
 
-  <p class="hint" style="padding: 10px 14px; border-top: 1px solid var(--border)">
-    Read-only view of the broker's position book (web API scope). Square-off, product conversion and
-    margin updates are not wired yet.
-  </p>
+  {#if !embedded}
+    <p class="hint" style="padding: 10px 14px; border-top: 1px solid var(--border)">
+      Read-only view of the broker's position book (web API scope). Square-off, product conversion and
+      margin updates are not wired yet.
+    </p>
+  {/if}
 </section>

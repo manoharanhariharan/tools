@@ -165,6 +165,33 @@ export interface StockRowDto {
   quote: QuoteDto | null;
 }
 
+export interface ContainersView {
+  active: string | null;
+  groups: GroupSummary[];
+}
+
+export interface OrderDefaults {
+  product: string;
+  price_type: string;
+  validity: string;
+  lots: number;
+}
+
+export interface PlaceOrderRequest {
+  key: string;
+  side: string;
+  lots: number;
+  product: string;
+  price_type: string;
+  price: string | null;
+  validity: string;
+}
+
+export interface OrderResult {
+  order_no: string;
+  status: string;
+}
+
 export interface DeltaDto {
   seq: number;
   timestamp_ms: number;
@@ -244,6 +271,20 @@ export const api = {
   groupDelete: (name: string) => invoke<void>("group_delete", { name }),
   indicesList: () => invoke<IndexRowDto[]>("indices_list"),
   stocksList: () => invoke<StockRowDto[]>("stocks_list"),
+  stocksWatched: () => invoke<StockRowDto[]>("stocks_watched"),
+  stocksSearch: (query: string, limit = 20) =>
+    invoke<StockRowDto[]>("stocks_search", { query, limit }),
+  containersList: () => invoke<ContainersView>("containers_list"),
+  containerCreate: (name: string) => invoke<ContainersView>("container_create", { name }),
+  containerActivate: (name: string) => invoke<PlanDto>("container_activate", { name }),
+  containerRename: (oldName: string, newName: string) =>
+    invoke<ContainersView>("container_rename", { old: oldName, new: newName }),
+  containerDelete: (name: string) => invoke<ContainersView>("container_delete", { name }),
+  orderDefaultsGet: () => invoke<OrderDefaults>("order_defaults_get"),
+  orderDefaultsSet: (defaults: OrderDefaults) =>
+    invoke<OrderDefaults>("order_defaults_set", { defaults }),
+  placeOrder: (request: PlaceOrderRequest) =>
+    invoke<OrderResult>("place_order", { request }),
   stopFeed: () => invoke<void>("stop_feed"),
 };
 
@@ -262,4 +303,6 @@ export const events = {
     listen<string>("feed:changed", (event) => handler(event.payload)),
   onMasterReady: (handler: () => void) =>
     listen<null>("master:ready", () => handler()),
+  onOrdersChanged: (handler: (orderNo: string) => void) =>
+    listen<string>("orders:changed", (event) => handler(event.payload)),
 };

@@ -1,10 +1,9 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { onMount } from "svelte";
-  import { api, events, type StockRowDto } from "../../api";
+  import { api, events, type ContainersView, type StockRowDto } from "../../api";
   import { formatVolume } from "../../state";
   import EmptyState from "../../components/EmptyState.svelte";
   import ContextMenu from "../../components/ContextMenu.svelte";
-  import { matchesStock, sortStocks, visibleSlice } from "./stocks";
 
   interface Props {
     watched: string[];
@@ -14,52 +13,174 @@
   }
   let { watched, onadd, onremove, onchain }: Props = $props();
 
-  const ROW_H = 30;
-
   let rows = $state<StockRowDto[]>([]);
+  let containers = $state<ContainersView>({ active: null, groups: [] });
+  let query = $state("");
+  let results = $state<StockRowDto[]>([]);
+  let searching = $state(false);
+  let searchOpen = $state(false);
   let loading = $state(false);
   let error = $state<string | null>(null);
-  let query = $state("");
-  let scrollTop = $state(0);
-  let viewportHeight = $state(0);
-  let scrollEl = $state<HTMLDivElement | null>(null);
+  let notice = $state<string | null>(null);
   let menu = $state<{ x: number; y: number; row: StockRowDto } | null>(null);
+  let editing = $state<string | null>(null);
+  let editingDraft = $state("");
+  let creating = $state(false);
+  let createDraft = $state("");
+  let busy = $state(false);
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  let searchSeq = 0;
+  let rowsSeq = 0;
   let index = new Map<string, number>();
 
   const watchedSet = $derived(new Set(watched));
-  const watchedCount = $derived(rows.filter((row) => watchedSet.has(row.key)).length);
+  const active = $derived(containers.active ?? "Watchlist");
+  const activeCount = $derived(
+    containers.groups.find((group) => group.name === containers.active)?.count ?? rows.length,
+  );
 
-  const sorted = $derived(sortStocks(rows.filter((row) => matchesStock(row, query)), watched));
-  const slice = $derived(visibleSlice(sorted, scrollTop, viewportHeight, ROW_H));
-  const pageRows = $derived(sorted.slice(slice.start, slice.end));
+  function focusOnMount(node: HTMLInputElement) {
+    queueMicrotask(() => node.focus());
+    return {};
+  }
+
+  async function loadRows() {
+    const seq = ++rowsSeq;
+    try {
+      const list = await api.stocksWatched();
+      if (seq !== rowsSeq) return;
+      rows = list;
+      index = new Map(list.map((row, i) => [row.key, i]));
+    } catch (e) {
+      if (seq === rowsSeq) error = String(e);
+    }
+  }
+
+  async function loadContainers() {
+    try {
+      containers = await api.containersList();
+    } catch (e) {
+      error = String(e);
+    }
+  }
 
   async function refresh() {
     if (loading) return;
     loading = true;
     error = null;
     try {
-      const list = await api.stocksList();
-      rows = list;
-      index = new Map(list.map((row, i) => [row.key, i]));
-    } catch (e) {
-      error = String(e);
+      await Promise.all([loadRows(), loadContainers()]);
     } finally {
       loading = false;
     }
   }
 
-  function resetScroll() {
-    scrollTop = 0;
-    if (scrollEl) scrollEl.scrollTop = 0;
+  function scheduleSearch() {
+    if (searchTimer !== undefined) clearTimeout(searchTimer);
+    const text = query.trim();
+    if (text === "") {
+      results = [];
+      searching = false;
+      searchOpen = false;
+      return;
+    }
+    searching = true;
+    searchOpen = true;
+    const seq = ++searchSeq;
+    searchTimer = setTimeout(async () => {
+      try {
+        const list = await api.stocksSearch(text, 20);
+        if (seq === searchSeq) results = list;
+      } catch (e) {
+        if (seq === searchSeq) error = String(e);
+      } finally {
+        if (seq === searchSeq) searching = false;
+      }
+    }, 160);
   }
 
-  function onFilter(event: Event) {
+  function onSearchInput(event: Event) {
     query = (event.currentTarget as HTMLInputElement).value;
-    resetScroll();
+    scheduleSearch();
   }
 
-  function trend(row: StockRowDto): string {
-    return row.quote?.trend ?? "flat";
+  function clearSearch() {
+    query = "";
+    results = [];
+    searching = false;
+    searchOpen = false;
+    if (searchTimer !== undefined) clearTimeout(searchTimer);
+  }
+
+  async function activate(name: string) {
+    if (busy || name === containers.active) return;
+    busy = true;
+    error = null;
+    try {
+      await api.containerActivate(name);
+      await Promise.all([loadContainers(), loadRows()]);
+    } catch (e) {
+      error = String(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function createContainer() {
+    const name = createDraft.trim();
+    if (name === "" || busy) return;
+    busy = true;
+    error = null;
+    try {
+      containers = await api.containerCreate(name);
+      creating = false;
+      createDraft = "";
+      notice = `Created "${name}" from the current watch list.`;
+      await Promise.all([loadContainers(), loadRows()]);
+    } catch (e) {
+      error = String(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function commitRename() {
+    if (busy) return;
+    const old = editing;
+    const next = editingDraft.trim();
+    if (!old) return;
+    if (next === "" || next === old) {
+      editing = null;
+      return;
+    }
+    busy = true;
+    error = null;
+    try {
+      containers = await api.containerRename(old, next);
+      editing = null;
+      editingDraft = "";
+      notice = `Renamed "${old}" to "${next}".`;
+    } catch (e) {
+      error = String(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function deleteContainer(name: string) {
+    if (busy) return;
+    if (!window.confirm(`Delete container "${name}"?`)) return;
+    busy = true;
+    error = null;
+    try {
+      containers = await api.containerDelete(name);
+      notice = `Deleted "${name}".`;
+      await Promise.all([loadContainers(), loadRows()]);
+    } catch (e) {
+      error = String(e);
+    } finally {
+      busy = false;
+    }
   }
 
   onMount(() => {
@@ -78,20 +199,20 @@
         if (disposed) onDelta();
         else unlisteners.push(onDelta);
 
-        // The master may finish loading after this tab mounts.
+        const onWatch = await events.onWatch(() => {
+          if (!disposed) {
+            void loadRows();
+            void loadContainers();
+          }
+        });
+        if (disposed) onWatch();
+        else unlisteners.push(onWatch);
+
         const onMaster = await events.onMasterReady(() => {
           if (!disposed) void refresh();
         });
         if (disposed) onMaster();
         else unlisteners.push(onMaster);
-
-        // Newly watched rows need their metadata/quote shape; the master read is
-        // local, so this does not touch the broker.
-        const onWatch = await events.onWatch(() => {
-          if (!disposed) void refresh();
-        });
-        if (disposed) onWatch();
-        else unlisteners.push(onWatch);
 
         await refresh();
       } catch (e) {
@@ -101,6 +222,7 @@
 
     return () => {
       disposed = true;
+      if (searchTimer !== undefined) clearTimeout(searchTimer);
       for (const unlisten of unlisteners) unlisten();
     };
   });
@@ -109,94 +231,219 @@
 <section class="panel">
   <header class="panel-head">
     <h2>Stocks</h2>
-    <span class="muted">{rows.length} NSE equities</span>
-    {#if watchedCount > 0}
-      <span class="badge ok"><span class="dot"></span>{watchedCount} watching</span>
+    <span class="muted">{rows.length} stocks</span>
+    {#if activeCount > rows.length}
+      <span class="muted">({activeCount} instruments in {active})</span>
     {/if}
     <span class="spacer"></span>
-    <button disabled={loading} onclick={refresh}>{loading ? "Loading..." : "Refresh"}</button>
+    <button disabled={loading || busy} onclick={refresh}>{loading ? "Loading..." : "Refresh"}</button>
   </header>
-
-  <div class="chain-toolbar" style="padding: 8px 14px">
-    <div class="field" style="flex: 1; min-width: 180px">
-      <label for="stock-search">Filter</label>
-      <input
-        id="stock-search"
-        value={query}
-        oninput={onFilter}
-        placeholder="Symbol or company name"
-      />
-    </div>
-    <span class="muted" style="padding-bottom: 7px">
-      {sorted.length} shown - watched first
-    </span>
-  </div>
 
   {#if error}
     <div class="banner"><span>{error}</span></div>
   {/if}
-
-  {#if rows.length === 0}
-    <EmptyState
-      title={loading ? "Loading stocks" : "No stocks"}
-      hint="The NSE cash-equity list comes from the local instrument master. Nothing is subscribed until you add a stock to the watch list."
-    />
-  {:else if sorted.length === 0}
-    <EmptyState title="No match" hint="Try a different symbol or company name." />
-  {:else}
-    <div class="stock-head" role="row">
-      <span role="columnheader">Symbol</span>
-      <span role="columnheader" class="num">LTP</span>
-      <span role="columnheader" class="num">Chg</span>
-      <span role="columnheader" class="num">%Chg</span>
-      <span role="columnheader" class="num">Volume</span>
-      <span role="columnheader" class="num">Watch</span>
-    </div>
-
-    <div
-      class="stock-scroll"
-      bind:this={scrollEl}
-      bind:clientHeight={viewportHeight}
-      onscroll={(event) => (scrollTop = (event.currentTarget as HTMLDivElement).scrollTop)}
-      role="rowgroup"
-    >
-      <div style="height: {slice.top}px"></div>
-      {#each pageRows as row (row.key)}
-        <div
-          class="stock-row"
-          class:watched={watchedSet.has(row.key)}
-          role="row"
-          tabindex="-1"
-          title={row.has_fno
-            ? row.name && row.name !== row.symbol
-              ? `${row.name} - F&O available`
-              : "F&O available - right-click for the option chain"
-            : (row.name ?? undefined)}
-          oncontextmenu={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            menu = { x: event.clientX, y: event.clientY, row };
-          }}
-        >
-          <span class="mono symbol" role="cell">{row.symbol}</span>
-          <span class="num mono {trend(row)}" role="cell">{row.quote?.ltp?.text ?? "-"}</span>
-          <span class="num mono {trend(row)}" role="cell">{row.quote?.change?.text ?? "-"}</span>
-          <span class="num mono {trend(row)}" role="cell">{row.quote?.pct ?? "-"}</span>
-          <span class="num mono dim" role="cell">{formatVolume(row.quote?.volume ?? null)}</span>
-          <span class="num" role="cell">
-            {#if watchedSet.has(row.key)}
-              <button class="ghost tiny" title="Remove from watch" onclick={() => onremove(row.key)}>
-                watching
-              </button>
-            {:else}
-              <button class="tiny" title="Add to watch" onclick={() => onadd(row.key)}>Add</button>
-            {/if}
-          </span>
-        </div>
-      {/each}
-      <div style="height: {slice.bottom}px"></div>
+  {#if notice}
+    <div class="banner ok-banner">
+      <span>{notice}</span>
+      <button class="ghost" onclick={() => (notice = null)}>Dismiss</button>
     </div>
   {/if}
+
+  <div class="stocks-body">
+    <aside class="containers">
+      <div class="containers-head">
+        <span>Containers</span>
+        <span class="spacer"></span>
+        <button class="tiny" title="New container (copies the current watch)" disabled={busy} onclick={() => (creating = true)}>
+          +
+        </button>
+      </div>
+
+      {#if creating}
+        <div class="container-create">
+          <input
+            use:focusOnMount
+            bind:value={createDraft}
+            placeholder="Container name"
+            onkeydown={(event) => {
+              if (event.key === "Enter") void createContainer();
+              if (event.key === "Escape") {
+                creating = false;
+                createDraft = "";
+              }
+            }}
+          />
+          <button class="tiny" disabled={busy || createDraft.trim() === ""} onclick={createContainer}>
+            Add
+          </button>
+        </div>
+      {/if}
+
+      <div class="container-list">
+        {#each containers.groups as group (group.name)}
+          <div
+            class="container-row"
+            class:active={group.name === containers.active}
+            role="button"
+            tabindex="0"
+            title={group.name === containers.active ? "Active container" : "Switch to this container"}
+            onclick={() => activate(group.name)}
+            onkeydown={(event) => {
+              if (event.key === "Enter" || event.key === " ") void activate(group.name);
+            }}
+          >
+            {#if editing === group.name}
+              <input
+                class="container-edit"
+                use:focusOnMount
+                bind:value={editingDraft}
+                onclick={(event) => event.stopPropagation()}
+                onkeydown={(event) => {
+                  if (event.key === "Enter") void commitRename();
+                  if (event.key === "Escape") {
+                    editing = null;
+                    editingDraft = "";
+                  }
+                }}
+                onblur={commitRename}
+              />
+            {:else}
+              <button
+                class="container-name"
+                type="button"
+                onclick={(event) => {
+                  event.stopPropagation();
+                  void activate(group.name);
+                }}
+                ondblclick={(event) => {
+                  event.stopPropagation();
+                  editing = group.name;
+                  editingDraft = group.name;
+                }}>{group.name}</button
+              >
+            {/if}
+            <span class="container-count">{group.count}</span>
+            <button
+              class="container-del"
+              title={`Delete ${group.name}`}
+              disabled={busy}
+              onclick={(event) => {
+                event.stopPropagation();
+                void deleteContainer(group.name);
+              }}>x</button
+            >
+          </div>
+        {/each}
+      </div>
+    </aside>
+
+    <div class="stocks-main">
+      <div class="stock-search-wrap">
+        <div class="field">
+          <label for="stock-search">Search stocks to add to {active}</label>
+          <input
+            id="stock-search"
+            value={query}
+            oninput={onSearchInput}
+            onfocus={() => {
+              if (query.trim() !== "") searchOpen = true;
+            }}
+            onkeydown={(event) => {
+              if (event.key === "Escape") clearSearch();
+            }}
+            placeholder="Symbol or company name"
+          />
+        </div>
+
+        {#if searchOpen && query.trim() !== ""}
+          <div class="search-flyout" role="listbox" tabindex="-1">
+            {#if searching && results.length === 0}
+              <div class="search-empty">Searching...</div>
+            {:else if results.length === 0}
+              <div class="search-empty">No matching NSE stocks.</div>
+            {:else}
+              {#each results as row (row.key)}
+                <div class="search-hit" role="option" aria-selected={watchedSet.has(row.key)}>
+                  <span class="symbol">{row.symbol}</span>
+                  <span class="name">{row.name && row.name !== row.symbol ? row.name : row.exchange}</span>
+                  {#if row.has_fno}<span class="badge">F&amp;O</span>{/if}
+                  {#if watchedSet.has(row.key)}
+                    <button class="tiny" disabled>Added</button>
+                  {:else}
+                    <button
+                      class="tiny"
+                      disabled={busy}
+                      onclick={() => onadd(row.key)}>Add</button
+                    >
+                  {/if}
+                </div>
+              {/each}
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      {#if rows.length === 0}
+        <EmptyState
+          title={`No watched stocks in ${active}`}
+          hint="Search above to add a stock to this container. Switching containers replaces the watch list."
+        />
+      {:else}
+        <div class="stock-head" role="row">
+          <span role="columnheader">Symbol</span>
+          <span role="columnheader" class="num">LTP</span>
+          <span role="columnheader" class="num">Chg</span>
+          <span role="columnheader" class="num">%Chg</span>
+          <span role="columnheader" class="num">Volume</span>
+          <span role="columnheader" class="num">Watch</span>
+        </div>
+
+        <div class="stock-scroll" role="rowgroup">
+          {#each rows as row (row.key)}
+            <div
+              class="stock-row watched"
+              role="row"
+              tabindex="-1"
+              title={row.has_fno
+                ? "F&O available - right-click for the option chain"
+                : (row.name ?? undefined)}
+              oncontextmenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                menu = { x: event.clientX, y: event.clientY, row };
+              }}
+            >
+              <span class="mono symbol" role="cell">{row.symbol}</span>
+              <span class="num mono {row.quote?.trend ?? 'flat'}" role="cell">
+                {row.quote?.ltp?.text ?? "-"}
+              </span>
+              <span class="num mono {row.quote?.trend ?? 'flat'}" role="cell">
+                {row.quote?.change?.text ?? "-"}
+              </span>
+              <span class="num mono {row.quote?.trend ?? 'flat'}" role="cell">
+                {row.quote?.pct ?? "-"}
+              </span>
+              <span class="num mono dim" role="cell">
+                {formatVolume(row.quote?.volume ?? null)}
+              </span>
+              <span class="num" role="cell">
+                <button
+                  class="ghost tiny"
+                  title="Remove from container"
+                  onclick={() => onremove(row.key)}>watching</button
+                >
+              </span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      <p class="hint" style="padding: 8px 14px; border-top: 1px solid var(--border)">
+        Showing watched stocks only. Double-click a container name to rename it. Changes to the active
+        container are saved locally; no broker call is made until a live subscription needs it.
+      </p>
+    </div>
+  </div>
 
   {#if menu}
     <ContextMenu
@@ -213,11 +460,9 @@
           },
         },
         {
-          label: watchedSet.has(menu.row.key) ? "Remove from watch" : "Add to watch",
+          label: "Remove from container",
           action: () => {
-            if (!menu) return;
-            if (watchedSet.has(menu.row.key)) onremove(menu.row.key);
-            else onadd(menu.row.key);
+            if (menu) onremove(menu.row.key);
           },
         },
       ]}

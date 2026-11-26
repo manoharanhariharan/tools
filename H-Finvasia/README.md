@@ -23,14 +23,19 @@ in-house stack: **Tauri 2 + Rust workspace + Svelte 5**.
 | `ui/` — Svelte 5 terminal UI | ✅ (market watch, snap quote, search, diagnostics) |
 | `fv-cli` — headless harness | ✅ |
 | `fv-market` — REST client | ⬜ Phase 2b |
-| Order entry / books / holdings | ⬜ Phase 2b (needs OAuth session) |
+| Order entry / books / holdings | order entry (LMT, confirm ticket) + positions/order book in the bottom dock; holdings pending |
 
 **What works today:** the desktop app launches, loads 182k instruments from your local Mongo (or a
-bundled sample), and shows a live-updating market watch + snap quote fed by a replay capture — no
+bundled sample), and shows a live-updating market watch + snap quote fed by a replay capture - no
 credentials required. Search, watch-list editing and diagnostics are wired to the real engine.
 
-**What does not:** order placement, order/trade/position books, holdings. A button that cannot place
-an order is worse than no button, so those are shown as explicitly pending rather than faked.
+**Order entry** is wired through a prepared ticket: hover a CE/PE row, press B or S, review the
+ticket, then Confirm. Defaults (lots/product/validity) are saved locally. Orders are LMT only
+(Shoonya rejects MKT), allowed only on the live feed, and never retried automatically. Positions
+and the order book live in a resizable bottom dock.
+
+**Still pending:** holdings, order modify/cancel, product conversion and algo orders. The test
+suite never sends a real order.
 
 ---
 
@@ -74,45 +79,56 @@ The executable lands at `src-tauri/target/release/h-finvasia-desktop.exe` and ru
 
 The workspace opens on a four-card account strip - **Account details** (user, account, login
 state), **Funds available**, **RPNL**, **MTM** - followed by four tabs: **Index**, **Stocks**,
-**Option chain**, **Instruments**. Market watch and the account screens (Positions, Order book,
-Groups, Diagnostics) sit behind the **More** menu, so the working area stays uncluttered.
+**Option chain**, **Instruments**. Market watch and Groups/Diagnostics sit behind the **More** menu;
+Positions and the order book live in the bottom dock, so the working area stays uncluttered.
 
-**Stocks** lists the full NSE cash-equity universe from the local master (currently 2,786 symbols).
-Anything in the watch list is pinned to the top with a live LTP, change, percent change and volume;
-the rest stay alphabetical and cost no broker calls. The list is virtualised, so scrolling 2,786
-rows stays smooth. Right-click a stock for **Open option chain** (when its underlying has F&O) or
-**Add to watch**.
+**Stocks** shows only the watched stocks in the active container. Use the search bar above the list
+to find an NSE stock; matches appear in a flyout and can be added directly. The containers sidebar
+creates, deletes and renames lists (double-click a name to edit). The active container is the live
+watch list, so switching it re-subscribes within the 100-instrument budget; changes are saved
+locally and cost no broker calls.
 
 **Option chain** uses the usual quad layout: calls on the left, puts on the right, strike price in
-the middle. Each side is mirrored around the strike (OI, d OI, volume, LTP, change, bid qty, bid,
-ask, ask qty, then the strike). OI and volume cells carry a proportional background fill, so size is
-visible at a glance. Calls and puts are tinted by moneyness (ITM / ATM / OTM) around the spot, with
-the ATM row highlighted. The default view is the 10 strikes either side of the ATM; the rest of the
-chain remains in the local master but is not streamed.
+the middle. Each side is mirrored around the strike (trade, OI, d OI, volume, LTP, change, bid qty,
+bid, ask, ask qty, then the strike). OI and volume cells carry a proportional background fill. Calls
+and puts are tinted by moneyness (ITM / ATM / OTM) around the spot, with the ATM row highlighted.
+The outermost column on each side exposes B/S on row hover; both open the same prepared ticket.
+The default view is the 10 strikes either side of the ATM; the rest of the chain remains in the
+local master but is not streamed.
+
+**Bottom dock** holds the read-only position book and order book side by side. Drag its top edge to
+resize the height, drag the middle divider to resize the columns, and collapse it back to a footer
+bar. It is collapsed by default so no account REST calls happen until you open it; refreshes are
+manual, never on a timer.
 
 ### Using it
 
 1. Double-click `h-finvasia-v<tag>.exe`.
-2. **More → Demo feed** (or *Diagnostics → Start demo feed*) replays a bundled capture at
+2. **More -> Demo feed** (or *Diagnostics -> Start demo feed*) replays a bundled capture at
    ~120 frames/s; the watch list auto-populates from the capture.
 3. Click a row to load the snap quote; **Instruments** searches the master and adds scrips.
    Search is relaxed and multi-term: `nifty 25800`, `25800 nifty`, `NIFTY 26NOV 25800` all find the
    25800-strike NIFTY contracts. Adding an instrument while **live** subscribes it on the open socket
-   immediately — no reconnect, no manual refresh.
+   immediately - no reconnect, no manual refresh.
 4. **Right-click any row** (Index, Stocks, Instruments, Market watch) for actions.
    When the instrument's underlying has derivatives the menu offers **Open option chain
    (UNDERLYING)**; choosing it switches to the Option chain tab, selects that underlying's nearest
-   expiry, and loads the chain centred on the watched spot (or the entered ATM). Instruments without
-   derivatives show the item disabled, so the broker is never asked for a chain that cannot exist.
-5. **Diagnostics** shows backend (`mongo` vs `in-memory`), frame rate, decode errors, and the live
+   expiry, and loads the chain centred on the watched spot (or the entered ATM).
+5. **Buy / sell** from the chain: hover a CE/PE row and press **B** or **S**. The ticket is prefilled
+   from your saved defaults and the current ask/bid. Nothing is sent until **Confirm**. Orders are
+   allowed only while the feed is live; replay/offline tickets open for review with Confirm disabled.
+6. **Positions & order book** live in the bottom dock. Open it from the footer bar; each panel has its
+   own Refresh button. After a confirmed order the order book refreshes automatically if it is open.
+7. **Diagnostics** shows backend (`mongo` vs `in-memory`), frame rate, decode errors, and the live
    connect form.
 
 On launch the app restores the last watch list and, if a valid session is already stored,
-**connects automatically** - no click needed. If no valid session exists it stays disconnected and
-never logs in on its own. To connect manually press **Diagnostics → Connect live**. Session resolution:
-`FV_ACCESS_TOKEN` → the session already persisted in `STOCK.CONFIGS_GLOBAL` (validated first) →
-a TOTP login from `fv-cred.json`. The stored token is only read, never overwritten, so other tools
-keep their session. Verified against the live venue (NTPC/ACC streaming with bid/ask and volume).
+**connects automatically** - no click needed. No OAuth flow is created or needed: the app adopts the
+token already persisted in `STOCK.CONFIGS_GLOBAL` (or `FV_ACCESS_TOKEN`); the public API OAuth
+handshake is not used. Your morning login remains the only login. The stored token is read-only, so
+other tools keep their session. A fresh TOTP login happens only when you explicitly press Connect and
+no valid stored token exists. `FV_NO_AUTOCONNECT=1` disables startup adoption and every
+broker-backed probe/account/order path. Verified against the live venue (NTPC/ACC streaming).
 
 ### Operating limits (deliberately gentle on the broker)
 
@@ -123,6 +139,9 @@ keep their session. Verified against the live venue (NTPC/ACC streaming with bid
 | Websocket connections per session | 1, opened at launch when a valid session exists (or via Diagnostics -> Connect live) |
 | Automatic broker calls | **one connect at launch** when a valid session exists; the account strip refreshes only on mount, on first connect, or manually - never on a timer |
 | Automatic login | never - startup only *adopts* a valid stored/env token; a fresh TOTP login happens only when you press Connect |
+
+| Order type | LMT only; one explicit Confirm per ticket; no automatic retry |
+| Account/book calls | positions and order book load only when the bottom dock is opened or refreshed |
 
 Overflow is **refused and reported**, never silently dropped. The status bar shows
 `subscribed N/100` so the budget is always visible.
@@ -235,7 +254,17 @@ scripts/make-icon.ps1      regenerates src-tauri/icons
 - **Desktop builds must go through `npm run tauri:build`.** A plain `cargo build --release` produces a
   binary that tries to load `localhost:5173` and shows `ERR_CONNECTION_REFUSED`. The release script
   enforces this with a live port probe.
-- **Order entry is absent**, not stubbed (Phase 2b).
+- **Order entry is LMT only.** Shoonya rejects MKT; the ticket and defaults expose LMT. Modify/cancel,
+  product conversion, holdings and algo orders are absent.
+- **Order send is live-feed only and never retried automatically.** Replay/offline tickets open for
+  review with Confirm disabled. A network timeout is ambiguous; reconcile by the unique `remarks` tag
+  in the order book before retrying.
+- **No real order is sent by the automated tests.** Payload/response and the live/offline guards are
+  unit-tested; the first live confirmation should be checked in the order book.
+- **The bottom dock is collapsed by default.** Positions/order book load only when it is opened;
+  there is no polling.
+- **The Stocks search flyout is NSE cash equities only.** Containers are generic watch lists and may
+  hold indices/options added from other tabs.
 - **Live feed is verified for touchline ticks** (`tk`/`tf`). Depth (`dk`/`df`) and order updates
   (`om`) are parsed but not yet wired to a UI panel.
 - **One websocket per session token.** Opening a second connection while the first is live makes the

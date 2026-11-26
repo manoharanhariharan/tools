@@ -232,6 +232,27 @@ mod tests {
     }
 
     #[test]
+    fn watched_stocks_and_search_stay_inside_the_cash_list() {
+        let mut md = market();
+        md.set_master(master());
+        md.set_watch(vec![
+            SymbolKey::parse("NSE|2885").unwrap(),
+            SymbolKey::parse("NFO|158614").unwrap(),
+        ]);
+
+        let watched = md.watched_stock_rows();
+        assert_eq!(watched.len(), 1, "the option is not a stock row");
+        assert_eq!(watched[0].symbol, "RELIANCE");
+        assert!(watched[0].live);
+
+        let hits = md.search_stocks("reliance", 10);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].key, "NSE|2885");
+        assert!(md.search_stocks("zyduslife", 10).is_empty());
+        assert!(md.search_stocks("  ", 10).is_empty());
+    }
+
+    #[test]
     fn watch_overflow_is_reported_not_silently_dropped() {
         let mut md = market().with_watch_limit(2);
         let keys: Vec<SymbolKey> = (1..=4)

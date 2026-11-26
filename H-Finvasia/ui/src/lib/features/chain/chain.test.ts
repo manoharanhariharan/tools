@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import type { ChainRowDto, QuoteDto } from "../../api";
 import {
+  defaultTicketPrice,
   deltaOi,
   fillPercent,
   groupStrikes,
@@ -112,6 +113,20 @@ describe("option chain ladder", () => {
     expect(sideMoneyness("PE", strikeE6("25900.00"), atm)).toBe("itm");
     expect(sideMoneyness("PE", strikeE6("25700.00"), atm)).toBe("otm");
     expect(sideMoneyness("PE", atm, atm)).toBe("atm");
+  });
+
+  it("defaults a ticket to ask for buys and bid for sells", () => {
+    const q = quote(1200, 1000);
+    q.ltp = { text: "100.00", e6: 100_000_000 };
+    q.bid = { text: "99.50", e6: 99_500_000 };
+    q.ask = { text: "100.50", e6: 100_500_000 };
+    const row = leg("25800.00", "CE", true, q);
+    expect(defaultTicketPrice(row, "B")).toBe("100.50");
+    expect(defaultTicketPrice(row, "S")).toBe("99.50");
+    q.ask = null;
+    expect(defaultTicketPrice(row, "B")).toBe("100.00");
+    q.bid = null;
+    expect(defaultTicketPrice(row, "S")).toBe("100.00");
   });
 
   it("computes delta OI and background fill percentages", () => {
