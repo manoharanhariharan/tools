@@ -1,13 +1,13 @@
 H-Compare release build
-tag: v26.11.26.1
+tag: v26.11.26.2
 version: 0.2.0
-buildVersion: 26.11.26.1
-commit: 062692a
+buildVersion: 26.11.26.2
+commit: 9eaec9f
 dirty: false
-built: 2026-11-26T02:06:31.931Z
+built: 2026-11-26T04:36:24.917Z
 rustc: rustc 1.99.1 (58cf8f9c3 2026-10-13)
 cargo: cargo 1.99.1 (5f94df478 2026-08-27)
 signed: no
 
 artifacts:
-955d200d01ddf86b72c5f4d7e459438afe559400a0331cd2e40b754cebedb2c6 8632320 hcompare-v26.11.26.1.exe
+adb4c7581e6459234dad3218866fab8ba2fb6a95d5a7f6d84a9bf2ef4fd08cb2 9524224 hcompare-v26.11.26.2.exe
