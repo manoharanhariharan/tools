@@ -1,12 +1,15 @@
 # H-Compare
 
-A fast, native folder / text / CSV / PDF / Word comparison tool written in Rust. It is built for the
+A fast, native folder / text / CSV / PDF / Word / image / hex comparison tool written in Rust. It is built for the
 "open two folders and find what changed" workflow:
 
 - recursive folder tree with same / different / left-only / right-only statuses
 - side-by-side text diff with line and character-level highlights, plus merged view
 - table-aware CSV diff with cell-level changes, merged or side-by-side layouts
 - Word (.docx / .doc) text comparison with paragraph and table extraction
+- side-by-side image comparison with pixel-difference heatmaps
+- hexadecimal diff for binary files
+- local HTML source comparison
 - PDF text diff (Poppler fast path with a bundled pure-Rust fallback)
 - Ten polished theme presets, search, change navigation, copy/sync actions and HTML/CSV exports
 
@@ -89,6 +92,32 @@ A fast, native folder / text / CSV / PDF / Word comparison tool written in Rust.
   F7 change navigation, copy and export actions as text and PDF comparisons.
 - Word layout, images, headers/footers, comments and tracked deletions are not part of the
   text comparison.
+
+### Hex comparison
+
+- Binary files open in a side-by-side hexadecimal table with offsets and 8 or 16 bytes per
+  row.
+- Differing bytes are tinted on the left and right; F7 / Shift+F7 jump between differing
+  bytes, and rows can be selected to copy offsets or hex rows.
+- Oversized binaries show the inspected prefix with a warning.
+
+### Image comparison
+
+- PNG, JPEG, GIF, BMP, WebP, TIFF and ICO images are decoded and compared side by side.
+- **Difference** mode renders a pixel-difference heatmap: unchanged pixels are transparent,
+  changed pixels shade from orange to red by the amount of change.
+- Zoom from 25% to 800%, Fit, synchronized scrolling, dimension labels and changed-pixel
+  statistics.
+- Different dimensions disable the heatmap (pixel comparison needs equal sizes); animated
+  images use their first frame.
+
+### Web page comparison
+
+- `.html`, `.htm` and `.xhtml` files open as a `WEB` source comparison in the text view.
+- Line and character-level highlighting, search, F7 navigation, copy and export work the
+  same as other text comparisons.
+- Pages are compared as source only: no browser rendering, scripts, network requests, CSS
+  layout or screenshots.
 
 ### CSV / TSV comparison
 
@@ -281,10 +310,11 @@ src/
   textdiff.rs    line alignment, intra-line spans, encoding and search helpers
   csvdiff.rs     CSV parsing, key/row alignment and cell diffs
   word.rs        Word (.docx/.doc) text extraction
+  image_compare.rs image decoding and pixel-difference heatmaps
   load.rs        worker-thread file loading and binary detection
   report.rs      HTML and CSV report generation
   settings.rs    persisted settings
-  ui/            theme, folder tree, text view, CSV view and shared widgets
+  ui/            theme, folder tree, text/CSV/hex/image views and shared widgets
 ```
 
 ## Limits
@@ -298,6 +328,9 @@ This is a focused implementation, not a byte-for-byte clone of Beyond Compare:
   `.hcompare.bak` backup is created first.
 - `.docx`/`.docm` Word files are compared by extracted body text. Legacy `.doc` files need
   LibreOffice, pandoc, antiword or catdoc installed.
+- Image comparison is pixel-based and requires equal dimensions for the heatmap; it does
+  not compare ICC profiles or animation frames.
+- Web pages are compared as source; scripts and rendering are intentionally not executed.
 - Images, archives, three-way merge, syntax highlighting and plugin support are not implemented.
 - CSV key alignment uses unique first-column values by default; duplicate-key files can be
   aligned by row order or an explicit key column.

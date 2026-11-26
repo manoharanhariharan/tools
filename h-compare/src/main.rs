@@ -5,6 +5,7 @@ mod app;
 mod csvdiff;
 mod diff_common;
 mod folder;
+mod image_compare;
 mod load;
 mod model;
 mod report;

@@ -16,6 +16,8 @@ fn data_with(view: crate::textdiff::TextDiffView) -> OpenData {
         right_modified: None,
         text: Some(view),
         csv: None,
+        binary: None,
+        image: None,
         messages: vec![],
         error: None,
         first_binary_diff: None,

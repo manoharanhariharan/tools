@@ -48,7 +48,7 @@ fn compile_windows_resources() {
     resource.set("ProductName", "H-Compare");
     resource.set(
         "FileDescription",
-        "H-Compare folder, text, CSV and Word comparison",
+        "H-Compare folder, text, Word, image and hex comparison",
     );
     resource.set("OriginalFilename", "hcompare.exe");
     resource.set("InternalName", "hcompare");

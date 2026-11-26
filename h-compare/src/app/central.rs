@@ -58,7 +58,7 @@ impl App {
                 let mut reload = false;
                 if let Some(open) = &mut self.open {
                     match open.data.kind {
-                        OpenKind::Text | OpenKind::Pdf | OpenKind::Word => {
+                        OpenKind::Text | OpenKind::Web | OpenKind::Pdf | OpenKind::Word => {
                             if let (Some(view), Some(text_ui)) =
                                 (open.data.text.as_ref(), open.text_ui.as_mut())
                             {
@@ -87,8 +87,23 @@ impl App {
                                 );
                             }
                         }
+                        OpenKind::Image => {
+                            if let (Some(images), Some(image_ui)) =
+                                (open.data.image.as_ref(), open.image_ui.as_mut())
+                            {
+                                ui::image_view::show(ui, &open.data.rel, images, image_ui);
+                            } else {
+                                error_panel(ui, &open.data, &mut self.deferred);
+                            }
+                        }
                         OpenKind::Binary => {
-                            binary_panel(ui, &open.data, &mut self.deferred);
+                            if let (Some(bytes), Some(hex_ui)) =
+                                (open.data.binary.as_ref(), open.hex_ui.as_mut())
+                            {
+                                ui::hex_view::show(ui, &open.data.rel, bytes, hex_ui);
+                            } else {
+                                binary_panel(ui, &open.data, &mut self.deferred);
+                            }
                         }
                         OpenKind::Error => {
                             error_panel(ui, &open.data, &mut self.deferred);
@@ -278,8 +293,13 @@ impl App {
                         ),
                         (
                             Icon::Columns,
-                            "Text, PDF, Word and CSV diffs",
-                            "Line, cell and document text highlights, search, and arrow-key navigation.",
+                            "Text, PDF, Word, CSV and Web diffs",
+                            "Line, cell and document text highlights, search and arrow-key navigation.",
+                        ),
+                        (
+                            Icon::Eye,
+                            "Images and binary hex",
+                            "Side-by-side image heatmaps and byte-level hexadecimal differences.",
                         ),
                         (
                             Icon::Settings,

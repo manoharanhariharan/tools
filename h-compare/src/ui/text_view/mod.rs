@@ -237,6 +237,8 @@ pub fn show(
                 "PDF"
             } else if data.kind == OpenKind::Word {
                 "WORD"
+            } else if data.kind == OpenKind::Web {
+                "WEB"
             } else {
                 "TEXT"
             })

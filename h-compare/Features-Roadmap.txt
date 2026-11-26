@@ -1,4 +1,4 @@
-1. archive compare
+1. archive compare - using 7zip ? 
 2. Comparing Hexa decimal
 3. Comparing Image Files, 
 4. Comparing Web Pages

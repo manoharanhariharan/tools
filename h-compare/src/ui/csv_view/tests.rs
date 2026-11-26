@@ -15,6 +15,8 @@ fn data_with(compare: CsvCompare) -> OpenData {
         right_modified: None,
         text: None,
         csv: Some(compare),
+        binary: None,
+        image: None,
         messages: vec![],
         error: None,
         first_binary_diff: None,

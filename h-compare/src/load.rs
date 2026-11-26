@@ -1,6 +1,7 @@
 //! Loads a file pair and selects the right comparison view (text, CSV, PDF or binary).
 
 use crate::csvdiff::{compare_csv, delimiter_label, CsvCompare, CsvOptions};
+use crate::image_compare::{self, ImageCompareData};
 use crate::model::CompareOptions;
 use crate::textdiff::{build_text_diff, decode_text, looks_binary, TextDiffView};
 use crate::word;
@@ -15,11 +16,21 @@ pub const MAX_TEXT_BYTES: u64 = 64 * 1024 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenKind {
     Text,
+    Web,
     Csv,
     Pdf,
     Word,
+    Image,
     Binary,
     Error,
+}
+
+#[derive(Debug, Clone)]
+pub struct BinaryBytes {
+    pub left: Vec<u8>,
+    pub right: Vec<u8>,
+    pub left_truncated: bool,
+    pub right_truncated: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -34,6 +45,8 @@ pub struct OpenData {
     pub right_modified: Option<SystemTime>,
     pub text: Option<TextDiffView>,
     pub csv: Option<CsvCompare>,
+    pub binary: Option<BinaryBytes>,
+    pub image: Option<ImageCompareData>,
     pub messages: Vec<String>,
     pub error: Option<String>,
     pub first_binary_diff: Option<u64>,
@@ -73,6 +86,8 @@ pub fn load_compare(
         right_modified: right_side.modified,
         text: None,
         csv: None,
+        binary: None,
+        image: None,
         messages,
         error: None,
         first_binary_diff: None,
@@ -155,6 +170,33 @@ pub fn load_compare(
         data.text = Some(view);
         return data;
     }
+    let is_image = is_image_name(rel)
+        || data
+            .left_path
+            .as_deref()
+            .map(is_image_name_path)
+            .unwrap_or(false)
+        || data
+            .right_path
+            .as_deref()
+            .map(is_image_name_path)
+            .unwrap_or(false);
+    if is_image && !oversized {
+        match image_compare::compare_images(left_bytes, right_bytes) {
+            Ok(images) => {
+                data.messages.push(
+                    "Images compared by decoded pixels. Difference mode highlights changed pixels; animated images use the first frame."
+                        .to_string(),
+                );
+                data.image = Some(images);
+                data.kind = OpenKind::Image;
+                return data;
+            }
+            Err(error) => data.messages.push(format!(
+                "Could not decode this pair as images ({error}); showing the binary hex view instead."
+            )),
+        }
+    }
     let is_pdf = is_pdf_name(rel)
         || data.left_path.as_deref().map(is_pdf_path).unwrap_or(false)
         || data.right_path.as_deref().map(is_pdf_path).unwrap_or(false);
@@ -208,6 +250,12 @@ pub fn load_compare(
     }
     if binary {
         data.kind = OpenKind::Binary;
+        data.binary = Some(BinaryBytes {
+            left: left_bytes.to_vec(),
+            right: right_bytes.to_vec(),
+            left_truncated: left_side.oversized,
+            right_truncated: right_side.oversized,
+        });
         if !oversized && !left_bytes.is_empty() && !right_bytes.is_empty() {
             data.first_binary_diff = first_diff_offset(left_bytes, right_bytes);
         }
@@ -270,6 +318,27 @@ pub fn load_compare(
 
     let left_decoded = decode_text(left_bytes);
     let right_decoded = decode_text(right_bytes);
+    let is_web = is_web_name(rel)
+        || data
+            .left_path
+            .as_deref()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .map(is_web_name)
+            .unwrap_or(false)
+        || data
+            .right_path
+            .as_deref()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .map(is_web_name)
+            .unwrap_or(false);
+    if is_web {
+        data.messages.push(
+            "HTML is compared as source text. Browser rendering, scripts and network resources are not executed."
+                .to_string(),
+        );
+    }
     if left_decoded.encoding != "UTF-8" || right_decoded.encoding != "UTF-8" {
         data.messages.push(format!(
             "Encoding: {} / {}.",
@@ -294,7 +363,11 @@ pub fn load_compare(
             view.right_line_ending.label()
         ));
     }
-    data.kind = OpenKind::Text;
+    data.kind = if is_web {
+        OpenKind::Web
+    } else {
+        OpenKind::Text
+    };
     data.text = Some(view);
     data
 }
@@ -383,6 +456,29 @@ fn is_word_name_path(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn is_image_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [
+        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tif", ".tiff", ".ico",
+    ]
+    .iter()
+    .any(|extension| lower.ends_with(extension))
+}
+
+fn is_image_name_path(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(is_image_name)
+        .unwrap_or(false)
+}
+
+fn is_web_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [".html", ".htm", ".xhtml"]
+        .iter()
+        .any(|extension| lower.ends_with(extension))
+}
+
 fn is_csv_name_path(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
@@ -447,6 +543,74 @@ mod tests {
         assert!(is_word_name("REPORT.DOC"));
         assert!(is_word_name("macro.docm"));
         assert!(!is_word_name("report.txt"));
+    }
+
+    #[test]
+    fn detects_image_and_web_extensions() {
+        assert!(is_image_name("photo.PNG"));
+        assert!(is_image_name("scan.jpeg"));
+        assert!(!is_image_name("photo.svg"));
+        assert!(is_web_name("index.html"));
+        assert!(is_web_name("page.XHTML"));
+        assert!(!is_web_name("page.css"));
+    }
+
+    #[test]
+    fn loads_html_as_web_source_comparison() {
+        let stamp = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("hcompare-web-load-{}-{stamp}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let left = dir.join("left.html");
+        let right = dir.join("right.html");
+        fs::write(&left, "<html><body><h1>Old</h1></body></html>\n").unwrap();
+        fs::write(&right, "<html><body><h1>New</h1></body></html>\n").unwrap();
+        let data = load_compare(
+            "page.html",
+            Some(left),
+            Some(right),
+            &CompareOptions::default(),
+            &CsvOptions::default(),
+        );
+        assert_eq!(data.kind, OpenKind::Web);
+        let view = data.text.expect("web text view");
+        assert_eq!(view.stats.modified, 1);
+        assert!(data
+            .messages
+            .iter()
+            .any(|message| message.contains("HTML is compared as source text")));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn loads_binary_files_with_hex_bytes() {
+        let stamp = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("hcompare-hex-load-{}-{stamp}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let left = dir.join("left.bin");
+        let right = dir.join("right.bin");
+        fs::write(&left, [0u8, 1, 2, 3, 4]).unwrap();
+        fs::write(&right, [0u8, 9, 2, 3, 8]).unwrap();
+        let data = load_compare(
+            "data.bin",
+            Some(left),
+            Some(right),
+            &CompareOptions::default(),
+            &CsvOptions::default(),
+        );
+        assert_eq!(data.kind, OpenKind::Binary);
+        let bytes = data.binary.expect("binary bytes");
+        assert_eq!(bytes.left, vec![0, 1, 2, 3, 4]);
+        assert_eq!(bytes.right, vec![0, 9, 2, 3, 8]);
+        assert_eq!(crate::ui::hex_view::HexUiState::new(&bytes).diff_count, 2);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -66,6 +66,8 @@ pub(crate) struct OpenState {
     pub data: OpenData,
     pub text_ui: Option<ui::text_view::TextUiState>,
     pub csv_ui: Option<ui::csv_view::CsvUiState>,
+    pub hex_ui: Option<ui::hex_view::HexUiState>,
+    pub image_ui: Option<ui::image_view::ImageUiState>,
 }
 
 /// The most recent column deletion, kept so `Ctrl+Z` (or the toolbar Undo
@@ -86,10 +88,17 @@ impl OpenState {
     fn new(data: OpenData) -> Self {
         let text_ui = data.text.as_ref().map(ui::text_view::TextUiState::new);
         let csv_ui = data.csv.as_ref().map(ui::csv_view::CsvUiState::new);
+        let hex_ui = data.binary.as_ref().map(ui::hex_view::HexUiState::new);
+        let image_ui = data
+            .image
+            .as_ref()
+            .map(|_| ui::image_view::ImageUiState::default());
         Self {
             data,
             text_ui,
             csv_ui,
+            hex_ui,
+            image_ui,
         }
     }
 }
@@ -516,6 +525,14 @@ impl App {
                 (open.data.csv.as_ref(), open.csv_ui.as_mut())
             {
                 handled = csv_ui.goto_change(compare, forward);
+            } else if let (Some(bytes), Some(hex_ui)) =
+                (open.data.binary.as_ref(), open.hex_ui.as_mut())
+            {
+                handled = if forward {
+                    hex_ui.go_next(bytes)
+                } else {
+                    hex_ui.go_previous(bytes)
+                };
             }
         }
         if handled {
