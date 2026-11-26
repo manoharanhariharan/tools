@@ -170,6 +170,8 @@
   function rememberActive(key: string, label: string) {
     activeKey = key;
     activeLabel = label;
+    // Picking a row is the action the warning asked for; clear it immediately.
+    if (notice?.includes("instrument row first")) notice = null;
   }
 
   async function openOrder(key: string | null, side: "B" | "S") {
@@ -213,10 +215,11 @@
     }
     if (!activeKey) {
       event.preventDefault();
-      notice = "Hover an instrument row first; F1 buys, F2 sells.";
+      notice = "Hover or click an instrument row first; F1 buys, F2 sells.";
       return;
     }
     event.preventDefault();
+    notice = null;
     void openOrder(activeKey, side);
   }
 

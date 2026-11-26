@@ -31,7 +31,9 @@
     onreorder: (order: string[]) => Promise<void>;
     onrename: (oldName: string, newName: string) => Promise<void>;
     oncreate: (name: string) => Promise<void>;
+    ondelete: (name: string) => Promise<void>;
     onreorderkeys: (group: string, keys: string[]) => Promise<void>;
+    onactive: (key: string, label: string) => void;
   }
   let {
     cards,
@@ -43,7 +45,9 @@
     onreorder,
     onrename,
     oncreate,
+    ondelete,
     onreorderkeys,
+    onactive,
   }: Props = $props();
 
   let order = $state<string[]>([]);
@@ -57,6 +61,7 @@
   let createDraft = $state("");
   let rowDragKey = $state<string | null>(null);
   let rowDragGroup = $state<string | null>(null);
+  let armedKey = $state<string | null>(null);
   let dragName = $state<string | null>(null);
   let dropTarget = $state<string | null>(null);
   let dragMoved = false;
@@ -175,6 +180,19 @@
     }
   }
 
+  async function deleteCard(name: string, event: MouseEvent) {
+    event.stopPropagation();
+    if (!window.confirm(`Delete card "${name}"? Its instrument list is removed from the card view.`)) {
+      return;
+    }
+    error = null;
+    try {
+      await ondelete(name);
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
   async function createCard() {
     const name = createDraft.trim();
     if (name === "") return;
@@ -186,6 +204,11 @@
     } catch (e) {
       error = String(e);
     }
+  }
+
+  function arm(row: ContainerRowDto) {
+    armedKey = row.key;
+    onactive(row.key, row.symbol);
   }
 
   function startRowDrag(event: DragEvent, group: string, key: string) {
@@ -399,6 +422,15 @@
         >
           {isCollapsed(card.name) ? "v" : "^"}
         </button>
+        <button
+          class="icon group-card-delete"
+          type="button"
+          title={`Delete ${card.name}`}
+          aria-label={`Delete ${card.name}`}
+          onclick={(event) => void deleteCard(card.name, event)}
+        >
+          x
+        </button>
       </header>
 
       {#if searchFor === card.name}
@@ -463,12 +495,23 @@
               {@const kind = instrumentKind(row)}
               <div
                 class="group-card-row"
-                role="listitem"
+                class:armed={armedKey === row.key}
+                role="option"
+                aria-selected={armedKey === row.key}
                 aria-label={`${row.symbol} in ${card.name}`}
+                tabindex="0"
                 class:row-draggable={sortMode === "custom"}
                 class:dragging={rowDragKey === row.key && rowDragGroup === card.name}
                 draggable={sortMode === "custom"}
                 title={row.name ?? row.symbol}
+                onmouseenter={() => arm(row)}
+                onclick={() => arm(row)}
+                onkeydown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    arm(row);
+                  }
+                }}
                 ondragstart={(event) => startRowDrag(event, card.name, row.key)}
                 ondragover={(event) => {
                   if (sortMode === "custom" && rowDragGroup === card.name) event.preventDefault();
@@ -495,7 +538,10 @@
                   type="button"
                   title={`Remove ${row.symbol} from ${card.name}`}
                   aria-label={`Remove ${row.symbol} from ${card.name}`}
-                  onclick={() => removeInstrument(card.name, row)}>x</button
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    void removeInstrument(card.name, row);
+                  }}>x</button
                 >
               </div>
             {/each}

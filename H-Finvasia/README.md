@@ -92,12 +92,13 @@ bar above it to find an NSE stock. The groups sidebar creates, deletes and renam
 (double-click a name to edit), and each group has a color chip that opens the system color picker.
 **Cards** renders every group as a card in a three-column, endlessly scrolling grid. Cards can be
 dragged to reorder (the order is saved in `watch-groups.json`), collapsed individually, renamed
-inline (double-click the name), and each carries a **+** search that adds stocks, futures, indices or
-options to that specific group. A **New card** tile creates an empty group, and **Sort** switches
-both layouts between name, price, insertion order and a **Custom** order (drag rows in a card while
-Custom is selected). Adding to the active group also updates the live watch list; adding to another
-group stays local until it is activated. The active group is the live watch list, so switching it
-re-subscribes within the 100-instrument budget.
+inline (double-click the name), and deleted with the card's **x** button. Each card carries a **+**
+search that adds stocks, futures, indices or options to that specific group. A **New card** tile
+creates an empty group, and **Sort** switches both layouts between name, price, insertion order and
+a **Custom** order (drag rows in a card while Custom is selected). Cards keep their natural content
+height and the grid scrolls vertically instead of squeezing row content. Adding to the active group
+also updates the live watch list; adding to another group stays local until it is activated. The
+active group is the live watch list, so switching it re-subscribes within the 100-instrument budget.
 
 **Option chain** uses the usual quad layout: calls on the left, puts on the right, strike price in
 the middle. Each side is mirrored around the strike (trade, OI, d OI, volume, LTP, change, bid qty,
@@ -113,9 +114,9 @@ resize the height, drag the middle divider to resize the columns, and collapse i
 bar. It is collapsed by default so no account REST calls happen until you open it; refreshes are
 manual, never on a timer.
 
-**F1 / F2** buy and sell the last hovered row (or option leg) from Stocks, Instruments, Market watch
-or the option chain. The tabs bar shows the active target. If the instrument is not tradeable the
-app explains instead of opening a ticket.
+**F1 / F2** buy and sell the last hovered or clicked row (or option leg) from Stocks, Instruments,
+Market watch or the option chain. The tabs bar shows the active target; the card view highlights the
+armed row. If the instrument is not tradeable the app explains instead of opening a ticket.
 
 **Appearance** (More -> Appearance) offers eleven themes - Midnight, Graphite, Ocean, Contrast,
 Light, Nord, Solarized, Tokyo Night, Forest, Plum and Sand - plus six accent presets and a custom
@@ -297,8 +298,8 @@ scripts/make-icon.ps1      regenerates src-tauri/icons
   the card view search (`+` on a group) deliberately searches the full master so options, futures
   and indices can be added there. A group's non-active rows have no live quote until it is made
   active, because only the active group owns the 100-instrument subscription budget.
-- **F1/F2 act on the last hovered row/leg.** The shortcut target is shown in the tabs bar; remapping
-  keys is not configurable yet.
+- **F1/F2 act on the last hovered or clicked row/leg.** The shortcut target is shown in the tabs
+  bar; remapping keys is not configurable yet.
 - **Themes and group colours are stored on this machine** (localStorage / `watch-groups.json`).
   They are not synced to other devices.
 - **Live feed is verified for touchline ticks** (`tk`/`tf`). Depth (`dk`/`df`) and order updates

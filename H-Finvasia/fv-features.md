@@ -1234,8 +1234,9 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
 
 ### Phase 2q - group editing, sorting, margin and extended orders (implemented)
 
-- **Cards** now support inline rename (double-click), a **New card** tile that creates an empty group
-  without stealing the active watch list, and both layouts share a **Sort** selector: Name,
+- **Cards** now support inline rename (double-click), an **x** delete action, a **New card** tile that
+  creates an empty group without stealing the active watch list, and both layouts share a **Sort**
+  selector: Name,
   Price (high first), Added and Custom. Custom order is stored per group in `watch-groups.json`;
   dragging rows inside a card while Custom is selected updates it. The list layout applies the same
   custom order to its visible cash-equity rows.

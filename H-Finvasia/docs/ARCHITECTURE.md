@@ -156,7 +156,7 @@ screenshots and release probes stay broker-free.
 
 ### 4.10 One order target for every tradeable row
 
-Rows do not build tickets themselves. They publish `(key, label)` on hover; the App asks
+Rows do not build tickets themselves. They publish `(key, label)` on hover and click; the App asks
 `order_target` for the instrument metadata and quote, then opens the single global ticket. F1/F2
 resolve through the same path. This keeps lot size, exchange, symbol and price handling identical
 for stocks, futures and options, and lets non-live sources disable confirmation in one place. The

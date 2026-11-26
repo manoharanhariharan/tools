@@ -253,6 +253,22 @@
     }
   }
 
+  async function cardDelete(name: string) {
+    if (busy) return;
+    busy = true;
+    error = null;
+    try {
+      containers = await api.containerDelete(name);
+      await Promise.all([loadCards(), loadRows(), loadContainers()]);
+      notice = `Deleted card "${name}".`;
+    } catch (e) {
+      error = String(e);
+      throw e;
+    } finally {
+      busy = false;
+    }
+  }
+
   async function cardReorderKeys(group: string, keys: string[]) {
     if (busy) return;
     busy = true;
@@ -448,7 +464,9 @@
       onreorder={cardReorder}
       onrename={cardRename}
       oncreate={cardCreate}
+      ondelete={cardDelete}
       onreorderkeys={cardReorderKeys}
+      {onactive}
     />
   {:else}
   <div class="stocks-body">
@@ -616,6 +634,13 @@
               role="row"
               tabindex="-1"
               onmouseenter={() => onactive(row.key, row.symbol)}
+              onclick={() => onactive(row.key, row.symbol)}
+              onkeydown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onactive(row.key, row.symbol);
+                }
+              }}
               title={row.has_fno
                 ? "F&O available - right-click for the option chain"
                 : (row.name ?? undefined)}
@@ -642,7 +667,10 @@
                 <button
                   class="ghost tiny"
                   title="Remove from group"
-                  onclick={() => onremove(row.key)}>watching</button
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    onremove(row.key);
+                  }}>watching</button
                 >
               </span>
             </div>
