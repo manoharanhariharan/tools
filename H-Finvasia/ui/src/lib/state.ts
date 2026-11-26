@@ -1,4 +1,4 @@
-import type { QuoteDto, Trend } from "./api";
+﻿import type { QuoteDto, Trend } from "./api";
 
 /** A display-ready row. Formatting happens once, not per render. */
 export interface QuoteRow {
@@ -15,7 +15,7 @@ export interface QuoteRow {
   updated: number;
 }
 
-const DASH = "—";
+const DASH = "â€”";
 
 export function formatVolume(value: number | null | undefined): string {
   if (value === null || value === undefined) return DASH;
@@ -90,12 +90,17 @@ export class QuoteTable {
     this.upsert(quotes);
   }
 
-  /** Merge a delta. Unknown keys are appended so no data is silently dropped. */
+  /**
+   * Merge a delta into rows that are already on the watch list.
+   *
+   * Unknown keys are deliberately ignored: option-chain legs and other
+   * subscription groups stream through the same delta event, and appending them
+   * here would silently grow the market watch with instruments the user never
+   * added.
+   */
   upsert(quotes: QuoteDto[]): void {
     for (const quote of quotes) {
-      if (!this.byKey.has(quote.key) && !this.order.includes(quote.key)) {
-        this.order.push(quote.key);
-      }
+      if (!this.byKey.has(quote.key)) continue;
       this.byKey.set(quote.key, toRow(quote));
     }
   }

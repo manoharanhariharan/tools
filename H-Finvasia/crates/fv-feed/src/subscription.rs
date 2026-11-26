@@ -66,6 +66,21 @@ impl WatchSet {
         self.active.is_empty()
     }
 
+    /// Replace the active set outright, returning what was accepted and what
+    /// overflowed the budget.
+    ///
+    /// Used when the caller owns the diffing (for example, `MarketData` keeps a
+    /// second subscription group and must diff the *union*).
+    pub fn replace(
+        &mut self,
+        target: &BTreeSet<SymbolKey>,
+    ) -> (BTreeSet<SymbolKey>, Vec<SymbolKey>) {
+        let accepted: BTreeSet<SymbolKey> = target.iter().take(self.max).cloned().collect();
+        let rejected: Vec<SymbolKey> = target.iter().skip(self.max).cloned().collect();
+        self.active = accepted.clone();
+        (accepted, rejected)
+    }
+
     /// Compute (and commit) the minimal set of subscribe/unsubscribe operations
     /// that moves `active` to `target`.
     ///

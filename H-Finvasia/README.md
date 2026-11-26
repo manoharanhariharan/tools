@@ -87,6 +87,19 @@ For live data press **Diagnostics → Connect live**. The session is resolved au
 a TOTP login from `fv-cred.json`. The stored token is only read, never overwritten, so other tools
 keep their session. Verified against the live venue (NTPC/ACC streaming with bid/ask and volume).
 
+### Operating limits (deliberately gentle on the broker)
+
+| Rule | Value |
+|---|---|
+| Total instruments subscribed at once | **100** (watch + option chain combined) |
+| Option-chain legs subscribed | only a ± strikes window (default ±10 = 42 legs); the rest is browsable metadata |
+| Websocket connections per session | 1, opened only when you press *Connect live* |
+| Automatic broker calls | none — no polling, no startup login, no background reconnects beyond backoff |
+
+Overflow is **refused and reported**, never silently dropped. The status bar shows
+`subscribed N/100` so the budget is always visible.
+
+
 ---
 
 ## Releases

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+﻿import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 export type Trend = "up" | "down" | "flat";
@@ -22,6 +22,8 @@ export interface QuoteDto {
   volume: number | null;
   bid: PriceDto | null;
   ask: PriceDto | null;
+  bid_qty: number | null;
+  ask_qty: number | null;
   trend: Trend;
   seq: number;
   updated_at_ms: number;
@@ -37,6 +39,18 @@ export interface InstrumentDto {
   strike_type: string;
   lot_size: number;
   instrument_type: string;
+}
+
+export interface ChainRowDto {
+  key: string;
+  exchange: string;
+  symbol: string;
+  expiry: string | null;
+  strike: string;
+  strike_type: string;
+  lot_size: number;
+  quote: QuoteDto | null;
+  live: boolean;
 }
 
 export interface DeltaDto {
@@ -61,6 +75,8 @@ export interface StatusDto {
   instruments: number;
   watched: number;
   watch_limit: number;
+  subscribed: number;
+  subscription_limit: number;
   frames_total: number;
   frames_error: number;
   frames_per_sec: number;
@@ -103,6 +119,10 @@ export const api = {
     invoke<string[]>("start_replay", { path, hz }),
   startLive: () => invoke<string[]>("start_live"),
   sessionInfo: () => invoke<SessionInfo>("session_info"),
+  chainExpiries: (underlying: string) => invoke<string[]>("chain_expiries", { underlying }),
+  chainLoad: (underlying: string, expiry: string, strikes: number, atm: string | null) =>
+    invoke<ChainRowDto[]>("chain_load", { underlying, expiry, strikes, atm }),
+  chainClose: () => invoke<void>("chain_close"),
   stopFeed: () => invoke<void>("stop_feed"),
 };
 

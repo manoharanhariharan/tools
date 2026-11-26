@@ -1,4 +1,4 @@
-//! UI-facing market state.
+﻿//! UI-facing market state.
 //!
 //! Deliberately has **no Tauri dependency** so the whole thing is unit-testable
 //! without a webview. `src-tauri` is a thin adapter over this type.
@@ -18,15 +18,25 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::dto::{
-    DeltaDto, InstrumentDto, PlanDto, PriceDto, QuoteDto, SourceKind, StatusDto, Trend,
+    ChainRowDto, DeltaDto, InstrumentDto, PlanDto, PriceDto, QuoteDto, SourceKind, StatusDto, Trend,
 };
 
-/// Default watch budget. The venue publishes no scrip cap; this is a UI-side
-/// guard so a runaway option chain cannot allocate without bound.
-pub const DEFAULT_WATCH_LIMIT: usize = 500;
+/// Default watch budget.
+///
+/// Deliberately conservative: the operator asked that we touch the broker with no
+/// more than 100 instruments at a time. The venue publishes no cap, so this is a
+/// self-imposed politeness limit, not a technical one.
+pub const DEFAULT_WATCH_LIMIT: usize = 100;
 
 /// Frames per coalesced UI batch.
 pub const DEFAULT_MAX_PER_FRAME: usize = 600;
+
+/// Maximum option-chain legs subscribed at once.
+pub const DEFAULT_CHAIN_LIMIT: usize = 100;
+
+/// Hard ceiling on simultaneous subscriptions across **every** group
+/// (watch + option chain). Exceeding it is refused, not truncated silently.
+pub const MAX_TOTAL_SUBSCRIPTIONS: usize = 100;
 
 struct RateMeter {
     count: u64,
@@ -64,6 +74,9 @@ pub struct MarketData {
     book: QuoteBook,
     coalescer: Coalescer,
     watch: WatchSet,
+    /// Option-chain subscriptions, tracked separately from the watch list.
+    chain: BTreeSet<SymbolKey>,
+    chain_limit: usize,
     master: Option<Arc<MemoryMaster>>,
     source: SourceKind,
     connected: bool,
@@ -82,6 +95,8 @@ impl MarketData {
             book: QuoteBook::new(),
             coalescer: Coalescer::new(30, DEFAULT_MAX_PER_FRAME),
             watch: WatchSet::new(DEFAULT_WATCH_LIMIT),
+            chain: BTreeSet::new(),
+            chain_limit: DEFAULT_CHAIN_LIMIT,
             master: None,
             source: SourceKind::Idle,
             connected: false,
@@ -97,6 +112,10 @@ impl MarketData {
     pub fn with_watch_limit(mut self, limit: usize) -> Self {
         self.watch = WatchSet::new(limit);
         self
+    }
+
+    pub fn master(&self) -> Option<&MemoryMaster> {
+        self.master.as_deref()
     }
 
     pub fn set_master(&mut self, master: Arc<MemoryMaster>) {
@@ -206,18 +225,108 @@ impl MarketData {
         self.watch.active().iter().map(|k| k.as_wire()).collect()
     }
 
-    /// Replace the watch set. Emits the minimal subscribe/unsubscribe plan,
-    /// reports overflow, and drops quotes for instruments no longer watched so
-    /// memory tracks the watch list instead of the whole session.
-    pub fn set_watch(&mut self, keys: Vec<SymbolKey>) -> PlanDto {
-        let target: BTreeSet<SymbolKey> = keys.into_iter().collect();
-        let plan = self.watch.reconcile(&target);
-        self.book.retain_keys(self.watch.active());
+    /// The union of every subscribed instrument: the watch list plus the option
+    /// chain. Both groups are subscribed, but only the watch list is the user's
+    /// portfolio-style list.
+    fn desired_keys(&self) -> BTreeSet<SymbolKey> {
+        self.watch
+            .active()
+            .union(&self.chain)
+            .cloned()
+            .collect::<BTreeSet<_>>()
+    }
+
+    /// Diff the union before/after a group change so a key still needed by the
+    /// other group is never unsubscribed.
+    fn reconcile(&mut self, before: BTreeSet<SymbolKey>, rejected: Vec<SymbolKey>) -> PlanDto {
+        let after = self.desired_keys();
+        let subscribe: Vec<SymbolKey> = after.difference(&before).cloned().collect();
+        let unsubscribe: Vec<SymbolKey> = before.difference(&after).cloned().collect();
+        self.book.retain_keys(&after);
         PlanDto {
-            subscribe: plan.subscribe.iter().map(|k| k.as_wire()).collect(),
-            unsubscribe: plan.unsubscribe.iter().map(|k| k.as_wire()).collect(),
-            rejected: plan.rejected.iter().map(|k| k.as_wire()).collect(),
-            truncated: plan.truncated,
+            subscribe: subscribe.iter().map(|k| k.as_wire()).collect(),
+            unsubscribe: unsubscribe.iter().map(|k| k.as_wire()).collect(),
+            rejected: rejected.iter().map(|k| k.as_wire()).collect(),
+            truncated: !rejected.is_empty(),
+        }
+    }
+
+    /// Replace the watch set. Emits the minimal subscribe/unsubscribe plan and
+    /// drops quotes for instruments that are no longer needed by any group.
+    pub fn set_watch(&mut self, keys: Vec<SymbolKey>) -> PlanDto {
+        let before = self.desired_keys();
+        let target: BTreeSet<SymbolKey> = keys.into_iter().collect();
+        let (_accepted, mut rejected) = self.watch.replace(&target);
+        // Growing the watch list can push the chain over the global budget.
+        rejected.extend(self.clamp_chain());
+        self.reconcile(before, rejected)
+    }
+
+    /// Trim the chain group so the union stays within
+    /// [`MAX_TOTAL_SUBSCRIPTIONS`]. Returns the dropped keys.
+    fn clamp_chain(&mut self) -> Vec<SymbolKey> {
+        let available = MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(self.watch.len());
+        if self.chain.len() <= available {
+            return Vec::new();
+        }
+        let keep: BTreeSet<SymbolKey> = self.chain.iter().take(available).cloned().collect();
+        let dropped: Vec<SymbolKey> = self.chain.difference(&keep).cloned().collect();
+        self.chain = keep;
+        dropped
+    }
+
+    /// Replace the option-chain subscription group.
+    ///
+    /// Kept separate from the watch list because a single chain can exceed the
+    /// watch budget, and legs should not appear in the user's portfolio list.
+    pub fn set_chain(&mut self, keys: Vec<SymbolKey>) -> PlanDto {
+        let before = self.desired_keys();
+        let target: BTreeSet<SymbolKey> = keys.into_iter().collect();
+        let available = self
+            .chain_limit
+            .min(MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(self.watch.len()));
+        let accepted: BTreeSet<SymbolKey> = target.iter().take(available).cloned().collect();
+        let rejected: Vec<SymbolKey> = target.iter().skip(available).cloned().collect();
+        self.chain = accepted;
+        if !rejected.is_empty() {
+            tracing::warn!(
+                requested = target.len(),
+                accepted = available,
+                dropped = rejected.len(),
+                "option chain request clamped to the subscription budget"
+            );
+        }
+        self.reconcile(before, rejected)
+    }
+
+    /// Drop every chain subscription (leaving the watch list untouched).
+    pub fn clear_chain(&mut self) -> PlanDto {
+        let before = self.desired_keys();
+        self.chain.clear();
+        self.reconcile(before, Vec::new())
+    }
+
+    pub fn chain_len(&self) -> usize {
+        self.chain.len()
+    }
+
+    /// Total unique instruments currently subscribed (watch ∪ chain).
+    pub fn subscribed_len(&self) -> usize {
+        self.desired_keys().len()
+    }
+
+    /// One option-chain row: static instrument metadata plus the live quote.
+    pub fn chain_row(&self, instrument: &Instrument) -> ChainRowDto {
+        ChainRowDto {
+            key: instrument.key.as_wire(),
+            exchange: instrument.key.exchange().to_string(),
+            symbol: instrument.trading_symbol.clone(),
+            expiry: instrument.expiry.clone(),
+            strike: instrument.strike.format(2),
+            strike_type: instrument.strike_type.as_str().to_string(),
+            lot_size: instrument.lot_size,
+            quote: self.book.get(&instrument.key).map(quote_dto),
+            live: self.chain.contains(&instrument.key),
         }
     }
 
@@ -245,6 +354,8 @@ impl MarketData {
             instruments: self.master.as_ref().map(|m| m.len()).unwrap_or(0),
             watched: self.watch.len(),
             watch_limit: self.watch.max(),
+            subscribed: self.subscribed_len(),
+            subscription_limit: MAX_TOTAL_SUBSCRIPTIONS,
             frames_total: self.frames_total,
             frames_error: self.frames_error,
             frames_per_sec: self.rate.per_sec(now),
@@ -272,6 +383,53 @@ impl MarketData {
             .and_then(|m| m.get(&key))
             .map(instrument_dto)
     }
+}
+
+/// Pick a narrow window of strikes around `atm`.
+///
+/// A full expiry can be hundreds of legs; subscribing all of them is both
+/// unnecessary and impolite to the venue. This returns the keys for at most
+/// `strikes_each_side * 2 + 1` strikes (CE and PE), centred on the strike
+/// nearest `atm` (or the middle of the chain when no ATM is known).
+pub fn chain_window(
+    legs: &[Instrument],
+    strikes_each_side: usize,
+    atm: Option<Price>,
+) -> Vec<SymbolKey> {
+    if legs.is_empty() {
+        return Vec::new();
+    }
+
+    let mut strikes: Vec<Price> = legs.iter().map(|leg| leg.strike).collect();
+    strikes.sort();
+    strikes.dedup();
+    if strikes.is_empty() {
+        return Vec::new();
+    }
+
+    let centre = match atm {
+        Some(target) => strikes
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, strike)| {
+                let a = strike.scaled() as i128;
+                let b = target.scaled() as i128;
+                (a - b).unsigned_abs()
+            })
+            .map(|(index, _)| index)
+            .unwrap_or(strikes.len() / 2),
+        None => strikes.len() / 2,
+    };
+
+    let start = centre.saturating_sub(strikes_each_side);
+    let end = (centre + strikes_each_side).min(strikes.len() - 1);
+    let selected: std::collections::BTreeSet<Price> =
+        strikes[start..=end].iter().copied().collect();
+
+    legs.iter()
+        .filter(|leg| selected.contains(&leg.strike))
+        .map(|leg| leg.key.clone())
+        .collect()
 }
 
 fn price_dto(price: Price, decimals: u8) -> PriceDto {
@@ -307,6 +465,8 @@ fn quote_dto(quote: &Quote) -> QuoteDto {
         volume: quote.volume,
         bid: quote.best_bid.map(|p| price_dto(p, d)),
         ask: quote.best_ask.map(|p| price_dto(p, d)),
+        bid_qty: quote.best_bid_qty,
+        ask_qty: quote.best_ask_qty,
         trend,
         seq: quote.seq,
         updated_at_ms: quote.updated_at_ms,

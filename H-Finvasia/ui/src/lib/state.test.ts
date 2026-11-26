@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import { formatVolume, QuoteTable, toRow, trendClass } from "./state";
 import type { QuoteDto } from "./api";
 
@@ -16,6 +16,8 @@ function quote(overrides: Partial<QuoteDto> = {}): QuoteDto {
     volume: 980_515,
     bid: { text: "1287.25", e6: 1_287_250_000 },
     ask: { text: "1287.35", e6: 1_287_350_000 },
+    bid_qty: 26,
+    ask_qty: 6325,
     trend: "up",
     seq: 1,
     updated_at_ms: 1,
@@ -32,8 +34,8 @@ describe("formatVolume", () => {
   });
 
   it("renders a dash for missing values", () => {
-    expect(formatVolume(null)).toBe("—");
-    expect(formatVolume(undefined)).toBe("—");
+    expect(formatVolume(null)).toBe("â€”");
+    expect(formatVolume(undefined)).toBe("â€”");
   });
 
   it("keeps negative values readable", () => {
@@ -57,9 +59,9 @@ describe("toRow", () => {
 
   it("uses dashes for absent prices", () => {
     const row = toRow(quote({ ltp: null, change: null, pct: null, bid: null, ask: null }));
-    expect(row.ltp).toBe("—");
-    expect(row.change).toBe("—");
-    expect(row.pct).toBe("—");
+    expect(row.ltp).toBe("â€”");
+    expect(row.change).toBe("â€”");
+    expect(row.pct).toBe("â€”");
   });
 });
 
@@ -106,16 +108,16 @@ describe("QuoteTable", () => {
     table.setKeys(["NSE|2885"]);
     const row = table.get("NSE|2885");
     expect(row).toBeDefined();
-    expect(row?.ltp).toBe("—");
+    expect(row?.ltp).toBe("â€”");
     expect(table.rows()).toHaveLength(1);
   });
 
-  it("appends unknown delta keys instead of dropping data", () => {
+  it("ignores deltas for instruments that are not on the watch list", () => {
     const table = new QuoteTable();
     table.setKeys(["NSE|1"]);
     table.upsert([quote({ key: "NSE|9" })]);
-    expect(table.keys()).toContain("NSE|9");
-    expect(table.size()).toBe(2);
+    expect(table.keys()).not.toContain("NSE|9");
+    expect(table.size()).toBe(1);
   });
 
   it("exposes rows in key order", () => {

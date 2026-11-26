@@ -179,6 +179,20 @@ Rules:
 - Web-minted sessions need `source:"WEB"`; the client retries once with `"API"` on `NOT_OK` and then
   surfaces `Rejected` to the UI instead of pretending to be live.
 
+### 5.2 Subscription budget (politeness rule)
+
+The operator asked that the broker be touched with **at most 100 instruments at a time**. That is a
+product rule, not a venue limit, and it is enforced in three places:
+
+| Place | Rule |
+|---|---|
+| `MarketData` | `MAX_TOTAL_SUBSCRIPTIONS = 100` across watch **and** chain; `set_chain` clamps, `set_watch` trims the chain group |
+| `chain_load` | subscribes only `chain_window(...)` (±N strikes around the ATM, default ±10), never the whole expiry |
+| UI | nothing is subscribed on page open; *Load and subscribe* is an explicit action, and the status bar shows `subscribed N/100` |
+
+Overflow is returned in the `PlanDto` (`rejected`, `truncated`) and shown, never silently dropped.
+The full chain is still browsable because it comes from the local master, not the venue.
+
 ## 6. Cross-platform rules| Rule | Reason |
 |---|---|
 | No `cfg(windows)` outside the optional Excel crate | core compiles identically everywhere |

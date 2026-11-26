@@ -885,12 +885,12 @@ Phase 0/1 is implemented and verified ([`README.md`](README.md), [`docs/ARCHITEC
 | `fv-master` | `MemoryMaster` index/search/option-chain, Mongo loader (both collection shapes), multi-term search | 18 |
 | `fv-store` | memory + Mongo backends, tracker freshness rule, snapshot upsert, order journal | 16 |
 | `fv-engine` | `Coalescer` (bounded, deterministic), `TokenBucket` (venue limits) | 12 |
-| `fv-bridge` | `MarketData` state, watch diffing, DTO formatting, trend/placeholder rules | 13 |
+| `fv-bridge` | `MarketData` state, watch/chain diffing, subscription budget, DTO formatting | 21 |
 | `fv-cli` | build-date calendar + CLI contract as a real process | 8 |
 | `ui/` | formatting + `QuoteTable` merge/prune/placeholder (vitest) | 14 |
-| **Total** | | **140** |
+| **Total** | | **148** |
 
-Gates: `cargo test --workspace` (122 Rust), `npm test` (14 UI), `cargo clippy --workspace
+Gates: `cargo test --workspace` (134 Rust), `npm test` (14 UI), `cargo clippy --workspace
 --all-targets -- -D warnings`, `cargo fmt --check`, `svelte-check` (0 errors/warnings).
 Shipped via `scripts/release.ps1` into `releases/` as a desktop app plus a CLI.
 
@@ -1002,6 +1002,31 @@ Two usability gaps reported after using the app:
     and the full set is re-sent after any reconnect. Verified live: adding
     `NIFTY01DEC26C25800` logged `subscribed while live count=1` and the row began ticking
     (245.65 -> 245.30 with bid/ask and volume) on the *same* connection - no reconnect.
+
+---
+
+### Phase 2d - option chain, with a hard subscription budget (implemented)
+
+The legacy screenshot shows ~10 windows. Only the option chain is implemented so far; the trading
+books need the REST scope decision (see below).
+
+11. **Option chain**: full expiry browsable from the local master (550 NIFTY legs), but only a
+    **window around the money** is subscribed (default ±10 strikes = 42 legs). The UI shows
+    `N legs / M live` so the difference is obvious, and nothing is subscribed until the user presses
+    *Load and subscribe*.
+
+12. **A 550-leg chain polluted the market watch.** `QuoteTable.upsert` appended unknown delta keys,
+    so every chain leg appeared in the watch grid and was labelled "watching". Deltas now update only
+    rows that are already on the watch list.
+
+13. **Hard ceiling of 100 simultaneous subscriptions** across watch + chain
+    (`MAX_TOTAL_SUBSCRIPTIONS`). Growing the watch list trims the chain group; overflow is returned in
+    the plan and surfaced in the UI. `status.subscribed` / `subscription_limit` expose the budget, and
+    the status bar renders `subscribed N/100`.
+
+Verified with one connection: 550-leg chain browsable, **42 subscribed**, `subscribed 45/100`
+(3 watch + 42 chain), bid/qty/LTP/ask/qty/change/%/volume all populated, and every chain row showing
+*Add* rather than "watching".
 
 ---
 

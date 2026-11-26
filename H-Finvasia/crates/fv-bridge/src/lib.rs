@@ -6,8 +6,13 @@
 pub mod dto;
 pub mod market;
 
-pub use dto::{DeltaDto, InstrumentDto, PlanDto, PriceDto, QuoteDto, SourceKind, StatusDto, Trend};
-pub use market::{build_label, MarketData, DEFAULT_MAX_PER_FRAME, DEFAULT_WATCH_LIMIT};
+pub use dto::{
+    ChainRowDto, DeltaDto, InstrumentDto, PlanDto, PriceDto, QuoteDto, SourceKind, StatusDto, Trend,
+};
+pub use market::{
+    build_label, chain_window, MarketData, DEFAULT_CHAIN_LIMIT, DEFAULT_MAX_PER_FRAME,
+    DEFAULT_WATCH_LIMIT, MAX_TOTAL_SUBSCRIPTIONS,
+};
 
 #[cfg(test)]
 mod tests {
@@ -252,6 +257,180 @@ mod tests {
         assert_eq!(s.source, SourceKind::Replay);
         md.set_source(SourceKind::Idle);
         assert!(!md.status(Instant::now()).connected);
+    }
+
+    #[test]
+    fn chain_subscriptions_are_separate_from_the_watch_list() {
+        let mut md = market();
+        let watched = SymbolKey::parse("NSE|1").unwrap();
+        let leg_a = SymbolKey::parse("NFO|100").unwrap();
+        let leg_b = SymbolKey::parse("NFO|101").unwrap();
+
+        md.set_watch(vec![watched.clone()]);
+        let plan = md.set_chain(vec![leg_a.clone(), leg_b.clone()]);
+        assert_eq!(plan.subscribe, vec!["NFO|100", "NFO|101"]);
+        assert!(plan.unsubscribe.is_empty());
+        assert_eq!(
+            md.watched(),
+            vec!["NSE|1"],
+            "chain must not join the watch list"
+        );
+        assert_eq!(md.chain_len(), 2);
+    }
+
+    #[test]
+    fn overlapping_key_is_not_unsubscribed_by_one_group() {
+        let mut md = market();
+        let shared = SymbolKey::parse("NSE|1").unwrap();
+        md.set_watch(vec![shared.clone()]);
+        md.set_chain(vec![shared.clone()]);
+
+        // Dropping it from the watch list must keep the chain subscription.
+        let plan = md.remove_from_watch("NSE|1");
+        assert!(plan.unsubscribe.is_empty(), "still needed by the chain");
+        assert_eq!(md.chain_len(), 1);
+
+        // Removing it from the chain now unsubscribes for real.
+        let plan = md.clear_chain();
+        assert_eq!(plan.unsubscribe, vec!["NSE|1"]);
+    }
+
+    #[test]
+    fn chain_rows_carry_metadata_and_quotes() {
+        let mut md = market();
+        md.set_master(master());
+        let key = SymbolKey::parse("NFO|158614").unwrap();
+        md.set_chain(vec![key.clone()]);
+        apply(
+            &mut md,
+            br#"{"t":"tk","e":"NFO","tk":"158614","lp":"12.35","bp1":"12.30","sp1":"12.40"}"#,
+        );
+
+        let instrument = md.instrument("NFO|158614").unwrap();
+        let _ = instrument;
+        let master = md.master().unwrap();
+        let raw = master.get(&key).unwrap();
+        let row = md.chain_row(raw);
+        assert_eq!(row.key, "NFO|158614");
+        assert_eq!(row.strike, "1680.00");
+        assert_eq!(row.strike_type, "PE");
+        assert_eq!(
+            row.quote.as_ref().unwrap().ltp.as_ref().unwrap().text,
+            "12.35"
+        );
+    }
+
+    #[test]
+    fn chain_rows_are_returned_before_the_first_tick() {
+        let mut md = market();
+        md.set_master(master());
+        let key = SymbolKey::parse("NFO|158614").unwrap();
+        md.set_chain(vec![key]);
+        let raw = md
+            .master()
+            .unwrap()
+            .get(&SymbolKey::parse("NFO|158614").unwrap())
+            .unwrap();
+        let row = md.chain_row(raw);
+        assert!(row.quote.is_none(), "no quote yet");
+        assert_eq!(row.symbol, "ZYDUSLIFE23FEB27P1680");
+    }
+
+    #[test]
+    fn chain_window_subscribes_only_the_strikes_around_the_money() {
+        use fv_core::Price;
+        use fv_master::{Instrument, StrikeType};
+
+        let legs: Vec<Instrument> = [25000, 25500, 25600, 25700, 25800, 25900, 26000, 26500]
+            .iter()
+            .flat_map(|strike| {
+                ["CE", "PE"].iter().map(move |side| Instrument {
+                    key: SymbolKey::parse(&format!(
+                        "NFO|{}{}",
+                        strike,
+                        if *side == "CE" { 1 } else { 2 }
+                    ))
+                    .unwrap(),
+                    trading_symbol: format!("NIFTY{strike}{side}"),
+                    name: Some("NIFTY".into()),
+                    underlying: Some("NIFTY".into()),
+                    expiry: Some("2026-12-01".into()),
+                    strike: Price::parse(&strike.to_string()).unwrap(),
+                    strike_type: if *side == "CE" {
+                        StrikeType::Call
+                    } else {
+                        StrikeType::Put
+                    },
+                    lot_size: 65,
+                    instrument_type: side.to_string(),
+                    segment: Some("NFO-OPT".into()),
+                    tick_size: None,
+                })
+            })
+            .collect();
+
+        let window = chain_window(&legs, 1, Some(Price::parse("25800").unwrap()));
+        // 3 strikes (25700, 25800, 25900) x 2 sides.
+        assert_eq!(window.len(), 6);
+        assert!(window.iter().any(|k| k.token() == "258001"));
+        assert!(window.iter().any(|k| k.token() == "258002"));
+        assert!(
+            !window.iter().any(|k| k.token() == "250001"),
+            "far strike excluded"
+        );
+
+        // Without an ATM the window centres on the middle of the chain.
+        let centred = chain_window(&legs, 0, None);
+        assert_eq!(centred.len(), 2, "one strike, both sides");
+    }
+
+    #[test]
+    fn subscription_budget_is_never_exceeded() {
+        let mut md = market();
+        let watch: Vec<SymbolKey> = (0..95)
+            .map(|i| SymbolKey::parse(&format!("NSE|{i}")).unwrap())
+            .collect();
+        md.set_watch(watch);
+
+        let chain: Vec<SymbolKey> = (0..20)
+            .map(|i| SymbolKey::parse(&format!("NFO|{i}")).unwrap())
+            .collect();
+        let plan = md.set_chain(chain);
+
+        assert!(plan.truncated, "overflow must be reported");
+        assert_eq!(plan.rejected.len(), 15);
+        assert_eq!(md.subscribed_len(), MAX_TOTAL_SUBSCRIPTIONS);
+        assert_eq!(md.chain_len(), 5);
+    }
+
+    #[test]
+    fn growing_the_watch_list_trims_the_chain() {
+        let mut md = market();
+        let chain: Vec<SymbolKey> = (0..10)
+            .map(|i| SymbolKey::parse(&format!("NFO|{i}")).unwrap())
+            .collect();
+        md.set_chain(chain);
+
+        let watch: Vec<SymbolKey> = (0..96)
+            .map(|i| SymbolKey::parse(&format!("NSE|{i}")).unwrap())
+            .collect();
+        let plan = md.set_watch(watch);
+
+        assert_eq!(md.chain_len(), 4, "chain yields to the watch list");
+        assert!(
+            !plan.unsubscribe.is_empty(),
+            "trimmed legs are unsubscribed"
+        );
+        assert_eq!(md.subscribed_len(), MAX_TOTAL_SUBSCRIPTIONS);
+    }
+
+    #[test]
+    fn status_reports_the_subscription_budget() {
+        let mut md = market();
+        md.set_watch(vec![SymbolKey::parse("NSE|1").unwrap()]);
+        let status = md.status(Instant::now());
+        assert_eq!(status.subscribed, 1);
+        assert_eq!(status.subscription_limit, MAX_TOTAL_SUBSCRIPTIONS);
     }
 
     #[test]

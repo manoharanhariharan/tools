@@ -1,4 +1,4 @@
-//! Data-transfer objects handed to the UI.
+﻿//! Data-transfer objects handed to the UI.
 //!
 //! Money is never sent as `f64`: every price travels as
 //! * a formatted display string (`"1287.30"`), and
@@ -40,6 +40,8 @@ pub struct QuoteDto {
     pub volume: Option<i64>,
     pub bid: Option<PriceDto>,
     pub ask: Option<PriceDto>,
+    pub bid_qty: Option<i64>,
+    pub ask_qty: Option<i64>,
 
     pub trend: Trend,
     pub seq: u64,
@@ -77,6 +79,21 @@ pub struct PlanDto {
     pub truncated: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ChainRowDto {
+    pub key: String,
+    pub exchange: String,
+    pub symbol: String,
+    pub expiry: Option<String>,
+    pub strike: String,
+    pub strike_type: String,
+    pub lot_size: i64,
+    /// Live/merged quote; `None` until the first tick for this leg.
+    pub quote: Option<QuoteDto>,
+    /// Whether this leg is currently subscribed (and therefore live).
+    pub live: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SourceKind {
@@ -95,6 +112,10 @@ pub struct StatusDto {
     pub instruments: usize,
     pub watched: usize,
     pub watch_limit: usize,
+    /// Unique instruments subscribed across every group (watch + chain).
+    pub subscribed: usize,
+    /// Hard ceiling on [`subscribed`].
+    pub subscription_limit: usize,
     pub frames_total: u64,
     pub frames_error: u64,
     pub frames_per_sec: u64,

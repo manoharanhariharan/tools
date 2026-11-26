@@ -1,4 +1,4 @@
-// Console window only in debug builds; the release app is windowless.
+﻿// Console window only in debug builds; the release app is windowless.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 //! H-Finvasia desktop shell.
@@ -6,7 +6,7 @@
 //! Thin adapter over [`fv_bridge::MarketData`]: owns no market logic itself, only
 //! the Tauri plumbing (commands, events, task lifecycle).
 //!
-//! Threading model â€” deliberately simple and leak-free:
+//! Threading model ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â deliberately simple and leak-free:
 //! * one producer task feeds decoded [`Frame`]s into an mpsc channel;
 //! * one consumer task owns the state lock, absorbs frames, and emits bounded
 //!   `quotes:delta` batches at ~60 Hz;
@@ -292,8 +292,76 @@ async fn session_info() -> session::SessionInfo {
     session::peek().await
 }
 
+// ---------------------------------------------------------------------------
+// Option chain
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn chain_expiries(state: State<'_, Arc<AppState>>, underlying: String) -> Vec<String> {
+    state
+        .market
+        .lock()
+        .unwrap()
+        .master()
+        .map(|master| master.expiries(&underlying))
+        .unwrap_or_default()
+}
+
+/// Load an option chain: subscribe the legs (separate from the watch list) and
+/// return metadata plus any quotes already known.
+#[tauri::command]
+fn chain_load(
+    state: State<'_, Arc<AppState>>,
+    underlying: String,
+    expiry: String,
+    strikes: Option<usize>,
+    atm: Option<String>,
+) -> Result<Vec<fv_bridge::ChainRowDto>, String> {
+    let (plan, rows) = {
+        let mut market = state.market.lock().unwrap();
+
+        let legs: Vec<fv_master::Instrument> = match market.master() {
+            Some(master) => master
+                .option_chain(&underlying, &expiry)
+                .into_iter()
+                .cloned()
+                .collect(),
+            None => return Err("instrument master is still loading".into()),
+        };
+        if legs.is_empty() {
+            return Err(format!("no contracts for {underlying} {expiry}"));
+        }
+
+        // Subscribe only a narrow window around the money. The full chain is
+        // still returned as metadata so the grid can be browsed without asking
+        // the venue for hundreds of instruments.
+        let centre = atm.and_then(|value| fv_core::Price::parse(value.trim()).ok());
+        let window = fv_bridge::chain_window(&legs, strikes.unwrap_or(10).clamp(1, 20), centre);
+        let plan = market.set_chain(window);
+        let rows: Vec<fv_bridge::ChainRowDto> = legs.iter().map(|i| market.chain_row(i)).collect();
+        (plan, rows)
+    };
+
+    forward_plan_to_live(&state, &plan);
+    tracing::info!(
+        underlying = %underlying,
+        expiry = %expiry,
+        legs = rows.len(),
+        new_subs = plan.subscribe.len(),
+        "option chain loaded"
+    );
+    Ok(rows)
+}
+
+#[tauri::command]
+fn chain_close(app: AppHandle, state: State<'_, Arc<AppState>>) {
+    let plan = { state.market.lock().unwrap().clear_chain() };
+    forward_plan_to_live(&state, &plan);
+    let _ = app.emit("chain:closed", ());
+}
+
 /// Connect to the venue. The session is resolved automatically:
-/// env token â†’ persisted Mongo token (validated) â†’ TOTP login.
+/// env token ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ persisted Mongo token (validated) ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ TOTP login.
 #[tauri::command]
 async fn start_live(
     app: AppHandle,
@@ -591,6 +659,9 @@ fn main() {
             start_replay,
             start_live,
             session_info,
+            chain_expiries,
+            chain_load,
+            chain_close,
             stop_feed,
         ])
         .run(tauri::generate_context!())

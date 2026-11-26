@@ -16,8 +16,9 @@
   import SnapQuote from "./lib/features/market/SnapQuote.svelte";
   import InstrumentSearch from "./lib/features/instruments/InstrumentSearch.svelte";
   import Diagnostics from "./lib/features/diagnostics/Diagnostics.svelte";
+  import OptionChain from "./lib/features/chain/OptionChain.svelte";
 
-  type Page = "market" | "instruments" | "diagnostics";
+  type Page = "market" | "chain" | "instruments" | "diagnostics";
 
   const table = new QuoteTable();
 
@@ -264,6 +265,12 @@
       >
       <button
         class="nav-item"
+        class:active={page === "chain"}
+        aria-current={page === "chain" ? "page" : undefined}
+        onclick={() => (page = "chain")}>Option chain</button
+      >
+      <button
+        class="nav-item"
         class:active={page === "instruments"}
         aria-current={page === "instruments" ? "page" : undefined}
         onclick={() => (page = "instruments")}>Instruments</button
@@ -285,7 +292,9 @@
       {/if}
 
       <main class="main" class:with-snap={page === "market"}>
-        {#if page === "market"}
+        {#if page === "chain"}
+          <OptionChain watched={watchedKeys} onadd={addInstrument} />
+        {:else if page === "market"}
           <MarketWatch
             {rows}
             {selected}
