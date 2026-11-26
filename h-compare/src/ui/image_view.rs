@@ -61,19 +61,16 @@ pub fn show(ui: &mut Ui, rel: &str, data: &ImageCompareData, state: &mut ImageUi
             theme::diff(),
         );
         if data.left.is_some() && data.right.is_some() {
+            let same = data.dimensions_match && data.changed_pixels == 0;
             common::stat_chip(
                 ui,
                 "status",
-                if data.changed_pixels == 0 {
+                if same {
                     "identical".to_string()
                 } else {
                     "different".to_string()
                 },
-                if data.changed_pixels == 0 {
-                    theme::same()
-                } else {
-                    theme::diff()
-                },
+                if same { theme::same() } else { theme::diff() },
             );
         }
     });
