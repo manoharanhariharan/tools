@@ -1,16 +1,16 @@
 H-Remote release build
-tag: v26.11.25.7
+tag: v26.11.26.1
 version: 0.1.0
-buildVersion: 26.11.25.7
-commit: 5393962
+buildVersion: 26.11.26.1
+commit: 56ea4ea
 dirty: false
-built: 2026-11-25T18:02:56.700Z
+built: 2026-11-26T01:15:18.206Z
 node: v24.22.1
 rustc: rustc 1.99.1 (58cf8f9c3 2026-10-13)
 cargo: cargo 1.99.1 (5f94df478 2026-08-27)
 signed: no
 
 artifacts:
-286a742058daf715445724ee0a2288edc72408ea80adad54c6ec18d36787482b  7965772  h-remote-v26.11.25.7-setup.exe
-45d70f2fa9ded8f32cd9b13d98a0ad4f84998128255a6286e7d749ffd26d8a63  25236480  h-remote-v26.11.25.7.exe
+d998dcf98c00f4d6b34526c84c8fce452acf7eb7c3f18c23aac996d94c68b36f  7970384  h-remote-v26.11.26.1-setup.exe
+98051a1a038b589b92e7f07208fd10be911931d6af69c622c4a364a990de2911  25240576  h-remote-v26.11.26.1.exe
 
