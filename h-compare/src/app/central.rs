@@ -58,7 +58,7 @@ impl App {
                 let mut reload = false;
                 if let Some(open) = &mut self.open {
                     match open.data.kind {
-                        OpenKind::Text | OpenKind::Pdf => {
+                        OpenKind::Text | OpenKind::Pdf | OpenKind::Word => {
                             if let (Some(view), Some(text_ui)) =
                                 (open.data.text.as_ref(), open.text_ui.as_mut())
                             {
@@ -134,7 +134,7 @@ impl App {
             ui.add_space(4.0);
             ui.label(
                 RichText::new(
-                    "A fast, native folder, text and CSV diff tool. Side-by-side trees, line-level highlights, and a table-aware CSV diff.",
+                    "A fast, native folder, text, CSV, PDF and Word diff tool. Side-by-side trees, line-level highlights, a table-aware CSV diff, and Word/PDF text comparison.",
                 )
                 .color(theme::muted())
                 .size(13.0),
@@ -278,8 +278,8 @@ impl App {
                         ),
                         (
                             Icon::Columns,
-                            "Text, PDF and CSV diffs",
-                            "Line and cell highlights, search, and arrow-key navigation.",
+                            "Text, PDF, Word and CSV diffs",
+                            "Line, cell and document text highlights, search, and arrow-key navigation.",
                         ),
                         (
                             Icon::Settings,

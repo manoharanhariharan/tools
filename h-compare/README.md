@@ -1,11 +1,12 @@
 # H-Compare
 
-A fast, native folder / text / CSV comparison tool written in Rust. It is built for the
-"open two folders and find what changed" workflow, with a Beyond Compare–style layout:
+A fast, native folder / text / CSV / PDF / Word comparison tool written in Rust. It is built for the
+"open two folders and find what changed" workflow:
 
 - recursive folder tree with same / different / left-only / right-only statuses
 - side-by-side text diff with line and character-level highlights, plus merged view
 - table-aware CSV diff with cell-level changes, merged or side-by-side layouts
+- Word (.docx / .doc) text comparison with paragraph and table extraction
 - PDF text diff (Poppler fast path with a bundled pure-Rust fallback)
 - Ten polished theme presets, search, change navigation, copy/sync actions and HTML/CSV exports
 
@@ -74,6 +75,20 @@ A fast, native folder / text / CSV comparison tool written in Rust. It is built 
 - Scanned/image-only PDFs have no text layer and cannot be compared as text; the view
   reports that no text was extracted.
 - Both **Side by side** and **Merged** layouts are available for PDF text.
+
+### Word comparison
+
+- `.docx` and `.docm` files are read directly from `word/document.xml` with no Office
+  installation required.
+- Paragraphs, tabs, line breaks and tables are converted to comparable plain text; table
+  cells are tab-separated and rows become separate lines.
+- Legacy `.doc` files are converted through an installed `soffice`/`libreoffice`, `pandoc`,
+  `antiword` or `catdoc` executable. If none is available, H-Compare explains how to
+  install one or to save the document as `.docx`.
+- Word comparisons use the same side-by-side/merged view, intra-line highlights, search,
+  F7 change navigation, copy and export actions as text and PDF comparisons.
+- Word layout, images, headers/footers, comments and tracked deletions are not part of the
+  text comparison.
 
 ### CSV / TSV comparison
 
@@ -157,6 +172,16 @@ cargo build --release
 ```
 
 The executable is `target/release/hcompare.exe` (or `target/release/hcompare`).
+
+On Windows the exe embeds `assets/hcompare.ico` plus product/version metadata through
+`winres`. Regenerate the icon with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\make-icon.ps1
+```
+
+Legacy `.doc` comparison also needs one of LibreOffice, pandoc, antiword or catdoc
+available on `PATH`; `.docx` and `.docm` work without external tools.
 
 ### Published builds
 
@@ -254,6 +279,7 @@ src/
   folder.rs      recursive scan, byte comparison and tree construction
   textdiff.rs    line alignment, intra-line spans, encoding and search helpers
   csvdiff.rs     CSV parsing, key/row alignment and cell diffs
+  word.rs        Word (.docx/.doc) text extraction
   load.rs        worker-thread file loading and binary detection
   report.rs      HTML and CSV report generation
   settings.rs    persisted settings
@@ -269,6 +295,8 @@ This is a focused implementation, not a byte-for-byte clone of Beyond Compare:
 - Folder sync copies files, not directories, and is intentionally confirmation-gated.
 - Deleting a CSV column rewrites that file and normalizes CSV quoting; a timestamped
   `.hcompare.bak` backup is created first.
+- `.docx`/`.docm` Word files are compared by extracted body text. Legacy `.doc` files need
+  LibreOffice, pandoc, antiword or catdoc installed.
 - Images, archives, three-way merge, syntax highlighting and plugin support are not implemented.
 - CSV key alignment uses unique first-column values by default; duplicate-key files can be
   aligned by row order or an explicit key column.

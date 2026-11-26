@@ -47,7 +47,7 @@ impl App {
                                 });
                         });
                         ui.label(
-                            RichText::new("folder · text · csv diff")
+                            RichText::new("folder · text · csv · word")
                                 .color(theme::muted())
                                 .size(10.5),
                         );

@@ -235,6 +235,8 @@ pub fn show(
         ui.label(
             RichText::new(if data.kind == OpenKind::Pdf {
                 "PDF"
+            } else if data.kind == OpenKind::Word {
+                "WORD"
             } else {
                 "TEXT"
             })

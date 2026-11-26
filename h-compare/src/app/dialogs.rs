@@ -121,7 +121,7 @@ impl App {
                     );
                     ui.label(
                         RichText::new(
-                            "Native folder, text and CSV comparison built in Rust with egui.",
+                            "Native folder, text, CSV, PDF and Word comparison built in Rust with egui.",
                         )
                         .color(theme::muted()),
                     );

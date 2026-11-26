@@ -1,0 +1,6 @@
+1. archive compare
+2. Comparing Hexa decimal
+3. Comparing Image Files, 
+4. Comparing Web Pages
+5. Command line access for programmatic access automated
+6. 3-way comparison ? 

@@ -3,6 +3,7 @@
 use crate::csvdiff::{compare_csv, delimiter_label, CsvCompare, CsvOptions};
 use crate::model::CompareOptions;
 use crate::textdiff::{build_text_diff, decode_text, looks_binary, TextDiffView};
+use crate::word;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,7 @@ pub enum OpenKind {
     Text,
     Csv,
     Pdf,
+    Word,
     Binary,
     Error,
 }
@@ -85,6 +87,74 @@ pub fn load_compare(
 
     let binary = looks_binary(left_bytes) || looks_binary(right_bytes);
     let oversized = left_side.oversized || right_side.oversized;
+    let is_word = is_word_name(rel)
+        || data
+            .left_path
+            .as_deref()
+            .map(is_word_name_path)
+            .unwrap_or(false)
+        || data
+            .right_path
+            .as_deref()
+            .map(is_word_name_path)
+            .unwrap_or(false);
+    if is_word && !oversized {
+        let mut methods = Vec::new();
+        let mut errors = Vec::new();
+        let left_text = if left_side.bytes.is_some() {
+            match word::extract_word_text(data.left_path.as_deref(), left_bytes) {
+                Ok(extraction) => {
+                    methods.push(format!("left: {}", extraction.method));
+                    extraction.text
+                }
+                Err(error) => {
+                    errors.push(format!("left: {error}"));
+                    String::new()
+                }
+            }
+        } else {
+            String::new()
+        };
+        let right_text = if right_side.bytes.is_some() {
+            match word::extract_word_text(data.right_path.as_deref(), right_bytes) {
+                Ok(extraction) => {
+                    methods.push(format!("right: {}", extraction.method));
+                    extraction.text
+                }
+                Err(error) => {
+                    errors.push(format!("right: {error}"));
+                    String::new()
+                }
+            }
+        } else {
+            String::new()
+        };
+        if left_text.is_empty() && right_text.is_empty() && !errors.is_empty() {
+            data.error = Some(format!(
+                "Could not extract text from the Word document: {}",
+                errors.join("; ")
+            ));
+            return data;
+        }
+        if !errors.is_empty() {
+            data.messages
+                .push(format!("Word extraction warning: {}", errors.join("; ")));
+        }
+        if !methods.is_empty() {
+            data.messages.push(format!(
+                "Word text extracted for comparison ({}). Layout, images, headers/footers, comments and tracked deletions are not shown.",
+                methods.join("; ")
+            ));
+        }
+        let mut view = build_text_diff(&left_text, &right_text, compare_options);
+        view.left_encoding = "Word";
+        view.right_encoding = "Word";
+        view.left_bytes = left_bytes.len();
+        view.right_bytes = right_bytes.len();
+        data.kind = OpenKind::Word;
+        data.text = Some(view);
+        return data;
+    }
     let is_pdf = is_pdf_name(rel)
         || data.left_path.as_deref().map(is_pdf_path).unwrap_or(false)
         || data.right_path.as_deref().map(is_pdf_path).unwrap_or(false);
@@ -299,6 +369,20 @@ fn is_csv_name(name: &str) -> bool {
         .any(|ext| lower.ends_with(ext))
 }
 
+pub(crate) fn is_word_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [".doc", ".docx", ".docm"]
+        .iter()
+        .any(|extension| lower.ends_with(extension))
+}
+
+fn is_word_name_path(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(is_word_name)
+        .unwrap_or(false)
+}
+
 fn is_csv_name_path(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
@@ -355,6 +439,67 @@ mod tests {
         assert!(is_csv_name("A.CSV"));
         assert!(is_csv_name("a.tsv"));
         assert!(!is_csv_name("a.txt"));
+    }
+
+    #[test]
+    fn detects_word_extensions() {
+        assert!(is_word_name("report.docx"));
+        assert!(is_word_name("REPORT.DOC"));
+        assert!(is_word_name("macro.docm"));
+        assert!(!is_word_name("report.txt"));
+    }
+
+    #[test]
+    fn loads_docx_as_word_comparison() {
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+        use zip::{CompressionMethod, ZipWriter};
+
+        fn write_docx(path: &Path, body: &str) {
+            let file = fs::File::create(path).expect("create docx");
+            let mut writer = ZipWriter::new(file);
+            let options =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            writer
+                .start_file("word/document.xml", options)
+                .expect("start document.xml");
+            let xml = format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{body}</w:body></w:document>"#
+            );
+            writer
+                .write_all(xml.as_bytes())
+                .expect("write document.xml");
+            writer.finish().expect("finish docx");
+        }
+
+        let stamp = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("hcompare-word-load-{}-{stamp}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let left = dir.join("left.docx");
+        let right = dir.join("right.docx");
+        write_docx(&left, "<w:p><w:r><w:t>Alpha</w:t></w:r></w:p>");
+        write_docx(&right, "<w:p><w:r><w:t>Beta</w:t></w:r></w:p>");
+
+        let data = load_compare(
+            "report.docx",
+            Some(left),
+            Some(right),
+            &CompareOptions::default(),
+            &CsvOptions::default(),
+        );
+        assert_eq!(data.kind, OpenKind::Word);
+        let view = data.text.expect("word text view");
+        assert_eq!(view.stats.modified, 1);
+        assert!(data
+            .messages
+            .iter()
+            .any(|message| message.contains("Word text extracted")));
+        assert!(dir.exists());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

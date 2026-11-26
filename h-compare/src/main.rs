@@ -11,6 +11,7 @@ mod report;
 mod settings;
 mod textdiff;
 mod ui;
+mod word;
 
 use crate::model::{CompareOptions, EntryStatus};
 use crate::ui::theme::ThemeMode;

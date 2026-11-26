@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src");
+    println!("cargo:rerun-if-changed=assets/hcompare.ico");
     println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=.git/index");
 
@@ -26,7 +27,39 @@ fn main() {
     println!("cargo:rustc-env=HCOMPARE_BUILD_DATE={date}");
     println!("cargo:rustc-env=HCOMPARE_GIT_HASH={hash}");
     println!("cargo:rustc-env=HCOMPARE_BUILD_STAMP={date} {hash}");
+
+    compile_windows_resources();
 }
+
+#[cfg(windows)]
+fn compile_windows_resources() {
+    let parts: Vec<u16> = env!("CARGO_PKG_VERSION")
+        .split('.')
+        .filter_map(|part| part.parse().ok())
+        .collect();
+    let version = ((parts.first().copied().unwrap_or(0) as u64) << 16)
+        | ((parts.get(1).copied().unwrap_or(0) as u64) << 8)
+        | parts.get(2).copied().unwrap_or(0) as u64;
+
+    let mut resource = winres::WindowsResource::new();
+    resource.set_icon("assets/hcompare.ico");
+    resource.set_version_info(winres::VersionInfo::FILEVERSION, version);
+    resource.set_version_info(winres::VersionInfo::PRODUCTVERSION, version);
+    resource.set("ProductName", "H-Compare");
+    resource.set(
+        "FileDescription",
+        "H-Compare folder, text, CSV and Word comparison",
+    );
+    resource.set("OriginalFilename", "hcompare.exe");
+    resource.set("InternalName", "hcompare");
+    resource.set("LegalCopyright", "Copyright (c) 2026");
+    if let Err(error) = resource.compile() {
+        panic!("failed to embed the Windows icon and version resources: {error}");
+    }
+}
+
+#[cfg(not(windows))]
+fn compile_windows_resources() {}
 
 /// UTC date as YYYY-MM-DD, without pulling a date crate into the build.
 fn utc_date(seconds: u64) -> String {
