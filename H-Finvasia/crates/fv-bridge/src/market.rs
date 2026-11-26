@@ -326,7 +326,8 @@ impl MarketData {
         let key = SymbolKey::parse(wire).ok()?;
         let master = self.master.as_deref()?;
         let instrument = master.get(&key)?;
-        let symbol = if fv_master::is_cash_equity(instrument) {
+        let cash_equity = fv_master::is_cash_equity(instrument);
+        let symbol = if cash_equity {
             fv_master::stock_display_symbol(instrument)
         } else {
             instrument.trading_symbol.trim().to_string()
@@ -336,7 +337,13 @@ impl MarketData {
             symbol,
             name: instrument.name.clone(),
             exchange: key.exchange().to_string(),
-            instrument_type: instrument.instrument_type.clone(),
+            // The FINVASIA_SYMBOL shape often omits instrumentType for cash
+            // equities; the master's own classifier is the authority there.
+            instrument_type: if cash_equity {
+                "EQ".to_string()
+            } else {
+                instrument.instrument_type.clone()
+            },
             underlying: instrument.underlying.clone(),
             expiry: instrument.expiry.clone(),
             strike: instrument.strike.format(2),

@@ -49,6 +49,7 @@
   const activeCount = $derived(
     containers.groups.find((group) => group.name === containers.active)?.count ?? rows.length,
   );
+  const cardTotal = $derived(cards.reduce((total, card) => total + card.count, 0));
 
   function focusOnMount(node: HTMLInputElement) {
     queueMicrotask(() => node.focus());
@@ -316,9 +317,14 @@
 <section class="panel">
   <header class="panel-head">
     <h2>Stocks</h2>
-    <span class="muted">{rows.length} stocks</span>
-    {#if activeCount > rows.length}
-      <span class="muted">({activeCount} instruments in {active})</span>
+    {#if view === "cards"}
+      <span class="muted">{containers.groups.length} group{containers.groups.length === 1 ? "" : "s"}</span>
+      <span class="muted">{cardTotal} instrument{cardTotal === 1 ? "" : "s"}</span>
+    {:else}
+      <span class="muted">{rows.length} stocks</span>
+      {#if activeCount > rows.length}
+        <span class="muted">({activeCount} instruments in {active})</span>
+      {/if}
     {/if}
     <span class="spacer"></span>
     <div class="view-switch" role="group" aria-label="Stocks layout">
