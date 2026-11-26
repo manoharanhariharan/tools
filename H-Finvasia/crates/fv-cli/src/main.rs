@@ -349,7 +349,7 @@ async fn cmd_master(command: MasterCommand) -> Result<(), Box<dyn std::error::Er
 }
 
 async fn cmd_doctor() -> Result<(), Box<dyn std::error::Error>> {
-    println!("fv-cli doctor");
+    println!("h-finvasia doctor");
     println!(
         "  os              {} {}",
         std::env::consts::OS,
