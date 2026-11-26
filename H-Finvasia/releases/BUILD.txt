@@ -1,10 +1,10 @@
 H-Finvasia release build
-tag: v26.11.26.9
+tag: v26.11.26.10
 version: 0.2.0
-buildVersion: 26.11.26.9
-commit: b003d24
+buildVersion: 26.11.26.10
+commit: d6b212a
 dirty: false
-built: 2026-11-26T11:11:28.882Z
+built: 2026-11-26T11:14:18.831Z
 rustc: rustc 1.99.1 (58cf8f9c3 2026-10-13)
 cargo: cargo 1.99.1 (5f94df478 2026-08-27)
 node: v24.22.1
@@ -12,5 +12,5 @@ signed: no
 target: Microsoft Windows 10.0.19045 / X64
 
 artifacts:
-456b677c90df8a792d15460fd13ba0b3e37bd30ea0b1fcebf8a226b92a240b61 22657536 h-finvasia-v26.11.26.9.exe (desktop app)
-70d7e226dba86945be36fcd0d06cdf79522ba9b825bc390cd05fba3941a16973 10586624 h-finvasia-cli-v26.11.26.9.exe (headless CLI)
+99c7bad91421a4dcdcb4ee558b8d5334d3f562c14e7687507c56f0abf4d7c7ae 22658048 h-finvasia-v26.11.26.10.exe (desktop app)
+70d7e226dba86945be36fcd0d06cdf79522ba9b825bc390cd05fba3941a16973 10586624 h-finvasia-cli-v26.11.26.10.exe (headless CLI)
