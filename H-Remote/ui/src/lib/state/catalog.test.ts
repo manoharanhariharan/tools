@@ -183,6 +183,28 @@ describe("catalog store", () => {
     ).toBe(true);
   });
 
+  it("sets and clears an individual folder colour", async () => {
+    const folder = catalog.snapshot?.folders.find(
+      (candidate) => candidate.path.join("/") === "Lab",
+    )!;
+    await catalog.setFolderColor(folder, "#ffab00");
+    expect(
+      catalog.snapshot?.folders.find((candidate) => candidate.id === folder.id)
+        ?.colorHex,
+    ).toBe("#FFAB00");
+    expect(
+      catalog
+        .allRootFolders()
+        .find((candidate) => candidate.name === "Lab")?.colorHex,
+    ).toBe("#FFAB00");
+
+    await catalog.setFolderColor(folder, "");
+    expect(
+      catalog.snapshot?.folders.find((candidate) => candidate.id === folder.id)
+        ?.colorHex,
+    ).toBe("");
+  });
+
   it("renames and deletes tags across every server", async () => {
     await catalog.renameTag("prod", "Production");
     expect(catalog.tags().map((tag) => tag.name)).toContain("production");

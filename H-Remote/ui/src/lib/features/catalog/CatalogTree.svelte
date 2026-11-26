@@ -8,6 +8,8 @@
   import ServerIcon from "../../components/ServerIcon.svelte";
   import TriStateCheckbox from "../../components/TriStateCheckbox.svelte";
   import { i18n } from "../../i18n/index.svelte";
+  import { toCssColor } from "../../theme/apply";
+  import FolderColorPicker from "./FolderColorPicker.svelte";
   import Self from "./CatalogTree.svelte";
 
   interface Props {
@@ -18,6 +20,7 @@
   let { folders, servers, depth = 0 }: Props = $props();
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   let dropTarget = $state<string | null>(null);
+  let colorPicker = $state<{ x: number; y: number; folder: CatalogFolder } | null>(null);
 
   function flatten(folder: CatalogFolder): Server[] {
     return [...folder.servers, ...folder.folders.flatMap(flatten)];
@@ -53,8 +56,7 @@
     }
   }
 
-  function folderMenu(event: MouseEvent, folder: CatalogFolder) {
-    event.preventDefault();
+  function folderMenu(event: MouseEvent, folder: CatalogFolder) {    event.preventDefault();
     event.stopPropagation();
     const entity = folderEntity(folder);
     const items: MenuItem[] = [
@@ -66,6 +68,10 @@
         action: () => catalog.openBulk(flatten(folder)),
         disabled: flatten(folder).length < 2,
       },
+      {
+        label: "Folder colour…",
+        action: () => (colorPicker = { x: event.clientX, y: event.clientY, folder }),
+      },
       { label: "Move up", action: () => void catalog.moveFolderOrder(folder.path, -1) },
       { label: "Move down", action: () => void catalog.moveFolderOrder(folder.path, 1) },
       { separator: true },
@@ -76,6 +82,21 @@
       },
     ];
     menu = { x: event.clientX, y: event.clientY, items };
+  }
+
+  function openColorPicker(event: MouseEvent, folder: CatalogFolder): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    colorPicker = { x: rect.left, y: rect.bottom + 4, folder };
+  }
+
+  async function pickColor(colorHex: string): Promise<void> {
+    const entity = colorPicker ? folderEntity(colorPicker.folder) : undefined;
+    colorPicker = null;
+    if (entity) {
+      await catalog.setFolderColor(entity, colorHex);
+    }
   }
 
   function serverMenu(event: MouseEvent, server: Server) {
@@ -183,8 +204,24 @@
       >
         <span class="chevron" class:open={catalog.isExpanded(folder.path)}>›</span>
       </button>
-      <span class="folder-icon" aria-hidden="true">▣</span>
+      <span
+        class="folder-icon"
+        style={folder.colorHex ? `color: ${toCssColor(folder.colorHex)}` : undefined}
+        aria-hidden="true">▣</span>
       <span class="folder-name">{folder.name}</span>
+      <button
+        type="button"
+        class="color-dot"
+        aria-label={`Colour for ${folder.name}`}
+        title="Folder colour"
+        onclick={(event) => openColorPicker(event, folder)}
+      >
+        <span
+          class="dot"
+          class:empty={!folder.colorHex}
+          style={folder.colorHex ? `background: ${toCssColor(folder.colorHex)}` : undefined}
+        ></span>
+      </button>
       <span class="count">{all.length}</span>
     </div>
 
@@ -221,6 +258,16 @@
 
 {#if menu}
   <ContextMenu x={menu.x} y={menu.y} items={menu.items} onclose={() => (menu = null)} />
+{/if}
+
+{#if colorPicker}
+  <FolderColorPicker
+    x={colorPicker.x}
+    y={colorPicker.y}
+    value={colorPicker.folder.colorHex}
+    onpick={(colorHex) => void pickColor(colorHex)}
+    onclose={() => (colorPicker = null)}
+  />
 {/if}
 
 <style>
@@ -309,6 +356,40 @@
   .folder-name {
     font-weight: 600;
     font-size: var(--hr-font-size-small);
+  }
+
+  .color-dot {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    border: 0;
+    border-radius: var(--hr-radius-small);
+    background: transparent;
+    cursor: pointer;
+    opacity: 0.55;
+  }
+
+  .folder-row:hover .color-dot,
+  .color-dot:focus-visible {
+    opacity: 1;
+  }
+
+  .color-dot:hover {
+    background: color-mix(in srgb, var(--hr-accent-mid) 16%, transparent);
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1px solid var(--hr-border-strong);
+  }
+
+  .dot.empty {
+    background: transparent;
+    border-style: dashed;
   }
 
   .count {

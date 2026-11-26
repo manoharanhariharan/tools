@@ -96,6 +96,24 @@ test.describe("H-Remote shell", () => {
     await expect(folder).toContainText("1");
   });
 
+  test("colours an individual folder and keeps it after reload", async ({ page }) => {
+    await resetProfile(page);
+    await completeWizard(page);
+    const row = page.locator(".folder-row", { has: page.getByTestId("folder-filter-Lab") });
+    const dot = row.locator(".dot");
+    await page.getByRole("button", { name: "Colour for Lab" }).click();
+    const picker = page.getByRole("dialog", { name: "Folder colour" });
+    await expect(picker).toBeVisible();
+    await picker.getByRole("button", { name: "Use colour #FF3EA66B" }).click();
+    await expect(picker).toHaveCount(0);
+    await expect(dot).toHaveCSS("background-color", "rgb(62, 166, 107)");
+
+    await page.reload();
+    await expect(
+      page.locator(".folder-row", { has: page.getByTestId("folder-filter-Lab") }).locator(".dot"),
+    ).toHaveCSS("background-color", "rgb(62, 166, 107)");
+  });
+
   test("offers visible move controls in custom order", async ({ page }) => {
     await resetProfile(page);
     await completeWizard(page);
@@ -232,6 +250,12 @@ test.describe("H-Remote shell", () => {
 
     await page.keyboard.press("F11");
     await expect(workspace).toHaveClass(/fullscreen/, { timeout: 3000 });
+    await expect(workspace).not.toHaveClass(/controls-visible/);
+    await expect(workspace.locator(".content")).toHaveCSS("padding", "0px");
+    await page.mouse.move(20, 2);
+    await expect(workspace).toHaveClass(/controls-visible/, { timeout: 2000 });
+    await page.mouse.move(400, 400);
+    await expect(workspace).not.toHaveClass(/controls-visible/, { timeout: 2000 });
     await page.keyboard.press("F11");
     await expect(workspace).not.toHaveClass(/fullscreen/);
 

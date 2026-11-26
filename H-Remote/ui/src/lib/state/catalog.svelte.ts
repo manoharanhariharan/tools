@@ -926,6 +926,15 @@ class CatalogStore {
     }
   }
 
+  async setFolderColor(folder: Folder, colorHex: string): Promise<void> {
+    try {
+      await commands.setFolderColor(folder.id, colorHex);
+      await this.load();
+    } catch (reason) {
+      await app.reportError(reason);
+    }
+  }
+
   async moveServer(server: Server, path: string[]): Promise<void> {
     try {
       await commands.moveServerToFolder(server.id, path);

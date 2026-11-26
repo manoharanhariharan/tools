@@ -7,7 +7,7 @@ pub const TABLE_META: &str = "TableMeta";
 pub const FOLDERS: &str = "Folders";
 pub const ENCRYPTION_TEST_KEY: &str = "EncryptionTest";
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 3;
+pub const CURRENT_SCHEMA_VERSION: i64 = 4;
 
 pub const MIGRATIONS: &[(i64, &str)] = &[
     (
@@ -66,5 +66,9 @@ pub const MIGRATIONS: &[(i64, &str)] = &[
         CREATE UNIQUE INDEX IF NOT EXISTS Folders_Path ON Folders(Path);
         INSERT INTO TableMeta (TableName, UpdatedAt, RowCount) VALUES ('Folders', 0, 0)
             ON CONFLICT(TableName) DO NOTHING;",
+    ),
+    (
+        4,
+        "ALTER TABLE Folders ADD COLUMN ColorHex TEXT NOT NULL DEFAULT '';",
     ),
 ];

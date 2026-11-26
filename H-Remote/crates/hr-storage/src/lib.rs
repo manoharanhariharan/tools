@@ -284,7 +284,7 @@ mod tests {
         }
         // Simulate a Phase 0 database: drop Phase 1 tables and reset the version.
         let database = Database::open_sqlite(&path).await.unwrap();
-        for table in [SERVERS, CREDENTIALS, CONFIGS, TABLE_META] {
+        for table in [SERVERS, CREDENTIALS, CONFIGS, TABLE_META, "Folders"] {
             sqlx::query(&format!("DROP TABLE IF EXISTS {table}"))
                 .execute(database.pool())
                 .await
@@ -308,6 +308,50 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(count, 1);
+        database.close().await;
+    }
+
+    #[tokio::test]
+    async fn migrates_folders_to_the_colored_schema() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("hremote.db");
+        let options = SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+        sqlx::raw_sql(&format!(
+            "CREATE TABLE {META_TABLE} (
+                key TEXT PRIMARY KEY NOT NULL,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO {META_TABLE} (key, value) VALUES ('schema_version', '3');
+            CREATE TABLE Folders (
+                Id TEXT PRIMARY KEY NOT NULL,
+                Path TEXT NOT NULL,
+                UpdatedAt INTEGER NOT NULL
+            );
+            INSERT INTO Folders (Id, Path, UpdatedAt) VALUES ('f1', '[\"Prod\"]', 0);"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+
+        let database = Database::open_sqlite(&path).await.unwrap();
+        assert_eq!(
+            database.schema_version().await.unwrap(),
+            CURRENT_SCHEMA_VERSION
+        );
+        let color: String = sqlx::query_scalar("SELECT ColorHex FROM Folders WHERE Id = 'f1'")
+            .fetch_one(database.pool())
+            .await
+            .unwrap();
+        assert_eq!(color, "");
         database.close().await;
     }
 

@@ -182,6 +182,8 @@ export const commands = {
     invokeCommand<[number, number]>("delete_folder", { path }),
   moveFolder: (folderId: string, parent: string[]) =>
     invokeCommand<number>("move_folder", { folderId, parent }),
+  setFolderColor: (folderId: string, colorHex: string) =>
+    invokeCommand<import("./contracts").Folder>("set_folder_color", { folderId, colorHex }),
   duplicateFolder: (folderId: string) =>
     invokeCommand<import("./contracts").Folder>("duplicate_folder", { folderId }),
   moveServerToFolder: (serverId: string, path: string[]) =>

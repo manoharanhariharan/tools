@@ -204,6 +204,7 @@ fn main() {
             commands::rename_folder,
             commands::delete_folder,
             commands::move_folder,
+            commands::set_folder_color,
             commands::duplicate_folder,
             commands::move_server_to_folder,
             commands::get_list_view,

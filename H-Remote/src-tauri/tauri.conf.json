@@ -23,7 +23,7 @@
         "visible": false,
         "center": true,
         "focus": true,
-        "dragDropEnabled": true
+        "dragDropEnabled": false
       },
       {
         "label": "launcher",

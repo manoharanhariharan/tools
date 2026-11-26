@@ -2,12 +2,17 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::protocol::normalize_color;
+
 /// A persisted folder. `path` is the full ordered hierarchy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Folder {
     pub id: String,
     pub path: Vec<String>,
+    /// Optional `#RRGGBB` / `#AARRGGBB` tint used by the folder tree.
+    #[serde(default)]
+    pub color_hex: String,
 }
 
 impl Folder {
@@ -15,7 +20,14 @@ impl Folder {
         Self {
             id: id.into(),
             path: normalize_tree_nodes(path),
+            color_hex: String::new(),
         }
+    }
+
+    /// Sets (or clears, with an empty value) the folder tint.
+    pub fn with_color(mut self, color_hex: impl AsRef<str>) -> Self {
+        self.color_hex = normalize_color(color_hex.as_ref());
+        self
     }
 
     pub fn name(&self) -> &str {
@@ -158,5 +170,21 @@ mod tests {
         assert_eq!(path.display(), "Prod / EU");
         assert_eq!(path.parent().0, vec!["Prod"]);
         assert!(FolderPath::default().is_root());
+    }
+
+    #[test]
+    fn folder_colors_are_normalized_and_optional() {
+        let folder = Folder::new("1", vec!["Prod".into()]).with_color("#ff8800");
+        assert_eq!(folder.color_hex, "#FF8800");
+        assert_eq!(Folder::new("2", vec!["Lab".into()]).color_hex, "");
+        assert_eq!(folder.clone().with_color("").color_hex, "");
+        assert_eq!(folder.with_color("not-a-color").color_hex, "");
+    }
+
+    #[test]
+    fn legacy_folders_without_colors_still_deserialize() {
+        let folder: Folder = serde_json::from_str(r##"{"id":"1","path":["Prod"]}"##).unwrap();
+        assert_eq!(folder.path, vec!["Prod".to_string()]);
+        assert_eq!(folder.color_hex, "");
     }
 }

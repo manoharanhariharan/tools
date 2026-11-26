@@ -130,6 +130,7 @@ export interface SearchHit {
 export interface Folder {
   id: string;
   path: string[];
+  colorHex: string;
 }
 
 export interface Tag {
@@ -268,6 +269,7 @@ export interface Server {
 export interface CatalogFolder {
   path: string[];
   name: string;
+  colorHex: string;
   folders: CatalogFolder[];
   servers: Server[];
 }

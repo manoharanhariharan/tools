@@ -323,11 +323,11 @@ export function defaultCatalog(): MockCatalog {
   return {
     servers: [rdp, staging, ssh, vnc, sftp, local, ftp],
     folders: [
-      { id: "folder-prod", path: ["Prod"] },
-      { id: "folder-ci", path: ["Prod", "CI"] },
-      { id: "folder-lab", path: ["Lab"] },
-      { id: "folder-storage", path: ["Storage"] },
-      { id: "folder-tools", path: ["Tools"] },
+      { id: "folder-prod", path: ["Prod"], colorHex: "#FF4FA3D1" },
+      { id: "folder-ci", path: ["Prod", "CI"], colorHex: "" },
+      { id: "folder-lab", path: ["Lab"], colorHex: "#FFE0A23C" },
+      { id: "folder-storage", path: ["Storage"], colorHex: "#FF7BC96F" },
+      { id: "folder-tools", path: ["Tools"], colorHex: "#FFB785F0" },
     ],
     credentials: [
       {
@@ -360,6 +360,16 @@ function loadCatalog(): MockCatalog {
   } catch {
     return defaultCatalog();
   }
+}
+
+function normalizeCatalog(catalog: MockCatalog): MockCatalog {
+  return {
+    ...catalog,
+    folders: (catalog.folders ?? []).map((folder) => ({
+      ...folder,
+      colorHex: folder.colorHex ?? "",
+    })),
+  };
 }
 
 function saveCatalog(): void {
@@ -609,7 +619,7 @@ export function defaultConfiguration(): Configuration {  return {
 
 let config: Configuration = loadConfig();
 let currentLocale = localStorage.getItem(LOCALE_KEY) ?? "en-US";
-let catalog: MockCatalog = loadCatalog();
+let catalog: MockCatalog = normalizeCatalog(loadCatalog());
 let mockSources: DataSourceConfig[] = [];
 let listView: ListViewLocality = loadListView();
 let treeView: TreeViewLocality = loadTreeView();
@@ -1040,6 +1050,9 @@ function catalogTree(
       nodes.get(key)!.servers.push(server);
     }
   }
+  const colors = new Map<string, string>(
+    folders.map((folder) => [folder.path.join("\u001f"), folder.colorHex ?? ""]),
+  );
   const sortServers = (list: Server[]) =>
     list.sort((a, b) => {
       if (sort === "name") return a.displayName.localeCompare(b.displayName);
@@ -1064,6 +1077,7 @@ function catalogTree(
     return {
       path: node.path,
       name: node.path[node.path.length - 1] ?? "",
+      colorHex: colors.get(key) ?? "",
       folders: childKeys.map(convert),
       servers: sortServers([...node.servers]),
     };
@@ -1441,7 +1455,11 @@ export async function mockInvoke<T>(
       const key = path.join("\u001f");
       const existing = catalog.folders.find((folder) => folder.path.join("\u001f") === key);
       if (existing) return existing as T;
-      const folder: Folder = { id: `folder-${Date.now()}-${catalog.folders.length}`, path };
+      const folder: Folder = {
+        id: `folder-${Date.now()}-${catalog.folders.length}`,
+        path,
+        colorHex: "",
+      };
       catalog.folders.push(folder);
       saveCatalog();
       return folder as T;
@@ -1500,12 +1518,30 @@ export async function mockInvoke<T>(
       saveCatalog();
       return 1 as T;
     }
+    case "set_folder_color": {
+      const folderId = String(args?.folderId ?? "");
+      const folder = catalog.folders.find((candidate) => candidate.id === folderId);
+      if (!folder) throw { code: "not_found", message: "folder not found", retryable: false };
+      const raw = String(args?.colorHex ?? "").trim();
+      const hex = raw.startsWith("#") ? raw.slice(1) : raw;
+      if (raw && !/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(hex)) {
+        throw {
+          code: "validation",
+          message: "folder color must be #RRGGBB or #AARRGGBB",
+          retryable: false,
+        };
+      }
+      folder.colorHex = raw ? `#${hex.toUpperCase()}` : "";
+      saveCatalog();
+      return folder as T;
+    }
     case "duplicate_folder": {
       const folder = catalog.folders.find((candidate) => candidate.id === args?.folderId);
       if (!folder) throw { code: "not_found", message: "folder not found", retryable: false };
       const copy: Folder = {
         id: `folder-${Date.now()}`,
         path: [...folder.path.slice(0, -1), `${folder.path[folder.path.length - 1]} (copy)`],
+        colorHex: folder.colorHex,
       };
       catalog.folders.push(copy);
       saveCatalog();

@@ -25,8 +25,10 @@
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   let layoutOpen = $state(false);
   let fullscreen = $state(false);
+  let controlsRevealed = $state(false);
   let dragId = $state<string | null>(null);
   let resizingWindow: ReturnType<typeof setTimeout> | undefined;
+  let hideControlsTimer: ReturnType<typeof setTimeout> | undefined;
   let onKeydown: ((event: KeyboardEvent) => void) | undefined;
   let onFullscreen: (() => void) | undefined;
   let maximized = $state(false);
@@ -55,7 +57,7 @@
     resolveLayout(sessions.layout, sessionsInWorkspace.length),
   );
   const gridStyle = $derived(
-    `display:grid;grid-template-columns:repeat(${layout.columns},minmax(0,1fr));grid-template-rows:repeat(${layout.rows},minmax(0,1fr));gap:6px;height:100%;`,
+    `display:grid;grid-template-columns:repeat(${layout.columns},minmax(0,1fr));grid-template-rows:repeat(${layout.rows},minmax(0,1fr));gap:${fullscreen ? 0 : 6}px;height:100%;`,
   );
 
   onMount(() => {
@@ -83,21 +85,30 @@
       }
     };
     onFullscreen = () => {
-      fullscreen = Boolean(document.fullscreenElement);
+      if (!isTauriRuntime) {
+        fullscreen = Boolean(document.fullscreenElement);
+        if (!fullscreen) {
+          controlsRevealed = false;
+        }
+      }
     };
     window.addEventListener("keydown", onKeydown);
     document.addEventListener("fullscreenchange", onFullscreen);
-    if (standalone && isTauriRuntime) {
+    if (isTauriRuntime) {
       void import("@tauri-apps/api/window").then(async ({ getCurrentWindow }) => {
         if (windowDisposed) {
           return;
         }
         const window = getCurrentWindow();
-        windowControlsReady = true;
+        if (standalone) {
+          windowControlsReady = true;
+        }
         try {
           maximized = await window.isMaximized();
+          fullscreen = await window.isFullscreen();
           windowResizeUnlisten = await window.onResized(async () => {
             maximized = await window.isMaximized();
+            fullscreen = await window.isFullscreen();
           });
           if (windowDisposed) {
             windowResizeUnlisten?.();
@@ -123,6 +134,9 @@
     if (resizingWindow) {
       clearTimeout(resizingWindow);
     }
+    if (hideControlsTimer) {
+      clearTimeout(hideControlsTimer);
+    }
   });
 
   async function toggleMaximizeWindow(): Promise<void> {
@@ -146,13 +160,53 @@
   const serverFor = (serverId: string) =>
     catalog.snapshot?.servers.find((server) => server.id === serverId);
 
+  function revealControls(): void {
+    if (hideControlsTimer) {
+      clearTimeout(hideControlsTimer);
+      hideControlsTimer = undefined;
+    }
+    controlsRevealed = true;
+  }
+
+  function scheduleHideControls(): void {
+    if (!fullscreen) {
+      return;
+    }
+    if (hideControlsTimer) {
+      clearTimeout(hideControlsTimer);
+    }
+    hideControlsTimer = setTimeout(() => {
+      hideControlsTimer = undefined;
+      controlsRevealed = false;
+    }, 400);
+  }
+
+  function onWorkspacePointerMove(event: PointerEvent): void {
+    if (!fullscreen) {
+      return;
+    }
+    const target = event.target as HTMLElement | null;
+    if (event.clientY <= 10 || target?.closest(".workspace-bar")) {
+      revealControls();
+    } else {
+      scheduleHideControls();
+    }
+  }
+
   async function toggleFullscreen(): Promise<void> {
     try {
-      if (document.fullscreenElement) {
+      if (isTauriRuntime) {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const window = getCurrentWindow();
+        const next = !(await window.isFullscreen());
+        await window.setFullscreen(next);
+        fullscreen = next;
+      } else if (document.fullscreenElement) {
         await document.exitFullscreen();
       } else {
         await document.documentElement.requestFullscreen();
       }
+      controlsRevealed = false;
     } catch (reason) {
       await app.reportError(reason);
     }
@@ -401,9 +455,24 @@
 <section
   class="workspace"
   class:fullscreen
+  class:controls-visible={controlsRevealed}
   aria-label="Session workspace"
+  onpointermove={onWorkspacePointerMove}
 >
-  <header class="workspace-bar">
+  {#if fullscreen}
+    <div
+      class="top-reveal"
+      aria-hidden="true"
+      onpointerenter={revealControls}
+    ></div>
+  {/if}
+  <header
+    class="workspace-bar"
+    onpointerenter={revealControls}
+    onpointerleave={scheduleHideControls}
+    inert={fullscreen && !controlsRevealed}
+    aria-hidden={fullscreen && !controlsRevealed ? "true" : undefined}
+  >
     {#if standalone}
       <div
         class="drag-handle"
@@ -683,6 +752,41 @@
     background: color-mix(in srgb, var(--hr-primary-dark) 82%, var(--hr-background));
     border-bottom: 1px solid var(--hr-border);
     user-select: none;
+  }
+
+  /* Immersive full screen: the session reaches every rim and the header is
+     tucked away. Moving the pointer to the top edge reveals it again. */
+  .workspace.fullscreen .workspace-bar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: 3;
+    transform: translateY(-100%);
+    transition: transform 160ms ease;
+    box-shadow: 0 10px 26px rgb(0 0 0 / 35%);
+  }
+
+  .workspace.fullscreen.controls-visible .workspace-bar {
+    transform: translateY(0);
+  }
+
+  .top-reveal {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: 2;
+    height: 10px;
+  }
+
+  .workspace.fullscreen .content {
+    padding: 0;
+  }
+
+  .workspace.fullscreen :global(.pane) {
+    border: 0;
+    border-radius: 0;
   }
 
   .drag-handle {

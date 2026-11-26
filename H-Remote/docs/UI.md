@@ -118,7 +118,10 @@ features/session/
                             theme-aware surfaces, grid/snap
                             layouts (including 4-screen presets), focus/full-screen,
                             context menus, close-all; standalone in the shared
-                            `sessions` window
+                            `sessions` window. F11 toggles native immersive
+                            full screen: the session fills every rim with no
+                            padding or pane chrome, the header hides, and moving
+                            the pointer to the top 10 px reveals it again.
   SessionPane.svelte        one theme-aware session surface: RDP/VNC frames,
                             process state, VNC pointer/keyboard/special keys, resize
   FileBrowser.svelte        SFTP/FTP listing, path navigation, transfers

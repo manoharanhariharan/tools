@@ -1474,6 +1474,18 @@ pub async fn move_folder(
 }
 
 #[tauri::command]
+pub async fn set_folder_color(
+    state: State<'_, AppState>,
+    folder_id: String,
+    color_hex: String,
+) -> Result<Folder, IpcError> {
+    Ok(state
+        .repository()?
+        .set_folder_color(&folder_id, &color_hex)
+        .await?)
+}
+
+#[tauri::command]
 pub async fn duplicate_folder(
     state: State<'_, AppState>,
     folder_id: String,

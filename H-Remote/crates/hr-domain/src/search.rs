@@ -338,6 +338,7 @@ fn ip_parts(value: &str) -> Vec<String> {
 pub struct CatalogFolder {
     pub path: Vec<String>,
     pub name: String,
+    pub color_hex: String,
     pub folders: Vec<CatalogFolder>,
     pub servers: Vec<Server>,
 }
@@ -401,11 +402,12 @@ pub fn build_catalog_tree(
         sort: CatalogSort,
         custom_order: &[String],
         folder_order: &[String],
+        colors: &std::collections::HashMap<String, String>,
     ) -> Vec<CatalogFolder> {
         let mut children: Vec<CatalogFolder> = node
             .children
             .into_values()
-            .flat_map(|child| convert(child, sort, custom_order, folder_order))
+            .flat_map(|child| convert(child, sort, custom_order, folder_order, colors))
             .collect();
         children.sort_by(|left, right| {
             let left_key = left.path.join("/");
@@ -424,18 +426,24 @@ pub fn build_catalog_tree(
         });
         let mut servers = node.servers;
         sort_servers(&mut servers, sort, custom_order);
+        let color_key = node.path.join("/");
         let this = CatalogFolder {
             name: node.path.last().cloned().unwrap_or_default(),
             path: node.path,
+            color_hex: colors.get(&color_key).cloned().unwrap_or_default(),
             folders: children,
             servers,
         };
         vec![this]
     }
 
+    let colors: std::collections::HashMap<String, String> = folders
+        .iter()
+        .map(|folder| (folder.path.join("/"), folder.color_hex.clone()))
+        .collect();
     let mut folders_out = Vec::new();
     for child in root.children.into_values() {
-        folders_out.extend(convert(child, sort, custom_order, folder_order));
+        folders_out.extend(convert(child, sort, custom_order, folder_order, &colors));
     }
     // `convert` returns each node as a one-element vector; flatten top level.
     let mut root_servers = root.servers;
@@ -569,7 +577,7 @@ mod tests {
         child.base_mut().tree_nodes = vec!["Prod".into(), "EU".into()];
         let root = server("Root", "10.0.0.3", &[]);
         let folders = vec![
-            Folder::new("1", vec!["Prod".into()]),
+            Folder::new("1", vec!["Prod".into()]).with_color("#12AB34"),
             Folder::new("2", vec!["Prod".into(), "EU".into()]),
             Folder::new("3", vec!["Empty".into()]),
         ];
@@ -588,6 +596,8 @@ mod tests {
             .find(|folder| folder.name == "Prod")
             .unwrap();
         assert_eq!(prod_folder.servers[0].base().display_name, "Prod");
+        assert_eq!(prod_folder.color_hex, "#12AB34");
+        assert_eq!(prod_folder.folders[0].color_hex, "");
         assert_eq!(prod_folder.folders[0].name, "EU");
         assert!(
             prod_folder.folders[0].servers[0]

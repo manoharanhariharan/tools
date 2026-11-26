@@ -400,7 +400,7 @@ impl Repository {
     // ------------------------------------------------------------------ folders
 
     pub async fn list_folders(&self) -> AppResult<Vec<Folder>> {
-        let sql = format!("SELECT Id, Path FROM {FOLDERS} ORDER BY Path");
+        let sql = format!("SELECT Id, Path, ColorHex FROM {FOLDERS} ORDER BY Path");
         let rows = sqlx::query(&sql)
             .fetch_all(&self.pool)
             .await
@@ -409,10 +409,11 @@ impl Repository {
         for row in rows {
             let id: String = row.try_get("Id").map_err(storage_error)?;
             let path: String = row.try_get("Path").map_err(storage_error)?;
+            let color_hex: String = row.try_get("ColorHex").map_err(storage_error)?;
             let segments: Vec<String> = serde_json::from_str(&path).map_err(|error| {
                 AppError::storage(format!("folder {id} has an invalid path: {error}"))
             })?;
-            folders.push(Folder::new(id, segments));
+            folders.push(Folder::new(id, segments).with_color(color_hex));
         }
         Ok(folders)
     }
@@ -433,6 +434,44 @@ impl Repository {
         insert_folder(&mut transaction, &folder, now).await?;
         bump_table(&mut transaction, FOLDERS, 1, now).await?;
         transaction.commit().await.map_err(storage_error)?;
+        Ok(folder)
+    }
+
+    /// Sets or clears a folder tint. Returns the updated folder.
+    pub async fn set_folder_color(&self, folder_id: &str, color_hex: &str) -> AppResult<Folder> {
+        let trimmed = color_hex.trim();
+        let color = hr_domain::protocol::normalize_color(trimmed);
+        if !trimmed.is_empty() && color.is_empty() {
+            return Err(AppError::validation(
+                "folder color must be #RRGGBB or #AARRGGBB",
+            ));
+        }
+        let mut folder = self
+            .list_folders()
+            .await?
+            .into_iter()
+            .find(|folder| folder.id == folder_id)
+            .ok_or_else(|| AppError::not_found("folder"))?;
+        if folder.color_hex == color {
+            return Ok(folder);
+        }
+        let now = now_ms();
+        let mut transaction = self.pool.begin().await.map_err(storage_error)?;
+        sqlx::query(&format!(
+            "UPDATE {FOLDERS} SET ColorHex = {}, UpdatedAt = {} WHERE Id = {}",
+            self.dialect.placeholder(1),
+            self.dialect.placeholder(2),
+            self.dialect.placeholder(3)
+        ))
+        .bind(&color)
+        .bind(now)
+        .bind(folder_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(storage_error)?;
+        bump_table(&mut transaction, FOLDERS, 0, now).await?;
+        transaction.commit().await.map_err(storage_error)?;
+        folder.color_hex = color;
         Ok(folder)
     }
 
@@ -589,7 +628,7 @@ impl Repository {
         for candidate in subtree {
             let mut path = new_path.clone();
             path.extend_from_slice(&candidate.path[folder.path.len()..]);
-            let copy = Folder::new(new_id(), path);
+            let copy = Folder::new(new_id(), path).with_color(&candidate.color_hex);
             insert_folder(&mut transaction, &copy, now).await?;
             if candidate.path == folder.path {
                 root = Some(copy);
@@ -1048,10 +1087,12 @@ async fn insert_folder(
     folder: &Folder,
     now: i64,
 ) -> AppResult<()> {
-    let sql = format!("INSERT INTO {FOLDERS} (Id, Path, UpdatedAt) VALUES (?1, ?2, ?3)");
+    let sql =
+        format!("INSERT INTO {FOLDERS} (Id, Path, ColorHex, UpdatedAt) VALUES (?1, ?2, ?3, ?4)");
     sqlx::query(&sql)
         .bind(&folder.id)
         .bind(folder_path_json(&folder.path))
+        .bind(&folder.color_hex)
         .bind(now)
         .execute(&mut **transaction)
         .await
@@ -1430,8 +1471,32 @@ mod tests {
         let loaded = repository.list_servers().await.unwrap();
         assert_eq!(loaded[0].base().tree_nodes, vec!["EU".to_string()]);
 
+        let colored = repository
+            .set_folder_color(&eu.id, "#ff8800")
+            .await
+            .unwrap();
+        assert_eq!(colored.color_hex, "#FF8800");
+        assert_eq!(
+            repository
+                .list_folders()
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|folder| folder.id == eu.id)
+                .unwrap()
+                .color_hex,
+            "#FF8800"
+        );
+        assert!(
+            repository
+                .set_folder_color(&eu.id, "not-a-color")
+                .await
+                .is_err()
+        );
+
         let copy = repository.duplicate_folder(&eu.id).await.unwrap();
         assert_eq!(copy.path, vec!["EU (copy)".to_string()]);
+        assert_eq!(copy.color_hex, "#FF8800");
         database.close().await;
     }
 
