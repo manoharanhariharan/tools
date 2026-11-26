@@ -1,4 +1,4 @@
-﻿//! UI-facing market state.
+//! UI-facing market state.
 //!
 //! Deliberately has **no Tauri dependency** so the whole thing is unit-testable
 //! without a webview. `src-tauri` is a thin adapter over this type.
@@ -18,7 +18,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::dto::{
-    ChainRowDto, DeltaDto, InstrumentDto, PlanDto, PriceDto, QuoteDto, SourceKind, StatusDto, Trend,
+    ChainRowDto, DeltaDto, IndexRowDto, InstrumentDto, PlanDto, PriceDto, QuoteDto, SourceKind,
+    StatusDto, Trend,
 };
 
 /// Default watch budget.
@@ -200,14 +201,20 @@ impl MarketData {
         DeltaDto {
             seq: batch.seq,
             timestamp_ms: batch.timestamp_ms,
-            quotes: batch.quotes.iter().map(quote_dto).collect(),
+            quotes: batch
+                .quotes
+                .iter()
+                .map(|q| quote_dto(q, self.master.as_deref()))
+                .collect(),
             pending: batch.pending,
         }
     }
 
     pub fn snapshot(&self, wire: &str) -> Option<QuoteDto> {
         let key = SymbolKey::parse(wire).ok()?;
-        self.book.get(&key).map(quote_dto)
+        self.book
+            .get(&key)
+            .map(|q| quote_dto(q, self.master.as_deref()))
     }
 
     /// Current quotes for everything in the watch list, in stable order. Used to
@@ -217,7 +224,31 @@ impl MarketData {
             .active()
             .iter()
             .filter_map(|k| self.book.get(k))
-            .map(quote_dto)
+            .map(|q| quote_dto(q, self.master.as_deref()))
+            .collect()
+    }
+
+    /// Index rows for Index Watch: local metadata plus a live quote where
+    /// subscribed. Browsing costs no broker interaction.
+    pub fn index_rows(&self, limit: usize) -> Vec<IndexRowDto> {
+        let Some(master) = self.master.as_deref() else {
+            return Vec::new();
+        };
+        master
+            .indices()
+            .into_iter()
+            .take(limit)
+            .map(|instrument| IndexRowDto {
+                key: instrument.key.as_wire(),
+                symbol: instrument.trading_symbol.clone(),
+                name: instrument.name.clone(),
+                exchange: instrument.key.exchange().to_string(),
+                live: self.watch.active().contains(&instrument.key),
+                quote: self
+                    .book
+                    .get(&instrument.key)
+                    .map(|q| quote_dto(q, self.master.as_deref())),
+            })
             .collect()
     }
 
@@ -325,7 +356,10 @@ impl MarketData {
             strike: instrument.strike.format(2),
             strike_type: instrument.strike_type.as_str().to_string(),
             lot_size: instrument.lot_size,
-            quote: self.book.get(&instrument.key).map(quote_dto),
+            quote: self
+                .book
+                .get(&instrument.key)
+                .map(|q| quote_dto(q, self.master.as_deref())),
             live: self.chain.contains(&instrument.key),
         }
     }
@@ -443,7 +477,7 @@ fn decimals_for(quote: &Quote) -> u8 {
     quote.price_precision.unwrap_or(2).min(6)
 }
 
-fn quote_dto(quote: &Quote) -> QuoteDto {
+fn quote_dto(quote: &Quote, master: Option<&MemoryMaster>) -> QuoteDto {
     let d = decimals_for(quote);
     let change = quote.change();
     let trend = match change {
@@ -470,6 +504,10 @@ fn quote_dto(quote: &Quote) -> QuoteDto {
         trend,
         seq: quote.seq,
         updated_at_ms: quote.updated_at_ms,
+        is_index: master
+            .and_then(|m| m.get(&quote.key))
+            .map(fv_master::is_index)
+            .unwrap_or(false),
     }
 }
 

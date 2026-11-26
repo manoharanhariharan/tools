@@ -420,6 +420,50 @@ pub async fn resolve_session() -> Result<Session, String> {
     })
 }
 
+/// Resolve a session **without ever logging in**.
+///
+/// Used at startup so the app can connect automatically when a usable token
+/// already exists, while never rotating a session just because the app opened.
+pub async fn resolve_existing() -> Option<Session> {
+    let client = build_client().ok()?;
+    let credentials = load_credentials().ok();
+
+    let uid = credentials
+        .as_ref()
+        .map(|c| c.userid.clone())
+        .or_else(|| std::env::var("FV_UID").ok())?;
+    let actid = credentials
+        .as_ref()
+        .map(|c| c.actid())
+        .or_else(|| std::env::var("FV_ACTID").ok())
+        .unwrap_or_else(|| uid.clone());
+
+    if let Ok(token) = std::env::var("FV_ACCESS_TOKEN") {
+        let token = token.trim().to_string();
+        if !token.is_empty() && validate_token(&client, &token, &uid).await {
+            return Some(Session {
+                token,
+                uid,
+                actid,
+                source: TokenSource::Env,
+            });
+        }
+    }
+
+    let (token, date) = persisted_token().await?;
+    if token.is_empty() || !validate_token(&client, &token, &uid).await {
+        tracing::info!("no valid stored session; waiting for an explicit connect");
+        return None;
+    }
+    tracing::info!(issued = ?date, "auto-connecting with the stored session");
+    Some(Session {
+        token,
+        uid,
+        actid,
+        source: TokenSource::Stored,
+    })
+}
+
 /// Non-invasive status for the UI. Does not validate or log in.
 pub async fn peek() -> SessionInfo {
     let credentials = load_credentials().ok();

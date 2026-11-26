@@ -13,6 +13,7 @@ export interface QuoteRow {
   trend: Trend;
   seq: number;
   updated: number;
+  isIndex: boolean;
 }
 
 const DASH = "â€”";
@@ -43,6 +44,7 @@ export function toRow(quote: QuoteDto): QuoteRow {
     trend: quote.trend,
     seq: quote.seq,
     updated: quote.updated_at_ms,
+    isIndex: quote.is_index,
   };
 }
 
@@ -64,6 +66,7 @@ export function placeholderRow(key: string): QuoteRow {
     trend: "flat",
     seq: 0,
     updated: 0,
+    isIndex: false,
   };
 }
 

@@ -1,4 +1,4 @@
-//! Portable, platform-neutral instrument index.
+﻿//! Portable, platform-neutral instrument index.
 //!
 //! Everything here is pure Rust with no database dependency, so it builds and
 //! tests identically on Windows, macOS and Linux, and in CI without Mongo.
@@ -60,10 +60,20 @@ pub struct Instrument {
     pub strike: Price,
     pub strike_type: StrikeType,
     pub lot_size: i64,
-    /// `EQ`, `FUT`, `CE`, `PE`, `INDEX`, …
+    /// `EQ`, `FUT`, `CE`, `PE`, `INDEX`, â€¦
     pub instrument_type: String,
     pub segment: Option<String>,
     pub tick_size: Option<Price>,
+}
+
+/// True when this instrument is an index (NIFTY, BANKNIFTY, ...).
+pub fn is_index(instrument: &Instrument) -> bool {
+    instrument.instrument_type.eq_ignore_ascii_case("INDEX")
+        || instrument
+            .segment
+            .as_deref()
+            .map(|s| s.to_ascii_uppercase().contains("INDICE"))
+            .unwrap_or(false)
 }
 
 impl Instrument {
@@ -302,6 +312,11 @@ impl MemoryMaster {
 
     pub fn items(&self) -> &[Instrument] {
         &self.items
+    }
+
+    /// Index instruments (for Index Watch / spot rates).
+    pub fn indices(&self) -> Vec<&Instrument> {
+        self.items.iter().filter(|item| is_index(item)).collect()
     }
 }
 

@@ -535,3 +535,33 @@ select {
 
 tr.dim-row { opacity: 0.55; }
 
+
+.spot-strip {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.spot-item {
+  color: var(--muted);
+}
+
+.spot-item strong {
+  color: var(--text);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  margin-left: 6px;
+}
+
+table.grid tfoot td {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-strong);
+  background: var(--panel-2);
+  font-weight: 500;
+}

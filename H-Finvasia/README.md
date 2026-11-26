@@ -82,7 +82,9 @@ The executable lands at `src-tauri/target/release/h-finvasia-desktop.exe` and ru
 4. **Diagnostics** shows backend (`mongo` vs `in-memory`), frame rate, decode errors, and the live
    connect form.
 
-For live data press **Diagnostics → Connect live**. The session is resolved automatically:
+On launch the app restores the last watch list and, if a valid session is already stored,
+**connects automatically** - no click needed. If no valid session exists it stays disconnected and
+never logs in on its own. To connect manually press **Diagnostics → Connect live**. Session resolution:
 `FV_ACCESS_TOKEN` → the session already persisted in `STOCK.CONFIGS_GLOBAL` (validated first) →
 a TOTP login from `fv-cred.json`. The stored token is only read, never overwritten, so other tools
 keep their session. Verified against the live venue (NTPC/ACC streaming with bid/ask and volume).
@@ -94,7 +96,8 @@ keep their session. Verified against the live venue (NTPC/ACC streaming with bid
 | Total instruments subscribed at once | **100** (watch + option chain combined) |
 | Option-chain legs subscribed | only a ± strikes window (default ±10 = 42 legs); the rest is browsable metadata |
 | Websocket connections per session | 1, opened only when you press *Connect live* |
-| Automatic broker calls | none — no polling, no startup login, no background reconnects beyond backoff |
+| Automatic broker calls | **one connect at launch** when a valid session already exists (watch list restored from disk); never a silent login |
+| Automatic login | never — startup only *adopts* a valid stored/env token; a fresh TOTP login happens only when you press Connect |
 
 Overflow is **refused and reported**, never silently dropped. The status bar shows
 `subscribed N/100` so the budget is always visible.

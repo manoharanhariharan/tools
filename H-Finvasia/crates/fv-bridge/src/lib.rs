@@ -1,4 +1,4 @@
-//! UI-facing bridge between the market engine and the desktop shell.
+﻿//! UI-facing bridge between the market engine and the desktop shell.
 //!
 //! This crate intentionally has **no Tauri dependency**: `src-tauri` is a thin
 //! adapter, and everything here is exercised by plain unit tests.
@@ -7,7 +7,8 @@ pub mod dto;
 pub mod market;
 
 pub use dto::{
-    ChainRowDto, DeltaDto, InstrumentDto, PlanDto, PriceDto, QuoteDto, SourceKind, StatusDto, Trend,
+    ChainRowDto, DeltaDto, IndexRowDto, InstrumentDto, PlanDto, PriceDto, QuoteDto, SourceKind,
+    StatusDto, Trend,
 };
 pub use market::{
     build_label, chain_window, MarketData, DEFAULT_CHAIN_LIMIT, DEFAULT_MAX_PER_FRAME,

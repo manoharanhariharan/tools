@@ -888,9 +888,9 @@ Phase 0/1 is implemented and verified ([`README.md`](README.md), [`docs/ARCHITEC
 | `fv-bridge` | `MarketData` state, watch/chain diffing, subscription budget, DTO formatting | 21 |
 | `fv-cli` | build-date calendar + CLI contract as a real process | 8 |
 | `ui/` | formatting + `QuoteTable` merge/prune/placeholder (vitest) | 14 |
-| **Total** | | **148** |
+| **Total** | | **165** |
 
-Gates: `cargo test --workspace` (134 Rust), `npm test` (14 UI), `cargo clippy --workspace
+Gates: 134 core Rust + 17 desktop Rust + 14 UI = 165, `cargo clippy --workspace
 --all-targets -- -D warnings`, `cargo fmt --check`, `svelte-check` (0 errors/warnings).
 Shipped via `scripts/release.ps1` into `releases/` as a desktop app plus a CLI.
 
@@ -1027,6 +1027,28 @@ books need the REST scope decision (see below).
 Verified with one connection: 550-leg chain browsable, **42 subscribed**, `subscribed 45/100`
 (3 watch + 42 chain), bid/qty/LTP/ask/qty/change/%/volume all populated, and every chain row showing
 *Add* rather than "watching".
+
+---
+
+### Phase 2e - account views, groups, index watch, auto-connect (implemented)
+
+14. **Read-only account screens.** `Positions` (funds chips + position rows + exact fixed-point
+    totals) and `Order book` (pending/closed) poll on demand only. They use the **web REST base**
+    because the persisted token is web-scoped: `NorenWClientAPI` answers 401 for `Limits` /
+    `PositionBook`, while `NorenWClientWeb` answers 200. The client tries the preferred base and
+    falls back once on a session error, then remembers which worked. No orders are placed or modified.
+
+15. **Groups** are named watch lists persisted locally (`watch-groups.json`); loading one replaces the
+    watch list and re-subscribes within the budget. No broker calls.
+
+16. **Index watch** lists index instruments from the local master with Add/watch; **Spot rates** is a
+    strip on the market page built from watched indices (`is_index` on the quote DTO), so it costs
+    zero extra subscriptions.
+
+17. **Auto-connect on launch.** The watch list is persisted (`watch.json`) and, when a stored/env
+    token still validates, the feed starts without a click. This uses `resolve_existing()`, which
+    **never logs in** - a silent login could invalidate another tool's session. Verified:
+    `auto-connecting with an existing session keys=2` followed by `live feed connected source=WEB`.
 
 ---
 

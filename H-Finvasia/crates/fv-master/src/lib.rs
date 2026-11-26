@@ -1,4 +1,4 @@
-//! Instrument master.
+﻿//! Instrument master.
 //!
 //! Replaces two legacy behaviours:
 //! * parsing a 90.8 MB single-line JSON file on every cold start;
@@ -13,5 +13,5 @@ pub mod index;
 #[cfg(feature = "mongo")]
 pub mod mongo;
 
-pub use index::Instrument;
+pub use index::{is_index, Instrument};
 pub use index::{MasterError, MemoryMaster, StrikeType};

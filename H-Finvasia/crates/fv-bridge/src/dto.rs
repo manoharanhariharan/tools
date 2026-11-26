@@ -46,6 +46,8 @@ pub struct QuoteDto {
     pub trend: Trend,
     pub seq: u64,
     pub updated_at_ms: i64,
+    /// True when this key is an index (drives the spot-rate strip).
+    pub is_index: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -92,6 +94,17 @@ pub struct ChainRowDto {
     pub quote: Option<QuoteDto>,
     /// Whether this leg is currently subscribed (and therefore live).
     pub live: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IndexRowDto {
+    pub key: String,
+    pub symbol: String,
+    pub name: Option<String>,
+    pub exchange: String,
+    /// Subscribed (and therefore streaming) right now.
+    pub live: bool,
+    pub quote: Option<QuoteDto>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

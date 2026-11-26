@@ -14,11 +14,26 @@
   import Badge from "./lib/components/Badge.svelte";
   import MarketWatch from "./lib/features/market/MarketWatch.svelte";
   import SnapQuote from "./lib/features/market/SnapQuote.svelte";
-  import InstrumentSearch from "./lib/features/instruments/InstrumentSearch.svelte";
-  import Diagnostics from "./lib/features/diagnostics/Diagnostics.svelte";
   import OptionChain from "./lib/features/chain/OptionChain.svelte";
+  import IndexWatch from "./lib/features/indices/IndexWatch.svelte";
+  import InstrumentSearch from "./lib/features/instruments/InstrumentSearch.svelte";
+  import Positions from "./lib/features/positions/Positions.svelte";
+  import Orders from "./lib/features/orders/Orders.svelte";
+  import Groups from "./lib/features/groups/Groups.svelte";
+  import Diagnostics from "./lib/features/diagnostics/Diagnostics.svelte";
 
-  type Page = "market" | "chain" | "instruments" | "diagnostics";
+  const navItems = [
+    { id: "market", label: "Market watch" },
+    { id: "chain", label: "Option chain" },
+    { id: "indices", label: "Index watch" },
+    { id: "instruments", label: "Instruments" },
+    { id: "positions", label: "Positions" },
+    { id: "orders", label: "Order book" },
+    { id: "groups", label: "Groups" },
+    { id: "diagnostics", label: "Diagnostics" },
+  ] as const;
+
+  type Page = (typeof navItems)[number]["id"];
 
   const table = new QuoteTable();
 
@@ -45,7 +60,6 @@
     if (list.length === 0) return;
     const next = new Map(quoteMap);
     for (const quote of list) next.set(quote.key, quote);
-    // Bound the map to what is actually watched.
     const keep = new Set(table.keys());
     for (const key of [...next.keys()]) if (!keep.has(key)) next.delete(key);
     quoteMap = next;
@@ -68,8 +82,6 @@
     notice = null;
     try {
       await api.startReplay(120);
-      // Belt and braces: the watch:changed event normally drives the grid, but
-      // re-hydrating means a dropped event can never leave the UI stale.
       await hydrate();
     } catch (error) {
       notice = `Could not start the demo feed: ${String(error)}`;
@@ -106,7 +118,7 @@
     try {
       const plan = await api.watchAdd(key);
       if (plan.truncated) {
-        notice = `Watch limit reached â€” ${plan.rejected.length} instrument(s) were not added.`;
+        notice = `Watch limit reached - ${plan.rejected.length} instrument(s) were not added (max 100).`;
       }
       await hydrate();
       selected = key;
@@ -126,8 +138,8 @@
     }
   }
 
-  // Fetch static instrument metadata for the selected scrip. The cleanup flag
-  // prevents a stale response from overwriting a newer selection.
+  // Static metadata for the selected scrip; the cleanup flag prevents a stale
+  // response from overwriting a newer selection.
   $effect(() => {
     const key = selected;
     if (!key) {
@@ -157,8 +169,6 @@
       else unlisteners.push(unlisten);
     }
 
-    // Each listener is registered independently: one failure (for example a
-    // missing capability) must not prevent hydration or blank the app.
     async function subscribeAll() {
       const subscriptions: Array<[string, () => Promise<() => void>]> = [
         [
@@ -226,7 +236,6 @@
       }
     })();
 
-    // Every listener and pending fetch is released here.
     return () => {
       disposed = true;
       for (const unlisten of unlisteners) unlisten();
@@ -243,44 +252,28 @@
       tone={status?.connected ? "ok" : "warn"}
       dot
     />
-    <Badge label={status?.backend ?? "â€¦"} tone={status?.backend === "mongo" ? "ok" : "warn"} />
+    <Badge label={status?.backend ?? "…"} tone={status?.backend === "mongo" ? "ok" : "warn"} />
     {#if status?.master_loaded === false}
       <Badge label="master loading" tone="warn" />
     {/if}
 
     <span class="spacer"></span>
 
-    <button disabled={busy} onclick={startDemo}>{busy ? "Startingâ€¦" : "Demo feed"}</button>
+    <button disabled={busy} onclick={startDemo}>{busy ? "Starting..." : "Demo feed"}</button>
     <button disabled={!status?.connected} onclick={stopFeed}>Stop</button>
   </header>
 
   <div class="body">
     <nav class="sidebar" aria-label="Sections">
       <div class="nav-title">Terminal</div>
-      <button
-        class="nav-item"
-        class:active={page === "market"}
-        aria-current={page === "market" ? "page" : undefined}
-        onclick={() => (page = "market")}>Market watch</button
-      >
-      <button
-        class="nav-item"
-        class:active={page === "chain"}
-        aria-current={page === "chain" ? "page" : undefined}
-        onclick={() => (page = "chain")}>Option chain</button
-      >
-      <button
-        class="nav-item"
-        class:active={page === "instruments"}
-        aria-current={page === "instruments" ? "page" : undefined}
-        onclick={() => (page = "instruments")}>Instruments</button
-      >
-      <button
-        class="nav-item"
-        class:active={page === "diagnostics"}
-        aria-current={page === "diagnostics" ? "page" : undefined}
-        onclick={() => (page = "diagnostics")}>Diagnostics</button
-      >
+      {#each navItems as item (item.id)}
+        <button
+          class="nav-item"
+          class:active={page === item.id}
+          aria-current={page === item.id ? "page" : undefined}
+          onclick={() => (page = item.id)}>{item.label}</button
+        >
+      {/each}
     </nav>
 
     <div class="content">
@@ -292,9 +285,7 @@
       {/if}
 
       <main class="main" class:with-snap={page === "market"}>
-        {#if page === "chain"}
-          <OptionChain watched={watchedKeys} onadd={addInstrument} />
-        {:else if page === "market"}
+        {#if page === "market"}
           <MarketWatch
             {rows}
             {selected}
@@ -304,8 +295,18 @@
             onstart={startDemo}
           />
           <SnapQuote quote={selectedQuote} instrument={instrumentMeta} onremove={removeInstrument} />
+        {:else if page === "chain"}
+          <OptionChain watched={watchedKeys} onadd={addInstrument} />
+        {:else if page === "indices"}
+          <IndexWatch onadd={addInstrument} refreshToken={watchedKeys.length} />
         {:else if page === "instruments"}
           <InstrumentSearch watched={watchedKeys} onadd={addInstrument} />
+        {:else if page === "positions"}
+          <Positions />
+        {:else if page === "orders"}
+          <Orders />
+        {:else if page === "groups"}
+          <Groups watchCount={rows.length} />
         {:else}
           <Diagnostics
             {status}

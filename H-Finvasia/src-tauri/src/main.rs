@@ -1,4 +1,4 @@
-﻿// Console window only in debug builds; the release app is windowless.
+// Console window only in debug builds; the release app is windowless.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 //! H-Finvasia desktop shell.
@@ -6,7 +6,7 @@
 //! Thin adapter over [`fv_bridge::MarketData`]: owns no market logic itself, only
 //! the Tauri plumbing (commands, events, task lifecycle).
 //!
-//! Threading model ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â deliberately simple and leak-free:
+//! Threading model ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â deliberately simple and leak-free:
 //! * one producer task feeds decoded [`Frame`]s into an mpsc channel;
 //! * one consumer task owns the state lock, absorbs frames, and emits bounded
 //!   `quotes:delta` batches at ~60 Hz;
@@ -18,11 +18,13 @@ use fv_feed::Frame;
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 use tauri::async_runtime::JoinHandle;
 
+mod account;
+mod groups;
 mod session;
 
 /// Bundled master used when MongoDB is unavailable, so first-run search works.
@@ -43,6 +45,9 @@ pub struct AppState {
     producer: Mutex<Option<JoinHandle<()>>>,
     /// Commands to the running live session (subscribe/unsubscribe/shutdown).
     feed_cmd: Mutex<Option<mpsc::UnboundedSender<fv_feed::ws::FeedCommand>>>,
+    /// Cached broker session, so read-only screens do not re-validate every call.
+    session: Mutex<Option<session::Session>>,
+    rest: account::RestClient,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -133,6 +138,7 @@ fn watch_add(
         (plan, payload)
     };
     forward_plan_to_live(&state, &plan);
+    save_watch(&app, state.inner());
     let _ = app.emit("watch:changed", payload);
     Ok(plan)
 }
@@ -153,6 +159,7 @@ fn watch_remove(
         (plan, payload)
     };
     forward_plan_to_live(&state, &plan);
+    save_watch(&app, state.inner());
     let _ = app.emit("watch:changed", payload);
     Ok(plan)
 }
@@ -360,8 +367,142 @@ fn chain_close(app: AppHandle, state: State<'_, Arc<AppState>>) {
     let _ = app.emit("chain:closed", ());
 }
 
+// ---------------------------------------------------------------------------
+// Read-only account views (positions / funds / order book)
+// ---------------------------------------------------------------------------
+
+fn looks_like_session_error(message: &str) -> bool {
+    message.contains("SESSION")
+        || message.contains("Session Expired")
+        || message.contains("Invalid Session")
+}
+
+async fn ensure_session(state: &Arc<AppState>) -> Result<session::Session, String> {
+    if let Some(current) = state.session.lock().unwrap().clone() {
+        return Ok(current);
+    }
+    let resolved = session::resolve_session().await?;
+    *state.session.lock().unwrap() = Some(resolved.clone());
+    Ok(resolved)
+}
+
+#[tauri::command]
+async fn positions_load(state: State<'_, Arc<AppState>>) -> Result<account::PositionsView, String> {
+    let shared = state.inner().clone();
+    let mut session = ensure_session(&shared).await?;
+    match account::positions(&shared.rest, &session.uid, &session.actid, &session.token).await {
+        Ok(view) => Ok(view),
+        Err(err) if looks_like_session_error(&err) => {
+            // The cached token aged out: drop it and resolve once more.
+            *shared.session.lock().unwrap() = None;
+            session = ensure_session(&shared).await?;
+            account::positions(&shared.rest, &session.uid, &session.actid, &session.token).await
+        }
+        Err(err) => Err(err),
+    }
+}
+
+#[tauri::command]
+async fn orders_load(state: State<'_, Arc<AppState>>) -> Result<Vec<account::OrderDto>, String> {
+    let shared = state.inner().clone();
+    let mut session = ensure_session(&shared).await?;
+    match account::orders(&shared.rest, &session.uid, &session.token).await {
+        Ok(rows) => Ok(rows),
+        Err(err) if looks_like_session_error(&err) => {
+            *shared.session.lock().unwrap() = None;
+            session = ensure_session(&shared).await?;
+            account::orders(&shared.rest, &session.uid, &session.token).await
+        }
+        Err(err) => Err(err),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Watch groups (local, broker-free)
+// ---------------------------------------------------------------------------
+
+fn config_dir(app: &AppHandle) -> std::path::PathBuf {
+    app.path()
+        .app_config_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+}
+
+fn groups_file(app: &AppHandle) -> std::path::PathBuf {
+    groups::file_path(&config_dir(app))
+}
+
+fn watch_file(app: &AppHandle) -> std::path::PathBuf {
+    groups::watch_path(&config_dir(app))
+}
+
+/// Persist the current watch list so the next launch can resume it.
+fn save_watch(app: &AppHandle, state: &Arc<AppState>) {
+    let keys = state.market.lock().unwrap().watched();
+    if let Err(err) = groups::write_watch(&watch_file(app), keys) {
+        tracing::warn!(error = %err, "could not persist the watch list");
+    }
+}
+
+#[tauri::command]
+fn groups_list(app: AppHandle) -> Vec<groups::GroupSummary> {
+    groups::list(&groups_file(&app))
+}
+
+#[tauri::command]
+fn group_save(app: AppHandle, state: State<'_, Arc<AppState>>, name: String) -> Result<(), String> {
+    let keys = state.market.lock().unwrap().watched();
+    if keys.is_empty() {
+        return Err("the watch list is empty, nothing to save".into());
+    }
+    groups::save(&groups_file(&app), &name, keys)
+}
+
+#[tauri::command]
+fn group_load(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    name: String,
+) -> Result<PlanDto, String> {
+    let stored = groups::load(&groups_file(&app), &name)?;
+    let parsed: Vec<SymbolKey> = stored
+        .iter()
+        .filter_map(|key| SymbolKey::parse(key).ok())
+        .collect();
+    if parsed.is_empty() {
+        return Err(format!("group \"{name}\" has no valid instruments"));
+    }
+
+    let (plan, payload) = {
+        let mut market = state.market.lock().unwrap();
+        let plan = market.set_watch(parsed);
+        let payload = WatchChanged {
+            keys: market.watched(),
+            quotes: market.watch_quotes(),
+        };
+        (plan, payload)
+    };
+    forward_plan_to_live(&state, &plan);
+    save_watch(&app, state.inner());
+    let _ = app.emit("watch:changed", payload);
+    Ok(plan)
+}
+
+#[tauri::command]
+fn group_delete(app: AppHandle, name: String) -> Result<(), String> {
+    groups::delete(&groups_file(&app), &name)
+}
+
+// ---------------------------------------------------------------------------
+// Index watch
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn indices_list(state: State<'_, Arc<AppState>>) -> Vec<fv_bridge::IndexRowDto> {
+    state.market.lock().unwrap().index_rows(300)
+}
+
 /// Connect to the venue. The session is resolved automatically:
-/// env token ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ persisted Mongo token (validated) ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ TOTP login.
+/// env token ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ persisted Mongo token (validated) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ TOTP login.
 #[tauri::command]
 async fn start_live(
     app: AppHandle,
@@ -388,14 +529,24 @@ async fn start_live(
         token_source = resolved.source.as_str(),
         "live session resolved"
     );
+    begin_live(app, state.inner().clone(), resolved, keys).await
+}
 
+/// Start the socket for an already-resolved session. Shared by the manual
+/// command and the startup auto-connect.
+async fn begin_live(
+    app: AppHandle,
+    state: Arc<AppState>,
+    resolved: session::Session,
+    keys: Vec<SymbolKey>,
+) -> Result<Vec<String>, String> {
     let cfg = fv_feed::ws::WsConfig::new(&resolved.uid, &resolved.actid, &resolved.token);
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<fv_feed::ws::FeedCommand>();
     *state.feed_cmd.lock().unwrap() = Some(cmd_tx);
 
     let tx = state.tx.clone();
-    let feed_state = state.inner().clone();
-    let shared = state.inner().clone();
+    let feed_state = state.clone();
+    let shared = state.clone();
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         let result = fv_feed::ws::run_forever(
@@ -608,6 +759,8 @@ fn main() {
         tx,
         producer: Mutex::new(None),
         feed_cmd: Mutex::new(None),
+        session: Mutex::new(None),
+        rest: account::RestClient::new().expect("rest client"),
     });
 
     let rx_slot = Arc::new(Mutex::new(Some(rx)));
@@ -625,20 +778,63 @@ fn main() {
 
             tauri::async_runtime::spawn(consume(setup_state.clone(), rx, handle.clone()));
 
-            let autostart_handle = handle.clone();
-            tauri::async_runtime::spawn(load_master(setup_state.clone(), handle));
+            let demo_handle = handle.clone();
+            tauri::async_runtime::spawn(load_master(setup_state.clone(), handle.clone()));
+
+            let demo_mode = std::env::var("FV_AUTOSTART_DEMO")
+                .map(|v| v == "1")
+                .unwrap_or(false);
+
+            // Resume the previous watch list and, if a session is already valid,
+            // connect without any manual step.
+            if !demo_mode {
+                let resume_state = setup_state.clone();
+                let resume_handle = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let stored = groups::read_watch(&watch_file(&resume_handle));
+                    let keys: Vec<SymbolKey> = stored
+                        .iter()
+                        .filter_map(|key| SymbolKey::parse(key).ok())
+                        .collect();
+                    if keys.is_empty() {
+                        return;
+                    }
+
+                    let payload = {
+                        let mut market = resume_state.market.lock().unwrap();
+                        market.set_watch(keys.clone());
+                        WatchChanged {
+                            keys: market.watched(),
+                            quotes: market.watch_quotes(),
+                        }
+                    };
+                    let _ = resume_handle.emit("watch:changed", payload);
+
+                    // Only adopt an existing session; never log in silently at
+                    // startup, because that could invalidate another tool.
+                    if let Some(resolved) = session::resolve_existing().await {
+                        tracing::info!(
+                            keys = keys.len(),
+                            "auto-connecting with an existing session"
+                        );
+                        if let Err(err) =
+                            begin_live(resume_handle.clone(), resume_state.clone(), resolved, keys)
+                                .await
+                        {
+                            tracing::warn!(error = %err, "auto-connect failed");
+                        }
+                    }
+                });
+            }
 
             // Kiosk/demo/CI switch: start the bundled replay without a click.
-            if std::env::var("FV_AUTOSTART_DEMO")
-                .map(|v| v == "1")
-                .unwrap_or(false)
-            {
+            if demo_mode {
                 let autostart_state = setup_state.clone();
                 tauri::async_runtime::spawn(async move {
                     // Let the webview mount its listeners. The frontend also
                     // hydrates from watch_list, so a missed event is harmless.
                     tokio::time::sleep(Duration::from_millis(1_500)).await;
-                    if let Err(err) = start_demo(autostart_handle, autostart_state).await {
+                    if let Err(err) = start_demo(demo_handle, autostart_state).await {
                         tracing::warn!(error = %err, "autostart demo failed");
                     }
                 });
@@ -662,6 +858,13 @@ fn main() {
             chain_expiries,
             chain_load,
             chain_close,
+            positions_load,
+            orders_load,
+            groups_list,
+            group_save,
+            group_load,
+            group_delete,
+            indices_list,
             stop_feed,
         ])
         .run(tauri::generate_context!())

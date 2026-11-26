@@ -21,6 +21,7 @@ function quote(overrides: Partial<QuoteDto> = {}): QuoteDto {
     trend: "up",
     seq: 1,
     updated_at_ms: 1,
+    is_index: false,
     ...overrides,
   };
 }

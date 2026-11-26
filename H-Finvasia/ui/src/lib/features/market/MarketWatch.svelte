@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
   import type { QuoteRow } from "../../state";
   import EmptyState from "../../components/EmptyState.svelte";
 
@@ -11,6 +11,9 @@
     onstart: () => void;
   }
   let { rows, selected, busy, onselect, onremove, onstart }: Props = $props();
+
+  // Watched indices become the spot-rate strip (no extra subscriptions).
+  const indexRows = $derived(rows.filter((row) => row.isIndex));
 </script>
 
 <section class="panel">
@@ -28,6 +31,17 @@
       onaction={onstart}
     />
   {:else}
+    {#if indexRows.length > 0}
+      <div class="spot-strip">
+        {#each indexRows as row (row.key)}
+          <span class="spot-item">
+            {row.symbol}
+            <strong class={row.trend}>{row.ltp}</strong>
+            <span class={row.trend}>{row.pct}</span>
+          </span>
+        {/each}
+      </div>
+    {/if}
     <div class="grid-wrap">
       <table class="grid">
         <thead>
@@ -72,7 +86,7 @@
                   onclick={(event) => {
                     event.stopPropagation();
                     onremove(row.key);
-                  }}>×</button
+                  }}>Ã—</button
                 >
               </td>
             </tr>

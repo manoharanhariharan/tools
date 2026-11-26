@@ -27,6 +27,8 @@ export interface QuoteDto {
   trend: Trend;
   seq: number;
   updated_at_ms: number;
+  /** True when this key is an index (drives the spot-rate strip). */
+  is_index: boolean;
 }
 
 export interface InstrumentDto {
@@ -39,6 +41,88 @@ export interface InstrumentDto {
   strike_type: string;
   lot_size: number;
   instrument_type: string;
+}
+
+export interface FundsDto {
+  cash: string | null;
+  payin: string | null;
+  payout: string | null;
+  uncleared: string | null;
+  blocked: string | null;
+  turnover: string | null;
+  turnover_limit: string | null;
+  pending_order_value: string | null;
+  brokerage: string | null;
+  peak_margin: string | null;
+  premium: string | null;
+}
+
+export interface PositionDto {
+  exchange: string;
+  symbol: string;
+  token: string;
+  product: string;
+  product_alias: string;
+  instrument: string;
+  lot_size: number;
+  net_qty: number;
+  net_avg: string | null;
+  ltp: string | null;
+  mtm: string | null;
+  pnl: string | null;
+  day_buy_qty: number;
+  day_sell_qty: number;
+  buy_value: string | null;
+  sell_value: string | null;
+}
+
+export interface PositionTotals {
+  buy_qty: number;
+  sell_qty: number;
+  buy_value: string;
+  sell_value: string;
+  net_value: string;
+  mtm: string;
+}
+
+export interface PositionsView {
+  funds: FundsDto | null;
+  positions: PositionDto[];
+  totals: PositionTotals;
+}
+
+export interface OrderDto {
+  order_no: string;
+  status: string;
+  side: string;
+  price_type: string;
+  retention: string;
+  quantity: number;
+  price: string | null;
+  average_price: string | null;
+  filled: number;
+  pending: number;
+  rejection: string | null;
+  rejected_by: string | null;
+  exchange: string;
+  symbol: string;
+  exchange_order_id: string | null;
+  remarks: string | null;
+  order_time: string | null;
+}
+
+export interface GroupSummary {
+  name: string;
+  count: number;
+}
+
+export interface IndexRowDto {
+  key: string;
+  symbol: string;
+  name: string | null;
+  exchange: string;
+  live: boolean;
+  quote: QuoteDto | null;
 }
 
 export interface ChainRowDto {
@@ -123,6 +207,13 @@ export const api = {
   chainLoad: (underlying: string, expiry: string, strikes: number, atm: string | null) =>
     invoke<ChainRowDto[]>("chain_load", { underlying, expiry, strikes, atm }),
   chainClose: () => invoke<void>("chain_close"),
+  positionsLoad: () => invoke<PositionsView>("positions_load"),
+  ordersLoad: () => invoke<OrderDto[]>("orders_load"),
+  groupsList: () => invoke<GroupSummary[]>("groups_list"),
+  groupSave: (name: string) => invoke<void>("group_save", { name }),
+  groupLoad: (name: string) => invoke<PlanDto>("group_load", { name }),
+  groupDelete: (name: string) => invoke<void>("group_delete", { name }),
+  indicesList: () => invoke<IndexRowDto[]>("indices_list"),
   stopFeed: () => invoke<void>("stop_feed"),
 };
 
