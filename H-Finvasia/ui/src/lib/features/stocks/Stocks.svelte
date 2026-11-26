@@ -10,8 +10,9 @@
     onadd: (key: string) => void;
     onremove: (key: string) => void;
     onchain: (underlying: string) => void;
+    onactive: (key: string, label: string) => void;
   }
-  let { watched, onadd, onremove, onchain }: Props = $props();
+  let { watched, onadd, onremove, onchain, onactive }: Props = $props();
 
   let rows = $state<StockRowDto[]>([]);
   let containers = $state<ContainersView>({ active: null, groups: [] });
@@ -167,9 +168,22 @@
     }
   }
 
+  async function setGroupColor(name: string, color: string) {
+    if (busy) return;
+    busy = true;
+    error = null;
+    try {
+      containers = await api.containerColor(name, color);
+    } catch (e) {
+      error = String(e);
+    } finally {
+      busy = false;
+    }
+  }
+
   async function deleteContainer(name: string) {
     if (busy) return;
-    if (!window.confirm(`Delete container "${name}"?`)) return;
+    if (!window.confirm(`Delete group "${name}"?`)) return;
     busy = true;
     error = null;
     try {
@@ -252,9 +266,9 @@
   <div class="stocks-body">
     <aside class="containers">
       <div class="containers-head">
-        <span>Containers</span>
+        <span>Groups</span>
         <span class="spacer"></span>
-        <button class="tiny" title="New container (copies the current watch)" disabled={busy} onclick={() => (creating = true)}>
+        <button class="tiny" title="New group (copies the current watch)" disabled={busy} onclick={() => (creating = true)}>
           +
         </button>
       </div>
@@ -264,7 +278,7 @@
           <input
             use:focusOnMount
             bind:value={createDraft}
-            placeholder="Container name"
+            placeholder="Group name"
             onkeydown={(event) => {
               if (event.key === "Enter") void createContainer();
               if (event.key === "Escape") {
@@ -284,9 +298,10 @@
           <div
             class="container-row"
             class:active={group.name === containers.active}
+            style="--group-color: {group.color ?? '#4B9BD8'}"
             role="button"
             tabindex="0"
-            title={group.name === containers.active ? "Active container" : "Switch to this container"}
+            title={group.name === containers.active ? "Active group" : "Switch to this group"}
             onclick={() => activate(group.name)}
             onkeydown={(event) => {
               if (event.key === "Enter" || event.key === " ") void activate(group.name);
@@ -322,6 +337,14 @@
                 }}>{group.name}</button
               >
             {/if}
+            <input
+              class="group-color"
+              type="color"
+              value={group.color ?? "#4B9BD8"}
+              title={`Color for ${group.name}`}
+              onclick={(event) => event.stopPropagation()}
+              onchange={(event) => void setGroupColor(group.name, event.currentTarget.value)}
+            />
             <span class="container-count">{group.count}</span>
             <button
               class="container-del"
@@ -386,7 +409,7 @@
       {#if rows.length === 0}
         <EmptyState
           title={`No watched stocks in ${active}`}
-          hint="Search above to add a stock to this container. Switching containers replaces the watch list."
+          hint="Search above to add a stock to this group. Switching groups replaces the watch list."
         />
       {:else}
         <div class="stock-head" role="row">
@@ -404,6 +427,7 @@
               class="stock-row watched"
               role="row"
               tabindex="-1"
+              onmouseenter={() => onactive(row.key, row.symbol)}
               title={row.has_fno
                 ? "F&O available - right-click for the option chain"
                 : (row.name ?? undefined)}
@@ -429,7 +453,7 @@
               <span class="num" role="cell">
                 <button
                   class="ghost tiny"
-                  title="Remove from container"
+                  title="Remove from group"
                   onclick={() => onremove(row.key)}>watching</button
                 >
               </span>
@@ -439,8 +463,8 @@
       {/if}
 
       <p class="hint" style="padding: 8px 14px; border-top: 1px solid var(--border)">
-        Showing watched stocks only. Double-click a container name to rename it. Changes to the active
-        container are saved locally; no broker call is made until a live subscription needs it.
+        Showing watched stocks only. Double-click a group name to rename it. Changes to the active
+        group are saved locally; no broker call is made until a live subscription needs it.
       </p>
     </div>
   </div>
@@ -460,7 +484,7 @@
           },
         },
         {
-          label: "Remove from container",
+          label: "Remove from group",
           action: () => {
             if (menu) onremove(menu.row.key);
           },

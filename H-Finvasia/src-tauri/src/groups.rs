@@ -1,4 +1,4 @@
-﻿//! Named watch lists ("Groups"), persisted locally.
+//! Named watch lists ("Groups"), persisted locally.
 //!
 //! Deliberately file-backed and broker-free: switching a group only rewrites the
 //! local watch set, which the subscription layer then reconciles within the
@@ -15,12 +15,16 @@ pub struct GroupFile {
     pub active: Option<String>,
     #[serde(default)]
     pub groups: BTreeMap<String, Vec<String>>,
+    /// Optional `#RRGGBB` per group, independent of the watch list.
+    #[serde(default)]
+    pub colors: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct GroupSummary {
     pub name: String,
     pub count: usize,
+    pub color: Option<String>,
 }
 
 /// Containers plus the one that currently owns the live watch list.
@@ -31,6 +35,25 @@ pub struct ContainersView {
 }
 
 pub const DEFAULT_CONTAINER: &str = "Watchlist";
+
+const GROUP_COLORS: &[&str] = &[
+    "#4B9BD8", "#3DC77E", "#D9A441", "#B05BD8", "#E25C5C", "#0F9D8A",
+];
+
+fn default_group_color(index: usize) -> String {
+    GROUP_COLORS[index % GROUP_COLORS.len()].to_string()
+}
+
+fn normalize_color(color: &str) -> Result<String, String> {
+    let trimmed = color.trim();
+    let hex = trimmed
+        .strip_prefix('#')
+        .ok_or_else(|| "color must be #RRGGBB".to_string())?;
+    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("color must be #RRGGBB".into());
+    }
+    Ok(format!("#{}", hex.to_ascii_uppercase()))
+}
 
 pub fn file_path(config_dir: &Path) -> PathBuf {
     config_dir.join("watch-groups.json")
@@ -109,6 +132,7 @@ fn view_from_file(file: &GroupFile) -> ContainersView {
             .map(|(name, keys)| GroupSummary {
                 name: name.clone(),
                 count: keys.len(),
+                color: file.colors.get(name).cloned(),
             })
             .collect(),
     }
@@ -127,6 +151,9 @@ pub fn ensure_default(path: &Path, current: Vec<String>) -> Result<ContainersVie
     if file.groups.is_empty() {
         file.groups.insert(DEFAULT_CONTAINER.to_string(), current);
         file.active = Some(DEFAULT_CONTAINER.to_string());
+        file.colors
+            .entry(DEFAULT_CONTAINER.to_string())
+            .or_insert_with(|| default_group_color(0));
     } else {
         let valid = file
             .active
@@ -141,11 +168,24 @@ pub fn ensure_default(path: &Path, current: Vec<String>) -> Result<ContainersVie
                     .keys()
                     .next()
                     .cloned()
-                    .ok_or_else(|| "no containers".to_string())?
+                    .ok_or_else(|| "no groups".to_string())?
             };
             file.groups.insert(name.clone(), current);
             file.active = Some(name);
         }
+    }
+    // Fill colors for groups created before colors existed.
+    for (index, name) in file
+        .groups
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>()
+        .iter()
+        .enumerate()
+    {
+        file.colors
+            .entry(name.clone())
+            .or_insert_with(|| default_group_color(index));
     }
     write(path, &file)?;
     Ok(view_from_file(&file))
@@ -156,15 +196,17 @@ pub fn create(path: &Path, name: &str, keys: Vec<String>) -> Result<ContainersVi
     let name = validate_name(name)?;
     let mut file = read(path);
     if file.groups.contains_key(&name) {
-        return Err(format!("container \"{name}\" already exists"));
+        return Err(format!("group \"{name}\" already exists"));
     }
+    let color = default_group_color(file.groups.len());
     file.groups.insert(name.clone(), keys);
+    file.colors.insert(name.clone(), color);
     file.active = Some(name);
     write(path, &file)?;
     Ok(view_from_file(&file))
 }
 
-/// Rename a container. The active pointer follows the rename.
+/// Rename a container. The active pointer and color follow the rename.
 pub fn rename(path: &Path, old: &str, new: &str) -> Result<ContainersView, String> {
     let old = validate_name(old)?;
     let new = validate_name(new)?;
@@ -175,12 +217,16 @@ pub fn rename(path: &Path, old: &str, new: &str) -> Result<ContainersView, Strin
     let keys = file
         .groups
         .remove(&old)
-        .ok_or_else(|| format!("container \"{old}\" does not exist"))?;
+        .ok_or_else(|| format!("group \"{old}\" does not exist"))?;
     if file.groups.contains_key(&new) {
-        file.groups.insert(old, keys);
-        return Err(format!("container \"{new}\" already exists"));
+        file.groups.insert(old.clone(), keys);
+        return Err(format!("group \"{new}\" already exists"));
     }
+    let color = file.colors.remove(&old);
     file.groups.insert(new.clone(), keys);
+    if let Some(color) = color {
+        file.colors.insert(new.clone(), color);
+    }
     if file.active.as_deref() == Some(old.as_str()) {
         file.active = Some(new);
     }
@@ -194,10 +240,23 @@ pub fn set_active(path: &Path, name: &str) -> Result<(), String> {
     let name = validate_name(name)?;
     let mut file = read(path);
     if !file.groups.contains_key(&name) {
-        return Err(format!("container \"{name}\" does not exist"));
+        return Err(format!("group \"{name}\" does not exist"));
     }
     file.active = Some(name);
     write(path, &file)
+}
+
+/// Set a group's display color.
+pub fn set_color(path: &Path, name: &str, color: &str) -> Result<ContainersView, String> {
+    let name = validate_name(name)?;
+    let color = normalize_color(color)?;
+    let mut file = read(path);
+    if !file.groups.contains_key(&name) {
+        return Err(format!("group \"{name}\" does not exist"));
+    }
+    file.colors.insert(name, color);
+    write(path, &file)?;
+    Ok(view_from_file(&file))
 }
 
 /// Write the live watch list into the active container.
@@ -220,20 +279,21 @@ pub fn remove(path: &Path, name: &str) -> Result<(ContainersView, Option<String>
     let name = validate_name(name)?;
     let mut file = read(path);
     if !file.groups.contains_key(&name) {
-        return Err(format!("container \"{name}\" does not exist"));
+        return Err(format!("group \"{name}\" does not exist"));
     }
     if file.groups.len() == 1 {
-        return Err("cannot delete the last container".into());
+        return Err("cannot delete the last group".into());
     }
     let was_active = file.active.as_deref() == Some(name.as_str());
     file.groups.remove(&name);
+    file.colors.remove(&name);
     let next = if was_active {
         let next = file
             .groups
             .keys()
             .next()
             .cloned()
-            .ok_or_else(|| "no containers".to_string())?;
+            .ok_or_else(|| "no groups".to_string())?;
         file.active = Some(next.clone());
         Some(next)
     } else {
@@ -365,6 +425,28 @@ mod tests {
         assert_eq!(view.active.as_deref(), Some(DEFAULT_CONTAINER));
         assert_eq!(view.groups.len(), 1);
         assert!(remove(&path, DEFAULT_CONTAINER).is_err(), "last one stays");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn group_colors_follow_create_rename_and_delete() {
+        let path = temp_path("containers-colors");
+        let view = ensure_default(&path, vec!["A".into()]).unwrap();
+        assert!(view.groups[0].color.is_some());
+
+        create(&path, "Colored", vec!["B".into()]).unwrap();
+        let view = set_color(&path, "Colored", "#12AB34").unwrap();
+        let colored = view.groups.iter().find(|g| g.name == "Colored").unwrap();
+        assert_eq!(colored.color.as_deref(), Some("#12AB34"));
+
+        let view = rename(&path, "Colored", "Moved").unwrap();
+        let moved = view.groups.iter().find(|g| g.name == "Moved").unwrap();
+        assert_eq!(moved.color.as_deref(), Some("#12AB34"));
+
+        let (view, _) = remove(&path, "Moved").unwrap();
+        assert!(view.groups.iter().all(|g| g.name != "Moved"));
+        assert!(set_color(&path, "Moved", "#000000").is_err());
+        assert!(set_color(&path, DEFAULT_CONTAINER, "red").is_err());
         let _ = std::fs::remove_file(path);
     }
 }

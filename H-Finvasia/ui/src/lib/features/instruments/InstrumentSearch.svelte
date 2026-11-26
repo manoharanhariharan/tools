@@ -7,8 +7,9 @@
     watched: string[];
     onadd: (key: string) => void;
     onchain: (underlying: string) => void;
+    onactive: (key: string, label: string) => void;
   }
-  let { watched, onadd, onchain }: Props = $props();
+  let { watched, onadd, onchain, onactive }: Props = $props();
 
   let menu = $state<{ x: number; y: number; row: InstrumentDto } | null>(null);
 
@@ -96,6 +97,7 @@
         <tbody>
           {#each results as item (item.key)}
             <tr
+              onmouseenter={() => onactive(item.key, item.trading_symbol)}
               oncontextmenu={(event) => {
                 event.preventDefault();
                 event.stopPropagation();

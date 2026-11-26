@@ -82,11 +82,11 @@ state), **Funds available**, **RPNL**, **MTM** - followed by four tabs: **Index*
 **Option chain**, **Instruments**. Market watch and Groups/Diagnostics sit behind the **More** menu;
 Positions and the order book live in the bottom dock, so the working area stays uncluttered.
 
-**Stocks** shows only the watched stocks in the active container. Use the search bar above the list
-to find an NSE stock; matches appear in a flyout and can be added directly. The containers sidebar
-creates, deletes and renames lists (double-click a name to edit). The active container is the live
-watch list, so switching it re-subscribes within the 100-instrument budget; changes are saved
-locally and cost no broker calls.
+**Stocks** shows only the watched stocks in the active group. Use the search bar above the list
+to find an NSE stock; matches appear in a flyout and can be added directly. The groups sidebar
+creates, deletes and renames lists (double-click a name to edit), and each group has a color chip
+that opens the system color picker. The active group is the live watch list, so switching it
+re-subscribes within the 100-instrument budget; changes are saved locally and cost no broker calls.
 
 **Option chain** uses the usual quad layout: calls on the left, puts on the right, strike price in
 the middle. Each side is mirrored around the strike (trade, OI, d OI, volume, LTP, change, bid qty,
@@ -101,6 +101,14 @@ resize the height, drag the middle divider to resize the columns, and collapse i
 bar. It is collapsed by default so no account REST calls happen until you open it; refreshes are
 manual, never on a timer.
 
+**F1 / F2** buy and sell the last hovered row (or option leg) from Stocks, Instruments, Market watch
+or the option chain. The tabs bar shows the active target. If the instrument is not tradeable the
+app explains instead of opening a ticket.
+
+**Appearance** (More -> Appearance) offers Midnight, Graphite, Ocean, Contrast and Light themes, plus
+six accent presets and a custom accent. The choice is stored on this machine and applied before the
+first paint.
+
 ### Using it
 
 1. Double-click `h-finvasia-v<tag>.exe`.
@@ -114,9 +122,10 @@ manual, never on a timer.
    When the instrument's underlying has derivatives the menu offers **Open option chain
    (UNDERLYING)**; choosing it switches to the Option chain tab, selects that underlying's nearest
    expiry, and loads the chain centred on the watched spot (or the entered ATM).
-5. **Buy / sell** from the chain: hover a CE/PE row and press **B** or **S**. The ticket is prefilled
-   from your saved defaults and the current ask/bid. Nothing is sent until **Confirm**. Orders are
-   allowed only while the feed is live; replay/offline tickets open for review with Confirm disabled.
+5. **Buy / sell** from the chain: hover a CE/PE row and press **B** or **S**, or hover any tradeable
+   row and press **F1** (buy) / **F2** (sell). The ticket is prefilled from your saved defaults and
+   the current ask/bid. Nothing is sent until **Confirm**. Orders are allowed only while the feed is
+   live; replay/offline tickets open for review with Confirm disabled.
 6. **Positions & order book** live in the bottom dock. Open it from the footer bar; each panel has its
    own Refresh button. After a confirmed order the order book refreshes automatically if it is open.
 7. **Diagnostics** shows backend (`mongo` vs `in-memory`), frame rate, decode errors, and the live
@@ -263,8 +272,12 @@ scripts/make-icon.ps1      regenerates src-tauri/icons
   unit-tested; the first live confirmation should be checked in the order book.
 - **The bottom dock is collapsed by default.** Positions/order book load only when it is opened;
   there is no polling.
-- **The Stocks search flyout is NSE cash equities only.** Containers are generic watch lists and may
+- **The Stocks search flyout is NSE cash equities only.** Groups are generic watch lists and may
   hold indices/options added from other tabs.
+- **F1/F2 act on the last hovered row/leg.** The shortcut target is shown in the tabs bar; remapping
+  keys is not configurable yet.
+- **Themes and group colours are stored on this machine** (localStorage / `watch-groups.json`).
+  They are not synced to other devices.
 - **Live feed is verified for touchline ticks** (`tk`/`tf`). Depth (`dk`/`df`) and order updates
   (`om`) are parsed but not yet wired to a UI panel.
 - **One websocket per session token.** Opening a second connection while the first is live makes the

@@ -70,6 +70,8 @@ pub struct InstrumentDto {
     pub lot_size: i64,
     pub instrument_type: String,
     pub has_fno: bool,
+    /// True for an index; indices are not tradeable.
+    pub is_index: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

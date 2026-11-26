@@ -145,6 +145,17 @@ explicit signal to make the account REST calls; closing it unmounts both panels 
 listeners. There is no polling. `FV_NO_AUTOCONNECT=1` makes both commands return empty results, so
 screenshots and release probes stay broker-free.
 
+### 4.10 One order target for every tradeable row
+
+Rows do not build tickets themselves. They publish `(key, label)` on hover; the App asks
+`order_target` for the instrument metadata and quote, then opens the single global ticket. F1/F2
+resolve through the same path. This keeps lot size, exchange, symbol and price handling identical
+for stocks, futures and options, and lets non-live sources disable confirmation in one place.
+
+Appearance is applied before mount (`applyStoredTheme` in `main.ts`) so the first paint matches the
+saved theme. Theme/accent live in localStorage; group colours live in `watch-groups.json`. Neither
+is a broker concern.
+
 ## 5. Threading and lifecycle (src-tauri)
 
 ```

@@ -11,8 +11,9 @@
     onremove: (key: string) => void;
     onstart: () => void;
     onchain: (underlying: string) => void;
+    onactive: (key: string, label: string) => void;
   }
-  let { rows, selected, busy, onselect, onremove, onstart, onchain }: Props = $props();
+  let { rows, selected, busy, onselect, onremove, onstart, onchain, onactive }: Props = $props();
 
   let menu = $state<{ x: number; y: number; row: QuoteRow } | null>(null);
 
@@ -67,6 +68,7 @@
               tabindex="0"
               role="button"
               aria-label={`Select ${row.symbol}`}
+              onmouseenter={() => onactive(row.key, row.symbol)}
               onclick={() => onselect(row.key)}
               oncontextmenu={(event) => {
                 event.preventDefault();

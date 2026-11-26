@@ -1,20 +1,9 @@
 ﻿<script lang="ts">
   import { onMount } from "svelte";
-  import {
-    api,
-    events,
-    type ChainRowDto,
-    type OrderDefaults,
-    type OrderResult,
-    type QuoteDto,
-    type SourceKind,
-  } from "../../api";
+  import { api, events, type ChainRowDto, type QuoteDto } from "../../api";
   import { formatVolume } from "../../state";
   import Badge from "../../components/Badge.svelte";
-  import OrderDefaultsModal from "./OrderDefaultsModal.svelte";
-  import OrderTicket from "./OrderTicket.svelte";
   import {
-    defaultTicketPrice,
     deltaOi,
     fillPercent,
     groupStrikes,
@@ -22,15 +11,22 @@
     sideMoneyness,
     windowAround,
     type StrikeLadderRow,
-    type Ticket,
   } from "./chain";
 
   interface Props {
-    source?: SourceKind;
     pending?: { underlying: string; nonce: number } | null;
     onconsumed?: () => void;
+    onorder: (key: string, side: "B" | "S") => void;
+    ondefaults: () => void;
+    onactive: (key: string, label: string) => void;
   }
-  let { source = "idle", pending = null, onconsumed }: Props = $props();
+  let {
+    pending = null,
+    onconsumed,
+    onorder,
+    ondefaults,
+    onactive,
+  }: Props = $props();
 
   let underlying = $state("NIFTY");
   let expiries = $state<string[]>([]);
@@ -42,15 +38,6 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let loaded = $state(false);
-  let orderDefaults = $state<OrderDefaults>({
-    product: "I",
-    price_type: "LMT",
-    validity: "DAY",
-    lots: 1,
-  });
-  let showDefaults = $state(false);
-  let ticket = $state<Ticket | null>(null);
-  let orderNotice = $state<string | null>(null);
 
   // The underlying spot is only known when it is on the watch list. Without it
   // the ATM strike is used as the ITM/OTM reference, which is the same boundary.
@@ -230,25 +217,12 @@
     }
   }
 
-  function openTicket(leg: ChainRowDto | null | undefined, side: "B" | "S") {
-    if (!leg) return;
-    orderNotice = null;
-    ticket = { leg, side, price: defaultTicketPrice(leg, side) };
-  }
-
-  function onSubmitted(result: OrderResult) {
-    ticket = null;
-    orderNotice = `${result.status} ${result.order_no}`;
-  }
-
   onMount(() => {
     let disposed = false;
     const unlisteners: Array<() => void> = [];
 
     (async () => {
       try {
-        const defaults = await api.orderDefaultsGet();
-        if (!disposed) orderDefaults = defaults;
         const onDelta = await events.onDelta((delta) => {
           if (disposed) return;
           for (const quote of delta.quotes) {
@@ -340,7 +314,7 @@
       <input id="chain-quick" bind:value={quick} placeholder="258" />
     </div>
 
-    <button onclick={() => (showDefaults = true)}>Defaults</button>
+    <button onclick={ondefaults}>Defaults</button>
 
     <button class="primary" disabled={loading || !expiry} onclick={loadChain}>
       {loading ? "Loading..." : "Load and subscribe"}
@@ -349,12 +323,6 @@
 
   {#if error}
     <div class="banner"><span>{error}</span></div>
-  {/if}
-  {#if orderNotice}
-    <div class="banner ok-banner">
-      <span>Order {orderNotice}</span>
-      <button class="ghost" onclick={() => (orderNotice = null)}>Dismiss</button>
-    </div>
   {/if}
 
   {#if loaded}
@@ -420,18 +388,28 @@
         </thead>
         <tbody>
           {#each visibleRows as row (row.strike)}
-            <tr class:atm-row={atmE6 !== null && row.strikeE6 === atmE6}>
-              <td class="trade-cell">
+            <tr
+              class:atm-row={atmE6 !== null && row.strikeE6 === atmE6}
+              onmouseenter={() => {
+                if (row.ce) onactive(row.ce.key, row.ce.symbol);
+              }}
+            >
+              <td
+                class="trade-cell"
+                onmouseenter={() => {
+                  if (row.ce) onactive(row.ce.key, row.ce.symbol);
+                }}
+              >
                 {#if row.ce}
                   <button
                     class="trade-buy"
                     title={`Buy ${row.ce.symbol}`}
-                    onclick={() => openTicket(row.ce, "B")}>B</button
+                    onclick={() => onorder(row.ce!.key, "B")}>B</button
                   >
                   <button
                     class="trade-sell"
                     title={`Sell ${row.ce.symbol}`}
-                    onclick={() => openTicket(row.ce, "S")}>S</button
+                    onclick={() => onorder(row.ce!.key, "S")}>S</button
                   >
                 {/if}
               </td>
@@ -458,17 +436,22 @@
                 </td>
               {/each}
 
-              <td class="trade-cell">
+              <td
+                class="trade-cell"
+                onmouseenter={() => {
+                  if (row.pe) onactive(row.pe.key, row.pe.symbol);
+                }}
+              >
                 {#if row.pe}
                   <button
                     class="trade-buy"
                     title={`Buy ${row.pe.symbol}`}
-                    onclick={() => openTicket(row.pe, "B")}>B</button
+                    onclick={() => onorder(row.pe!.key, "B")}>B</button
                   >
                   <button
                     class="trade-sell"
                     title={`Sell ${row.pe.symbol}`}
-                    onclick={() => openTicket(row.pe, "S")}>S</button
+                    onclick={() => onorder(row.pe!.key, "S")}>S</button
                   >
                 {/if}
               </td>
@@ -477,26 +460,5 @@
         </tbody>
       </table>
     </div>
-  {/if}
-
-  {#if ticket}
-    <OrderTicket
-      {ticket}
-      defaults={orderDefaults}
-      live={source === "live"}
-      onclose={() => (ticket = null)}
-      onsubmitted={onSubmitted}
-    />
-  {/if}
-
-  {#if showDefaults}
-    <OrderDefaultsModal
-      defaults={orderDefaults}
-      onclose={() => (showDefaults = false)}
-      onsaved={(saved) => {
-        orderDefaults = saved;
-        showDefaults = false;
-      }}
-    />
   {/if}
 </section>

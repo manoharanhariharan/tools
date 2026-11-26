@@ -652,6 +652,7 @@ fn instrument_dto(instrument: &Instrument, master: Option<&MemoryMaster>) -> Ins
         strike_type: instrument.strike_type.as_str().to_string(),
         lot_size: instrument.lot_size,
         instrument_type: instrument.instrument_type.clone(),
+        is_index: fv_master::is_index(instrument),
     }
 }
 

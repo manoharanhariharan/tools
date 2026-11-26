@@ -640,6 +640,15 @@ fn container_delete(
     Ok(view)
 }
 
+#[tauri::command]
+fn container_color(
+    app: AppHandle,
+    name: String,
+    color: String,
+) -> Result<groups::ContainersView, String> {
+    groups::set_color(&groups_file(&app), &name, &color)
+}
+
 // ---------------------------------------------------------------------------
 // Orders
 // ---------------------------------------------------------------------------
@@ -651,6 +660,47 @@ fn order_defaults_file(app: &AppHandle) -> std::path::PathBuf {
 #[tauri::command]
 fn order_defaults_get(app: AppHandle) -> orders::OrderDefaults {
     orders::read_defaults(&order_defaults_file(&app))
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct OrderTargetDto {
+    key: String,
+    trading_symbol: String,
+    exchange: String,
+    expiry: Option<String>,
+    strike: String,
+    strike_type: String,
+    lot_size: i64,
+    instrument_type: String,
+    is_index: bool,
+    tradeable: bool,
+    quote: Option<QuoteDto>,
+}
+
+/// Resolve one instrument into everything the generic order ticket needs.
+/// Works for stocks, futures and options; indices are returned with
+/// `tradeable: false` so F1/F2 can explain rather than guess.
+#[tauri::command]
+fn order_target(state: State<'_, Arc<AppState>>, key: String) -> Option<OrderTargetDto> {
+    let parsed = SymbolKey::parse(&key).ok()?;
+    let market = state.market.lock().unwrap();
+    let instrument = market.instrument(&key)?;
+    let tradeable = !instrument.is_index
+        && instrument.lot_size > 0
+        && !instrument.trading_symbol.trim().is_empty();
+    Some(OrderTargetDto {
+        key,
+        trading_symbol: instrument.trading_symbol,
+        exchange: parsed.exchange().to_string(),
+        expiry: instrument.expiry,
+        strike: instrument.strike,
+        strike_type: instrument.strike_type,
+        lot_size: instrument.lot_size,
+        instrument_type: instrument.instrument_type,
+        is_index: instrument.is_index,
+        tradeable,
+        quote: market.snapshot(&parsed.as_wire()),
+    })
 }
 
 #[tauri::command]
@@ -1208,8 +1258,10 @@ fn main() {
             container_activate,
             container_rename,
             container_delete,
+            container_color,
             order_defaults_get,
             order_defaults_set,
+            order_target,
             place_order,
             indices_list,
             stocks_list,

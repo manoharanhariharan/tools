@@ -2,10 +2,10 @@
   import { untrack } from "svelte";
   import { api, type OrderDefaults, type OrderResult } from "../../api";
   import Modal from "../../components/Modal.svelte";
-  import type { Ticket } from "./chain";
+  import type { OrderTicketState } from "../../order";
 
   interface Props {
-    ticket: Ticket;
+    ticket: OrderTicketState;
     defaults: OrderDefaults;
     live: boolean;
     onclose: () => void;
@@ -21,10 +21,17 @@
   let busy = $state(false);
   let error = $state<string | null>(null);
 
-  const lotSize = $derived(ticket.leg.lot_size > 0 ? ticket.leg.lot_size : 1);
+  const lotSize = $derived(ticket.target.lot_size > 0 ? ticket.target.lot_size : 1);
   const qty = $derived(Math.max(1, Math.round(lots)) * lotSize);
   const sideLabel = $derived(ticket.side === "B" ? "BUY" : "SELL");
   const valid = $derived(live && lots >= 1 && qty > 0 && price.trim() !== "");
+  const subtitle = $derived(
+    ticket.target.expiry
+      ? `${ticket.target.exchange} - ${ticket.target.expiry} - ${ticket.target.strike_type} ${ticket.target.strike}`
+      : `${ticket.target.exchange} - ${
+          ticket.target.instrument_type || (ticket.target.is_index ? "INDEX" : "EQ")
+        }`,
+  );
 
   async function submit() {
     if (!valid || busy) return;
@@ -32,7 +39,7 @@
     error = null;
     try {
       const result = await api.placeOrder({
-        key: ticket.leg.key,
+        key: ticket.target.key,
         side: ticket.side,
         lots: Math.max(1, Math.round(lots)),
         product,
@@ -49,12 +56,7 @@
   }
 </script>
 
-<Modal
-  title={`${sideLabel} ${ticket.leg.symbol}`}
-  subtitle={`${ticket.leg.exchange} - ${ticket.leg.expiry ?? "no expiry"} - ${ticket.leg.strike_type} ${ticket.leg.strike}`}
-  onclose={onclose}
-  wide
->
+<Modal title={`${sideLabel} ${ticket.target.trading_symbol}`} {subtitle} onclose={onclose} wide>
   {#if !live}
     <div class="banner">
       <span>Live feed required. This is a replay/offline session; confirmation is disabled.</span>
@@ -66,7 +68,7 @@
 
   <div class="ticket-side {ticket.side === 'B' ? 'buy' : 'sell'}">
     <strong>{sideLabel}</strong>
-    <span>{ticket.leg.symbol}</span>
+    <span>{ticket.target.trading_symbol}</span>
   </div>
 
   <div class="form-grid">

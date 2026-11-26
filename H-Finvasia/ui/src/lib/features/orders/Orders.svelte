@@ -1,7 +1,8 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { onMount } from "svelte";
   import { api, events, type OrderDto } from "../../api";
   import EmptyState from "../../components/EmptyState.svelte";
+  import { isClosedOrder } from "./orderStatus";
 
   interface Props {
     embedded?: boolean;
@@ -12,8 +13,6 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let tab = $state<"pending" | "closed">("pending");
-
-  const CLOSED = new Set(["COMPLETE", "REJECTED", "CANCELLED", "LAPSED"]);
 
   async function refresh() {
     loading = true;
@@ -43,8 +42,8 @@
     };
   });
 
-  const pending = $derived(orders.filter((o) => !CLOSED.has(o.status.toUpperCase())));
-  const closed = $derived(orders.filter((o) => CLOSED.has(o.status.toUpperCase())));
+  const pending = $derived(orders.filter((o) => !isClosedOrder(o.status)));
+  const closed = $derived(orders.filter((o) => isClosedOrder(o.status)));
   const shown = $derived(tab === "pending" ? pending : closed);
 </script>
 

@@ -6,13 +6,20 @@
     type AccountSummaryDto,
     type AppInfo,
     type InstrumentDto,
+    type OrderDefaults,
+    type OrderResult,
     type QuoteDto,
     type SessionInfo,
     type StatusDto,
   } from "./lib/api";
   import { QuoteTable, type QuoteRow } from "./lib/state";
+  import { defaultOrderPrice, shortcutSide, type OrderTicketState } from "./lib/order";
   import StatusBar from "./lib/components/StatusBar.svelte";
   import BottomDock from "./lib/components/BottomDock.svelte";
+  import OrderTicket from "./lib/features/chain/OrderTicket.svelte";
+  import OrderDefaultsModal from "./lib/features/chain/OrderDefaultsModal.svelte";
+  import ThemePicker from "./lib/components/ThemePicker.svelte";
+  import { loadTheme, type ThemeSelection } from "./lib/theme";
   import AccountStrip from "./lib/features/account/AccountStrip.svelte";
   import MarketWatch from "./lib/features/market/MarketWatch.svelte";
   import SnapQuote from "./lib/features/market/SnapQuote.svelte";
@@ -50,6 +57,21 @@
   /// Set by the row context menu; OptionChain consumes it and loads.
   let chainRequest = $state<{ underlying: string; nonce: number } | null>(null);
   let chainNonce = 0;
+  /// Last row/leg under the pointer; F1/F2 act on it.
+  let activeKey = $state<string | null>(null);
+  let activeLabel = $state("");
+  let orderDefaults = $state<OrderDefaults>({
+    product: "I",
+    price_type: "LMT",
+    validity: "DAY",
+    lots: 1,
+  });
+  let showOrderDefaults = $state(false);
+  let orderTicket = $state<OrderTicketState | null>(null);
+  const initialTheme = loadTheme();
+  let theme = $state(initialTheme.theme);
+  let accent = $state(initialTheme.accent);
+  let showTheme = $state(false);
 
   const selectedQuote = $derived(selected ? (quoteMap.get(selected) ?? null) : null);
   const watchedKeys = $derived(rows.map((row) => row.key));
@@ -94,6 +116,8 @@
   }
 
   async function startDemo() {
+    activeKey = null;
+    activeLabel = "";
     busy = true;
     notice = null;
     moreOpen = false;
@@ -118,6 +142,8 @@
   }
 
   async function startLive() {
+    activeKey = null;
+    activeLabel = "";
     busy = true;
     notice = null;
     try {
@@ -151,6 +177,10 @@
     try {
       await api.watchRemove(key);
       if (selected === key) selected = null;
+      if (activeKey === key) {
+        activeKey = null;
+        activeLabel = "";
+      }
       await hydrate();
     } catch (error) {
       notice = String(error);
@@ -160,10 +190,67 @@
   function go(next: Page) {
     page = next;
     moreOpen = false;
+    activeKey = null;
+    activeLabel = "";
+  }
+
+  function rememberActive(key: string, label: string) {
+    activeKey = key;
+    activeLabel = label;
+  }
+
+  async function openOrder(key: string | null, side: "B" | "S") {
+    if (!key) return;
+    try {
+      const target = await api.orderTarget(key);
+      if (!target) {
+        notice = `No instrument metadata for ${key}.`;
+        return;
+      }
+      if (!target.tradeable) {
+        notice = `${target.trading_symbol} is not tradeable.`;
+        return;
+      }
+      orderTicket = { target, side, price: defaultOrderPrice(target, side) };
+    } catch (error) {
+      notice = String(error);
+    }
+  }
+
+  function onSubmitted(result: OrderResult) {
+    orderTicket = null;
+    notice = `Order ${result.status}: ${result.order_no}`;
+  }
+
+  function handleShortcut(event: KeyboardEvent) {
+    const side = shortcutSide(event.key);
+    if (!side) return;
+    const target = event.target as HTMLElement | null;
+    const tag = target?.tagName ?? "";
+    if (
+      tag === "INPUT" ||
+      tag === "TEXTAREA" ||
+      tag === "SELECT" ||
+      target?.isContentEditable ||
+      orderTicket !== null ||
+      showOrderDefaults ||
+      showTheme
+    ) {
+      return;
+    }
+    if (!activeKey) {
+      event.preventDefault();
+      notice = "Hover an instrument row first; F1 buys, F2 sells.";
+      return;
+    }
+    event.preventDefault();
+    void openOrder(activeKey, side);
   }
 
   /// Open the option chain for an instrument whose underlying has derivatives.
   function openChain(underlying: string) {
+    activeKey = null;
+    activeLabel = "";
     chainNonce += 1;
     chainRequest = { underlying, nonce: chainNonce };
     page = "chain";
@@ -277,6 +364,8 @@
         await subscribeAll();
         const appInfo = await api.appInfo();
         if (!disposed) info = appInfo;
+        const defaults = await api.orderDefaultsGet();
+        if (!disposed) orderDefaults = defaults;
         const sessionInfo = await api.sessionInfo();
         if (!disposed) session = sessionInfo;
         if (!disposed) await hydrate();
@@ -292,6 +381,8 @@
     };
   });
 </script>
+
+<svelte:window onkeydown={handleShortcut} />
 
 <div class="shell">
   <AccountStrip
@@ -313,6 +404,10 @@
 
     <span class="spacer"></span>
 
+    <span class="shortcut-hint" class:armed={activeKey !== null}>
+      {activeKey ? `F1 buy / F2 sell ${activeLabel}` : "F1 buy / F2 sell: hover a row"}
+    </span>
+
     <button class="ghost" class:active={page === "market"} onclick={() => go("market")}>
       Market watch
     </button>
@@ -324,6 +419,8 @@
       {#if moreOpen}
         <div class="menu" role="menu">
           <button role="menuitem" onclick={() => go("groups")}>Groups</button>
+          <button role="menuitem" onclick={() => { showOrderDefaults = true; moreOpen = false; }}>Order defaults</button>
+          <button role="menuitem" onclick={() => { showTheme = true; moreOpen = false; }}>Appearance</button>
           <button role="menuitem" onclick={() => go("diagnostics")}>Diagnostics</button>
           <div class="menu-sep"></div>
           <button role="menuitem" disabled={busy} onclick={startDemo}>Demo feed</button>
@@ -353,15 +450,23 @@
         onadd={addInstrument}
         onremove={removeInstrument}
         onchain={openChain}
+        onactive={rememberActive}
       />
     {:else if page === "chain"}
       <OptionChain
-        source={status?.source ?? "idle"}
         pending={chainRequest}
         onconsumed={() => (chainRequest = null)}
+        onorder={openOrder}
+        ondefaults={() => (showOrderDefaults = true)}
+        onactive={rememberActive}
       />
     {:else if page === "instruments"}
-      <InstrumentSearch watched={watchedKeys} onadd={addInstrument} onchain={openChain} />
+      <InstrumentSearch
+        watched={watchedKeys}
+        onadd={addInstrument}
+        onchain={openChain}
+        onactive={rememberActive}
+      />
     {:else if page === "market"}
       <div class="ws-split">
         <MarketWatch
@@ -372,6 +477,7 @@
           onremove={removeInstrument}
           onstart={startDemo}
           onchain={openChain}
+          onactive={rememberActive}
         />
         <SnapQuote quote={selectedQuote} instrument={instrumentMeta} onremove={removeInstrument} />
       </div>
@@ -395,4 +501,38 @@
   <BottomDock />
 
   <StatusBar {status} />
+
+  {#if orderTicket}
+    <OrderTicket
+      ticket={orderTicket}
+      defaults={orderDefaults}
+      live={status?.source === "live"}
+      onclose={() => (orderTicket = null)}
+      onsubmitted={onSubmitted}
+    />
+  {/if}
+
+  {#if showTheme}
+    <ThemePicker
+      {theme}
+      {accent}
+      onclose={() => (showTheme = false)}
+      onsaved={(selection: ThemeSelection) => {
+        theme = selection.theme;
+        accent = selection.accent;
+        showTheme = false;
+      }}
+    />
+  {/if}
+
+  {#if showOrderDefaults}
+    <OrderDefaultsModal
+      defaults={orderDefaults}
+      onclose={() => (showOrderDefaults = false)}
+      onsaved={(saved) => {
+        orderDefaults = saved;
+        showOrderDefaults = false;
+      }}
+    />
+  {/if}
 </div>

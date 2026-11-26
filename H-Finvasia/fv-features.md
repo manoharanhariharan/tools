@@ -1181,6 +1181,31 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
   defaults persistence and form encoding are unit-tested, and the UI was exercised with a
   broker-free synthetic replay (ticket opens, Confirm disabled, no order).
 
+### Phase 2n - order status and global F1/F2 (implemented)
+
+- The order book classified `CANCELED` (single L) as pending because the old set only knew
+  `CANCELLED`. `isClosedOrder()` now normalizes case/spacing and accepts both spellings plus
+  `COMPLETE`, `COMPLETED`, `REJECTED`, `LAPSED` and `EXPIRED`. Unit-tested.
+- `order_target` resolves any instrument key into exchange, trading symbol, lot size, expiry/strike,
+  index flag, `tradeable` and its current quote. Stock, futures and option rows now feed the same
+  generic ticket.
+- **F1 buys, F2 sells** the last hovered row/leg. Stocks, Instruments, Market watch and the chain
+  publish the hovered key; the tabs bar shows the active target. Indices return `tradeable: false`.
+- The ticket became global (App-level), so defaults live in one place and every screen uses the same
+  confirm flow. Replay/offline and non-live sources still disable Confirm; the backend also rejects
+  a non-live or non-tradeable request.
+
+### Phase 2o - groups, colours and themes (implemented)
+
+- "Containers" are presented as **Groups** in the UI. Creating a group copies the current watch,
+  switching loads it, and add/remove writes back to the active group.
+- Each group persists a `#RRGGBB` colour in `watch-groups.json`; the Stocks sidebar shows a colour
+  chip that opens the system picker. Colours follow group rename/delete.
+- **Appearance** offers Midnight, Graphite, Ocean, Contrast and Light themes plus six accent presets
+  and a custom accent. Theme and accent are applied before mount (`main.ts`) and stored locally.
+  CSS colour variables cover the account strip, tabs, chain bands, strike/ATM cells, modals and
+  banners, so the Light theme is not just an inverted background.
+
 ---
 
 ### Provenance of this document

@@ -46,6 +46,7 @@ export interface InstrumentDto {
   lot_size: number;
   instrument_type: string;
   has_fno: boolean;
+  is_index: boolean;
 }
 
 export interface FundsDto {
@@ -129,6 +130,7 @@ export interface OrderDto {
 export interface GroupSummary {
   name: string;
   count: number;
+  color: string | null;
 }
 
 export interface IndexRowDto {
@@ -168,6 +170,20 @@ export interface StockRowDto {
 export interface ContainersView {
   active: string | null;
   groups: GroupSummary[];
+}
+
+export interface OrderTargetDto {
+  key: string;
+  trading_symbol: string;
+  exchange: string;
+  expiry: string | null;
+  strike: string;
+  strike_type: string;
+  lot_size: number;
+  instrument_type: string;
+  is_index: boolean;
+  tradeable: boolean;
+  quote: QuoteDto | null;
 }
 
 export interface OrderDefaults {
@@ -280,6 +296,9 @@ export const api = {
   containerRename: (oldName: string, newName: string) =>
     invoke<ContainersView>("container_rename", { old: oldName, new: newName }),
   containerDelete: (name: string) => invoke<ContainersView>("container_delete", { name }),
+  containerColor: (name: string, color: string) =>
+    invoke<ContainersView>("container_color", { name, color }),
+  orderTarget: (key: string) => invoke<OrderTargetDto | null>("order_target", { key }),
   orderDefaultsGet: () => invoke<OrderDefaults>("order_defaults_get"),
   orderDefaultsSet: (defaults: OrderDefaults) =>
     invoke<OrderDefaults>("order_defaults_set", { defaults }),
