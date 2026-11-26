@@ -6,7 +6,7 @@
 //! Thin adapter over [`fv_bridge::MarketData`]: owns no market logic itself, only
 //! the Tauri plumbing (commands, events, task lifecycle).
 //!
-//! Threading model ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â deliberately simple and leak-free:
+//! Threading model ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â deliberately simple and leak-free:
 //! * one producer task feeds decoded [`Frame`]s into an mpsc channel;
 //! * one consumer task owns the state lock, absorbs frames, and emits bounded
 //!   `quotes:delta` batches at ~60 Hz;
@@ -501,8 +501,65 @@ fn indices_list(state: State<'_, Arc<AppState>>) -> Vec<fv_bridge::IndexRowDto> 
     state.market.lock().unwrap().index_rows(300)
 }
 
+// ---------------------------------------------------------------------------
+// Account strip summary
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+struct AccountSummaryDto {
+    session: session::SessionInfo,
+    funds: Option<account::FundsDto>,
+    totals: account::PositionTotals,
+    positions: usize,
+    /// Feed socket state, distinct from "session valid".
+    connected: bool,
+}
+
+/// One call for the header cards. Never logs in: it uses the session that
+/// auto-connect already adopted, or an existing one.
+#[tauri::command]
+async fn account_summary(state: State<'_, Arc<AppState>>) -> Result<AccountSummaryDto, String> {
+    let shared = state.inner().clone();
+    let connected = shared
+        .market
+        .lock()
+        .unwrap()
+        .status(Instant::now())
+        .connected;
+
+    if shared.session.lock().unwrap().is_none() {
+        if let Some(resolved) = session::resolve_existing().await {
+            *shared.session.lock().unwrap() = Some(resolved);
+        }
+    }
+
+    let cached = shared.session.lock().unwrap().clone();
+    let (funds, totals, positions) = match cached {
+        Some(current) => {
+            match account::positions(&shared.rest, &current.uid, &current.actid, &current.token)
+                .await
+            {
+                Ok(view) => (view.funds, view.totals, view.positions.len()),
+                Err(err) => {
+                    tracing::warn!(error = %err, "account summary unavailable");
+                    (None, account::PositionTotals::default(), 0)
+                }
+            }
+        }
+        None => (None, account::PositionTotals::default(), 0),
+    };
+
+    Ok(AccountSummaryDto {
+        session: session::peek().await,
+        funds,
+        totals,
+        positions,
+        connected,
+    })
+}
+
 /// Connect to the venue. The session is resolved automatically:
-/// env token ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ persisted Mongo token (validated) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ TOTP login.
+/// env token ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ persisted Mongo token (validated) ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ TOTP login.
 #[tauri::command]
 async fn start_live(
     app: AppHandle,
@@ -541,6 +598,7 @@ async fn begin_live(
     keys: Vec<SymbolKey>,
 ) -> Result<Vec<String>, String> {
     let cfg = fv_feed::ws::WsConfig::new(&resolved.uid, &resolved.actid, &resolved.token);
+    *state.session.lock().unwrap() = Some(resolved.clone());
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<fv_feed::ws::FeedCommand>();
     *state.feed_cmd.lock().unwrap() = Some(cmd_tx);
 
@@ -875,6 +933,7 @@ fn main() {
             group_load,
             group_delete,
             indices_list,
+            account_summary,
             stop_feed,
         ])
         .run(tauri::generate_context!())

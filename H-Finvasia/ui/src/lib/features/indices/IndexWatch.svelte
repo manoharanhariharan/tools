@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { onMount } from "svelte";
   import { api, events, type IndexRowDto } from "../../api";
   import EmptyState from "../../components/EmptyState.svelte";
@@ -56,7 +56,14 @@
         });
         if (disposed) unlisten();
         else unlisteners.push(unlisten);
-        await refresh();
+
+        // The master can finish loading after this page mounts; refresh when it
+        // does, otherwise the list stays empty.
+        const onMaster = await events.onMasterReady(() => {
+          if (!disposed) void refresh();
+        });
+        if (disposed) onMaster();
+        else unlisteners.push(onMaster);
       } catch (e) {
         if (!disposed) error = String(e);
       }
@@ -68,10 +75,12 @@
     };
   });
 
-  // Re-read when the watch list changes (an Add flips a row to "watching").
+  // Refresh on mount and whenever the watch list changes (an Add flips a row
+  // to "watching"). Deliberately not gated on a non-empty result: the first call
+  // can legitimately return nothing while the master is still loading.
   $effect(() => {
     void refreshToken;
-    if (indices.length > 0) void refresh();
+    void refresh();
   });
 </script>
 

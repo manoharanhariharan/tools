@@ -66,14 +66,28 @@ pub struct Instrument {
     pub tick_size: Option<Price>,
 }
 
-/// True when this instrument is an index (NIFTY, BANKNIFTY, ...).
+/// Verified NSE index tokens. `FINVASIA_SYMBOL` stores indices with
+/// `strikeType: "EQ"` and no segment, so they are otherwise indistinguishable
+/// from cash equities (verified against the local master for NIFTY, BANKNIFTY,
+/// FINNIFTY, MIDCPNIFTY, NIFTYNXT50 and INDIAVIX).
+const NSE_INDEX_TOKENS: &[&str] = &["26000", "26009", "26013", "26017", "26037", "26074"];
+
+/// True when this instrument is an index.
+///
+/// Prefers the explicit classification carried by the Kite-shaped `INSTRUMENT`
+/// collection and falls back to the token allowlist for `FINVASIA_SYMBOL`.
 pub fn is_index(instrument: &Instrument) -> bool {
-    instrument.instrument_type.eq_ignore_ascii_case("INDEX")
+    if instrument.instrument_type.eq_ignore_ascii_case("INDEX")
         || instrument
             .segment
             .as_deref()
             .map(|s| s.to_ascii_uppercase().contains("INDICE"))
             .unwrap_or(false)
+    {
+        return true;
+    }
+    instrument.key.exchange().eq_ignore_ascii_case("NSE")
+        && NSE_INDEX_TOKENS.contains(&instrument.key.token())
 }
 
 impl Instrument {
@@ -535,6 +549,16 @@ mod tests {
         let m = master();
         assert!(m.option_chain("DOESNOTEXIST", "2026-11-26").is_empty());
         assert!(m.expiries("DOESNOTEXIST").is_empty());
+    }
+
+    #[test]
+    fn index_detection_uses_segment_or_the_nse_token_list() {
+        let m = master();
+        let nifty = m.get(&SymbolKey::parse("NSE|26000").unwrap()).unwrap();
+        assert!(is_index(nifty));
+        let reliance = m.get(&SymbolKey::parse("NSE|2885").unwrap()).unwrap();
+        assert!(!is_index(reliance));
+        assert!(!m.indices().is_empty());
     }
 
     #[test]

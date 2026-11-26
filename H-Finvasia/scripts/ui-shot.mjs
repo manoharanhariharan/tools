@@ -37,6 +37,20 @@ ws.addEventListener("message", (event) => {
 await new Promise((resolve) => ws.addEventListener("open", resolve));
 await send("Page.enable");
 
+// Wait for the instrument master before capturing, otherwise a screenshot can
+// catch the app mid-load and show an empty grid.
+const evalValue = async (expression) => {
+  const res = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+  return res.result?.result?.value;
+};
+for (let attempt = 0; attempt < 40; attempt++) {
+  const status = await evalValue(
+    'window.__TAURI_INTERNALS__ ? window.__TAURI_INTERNALS__.invoke("status").then(s => JSON.stringify(s)) : "no-ipc"',
+  );
+  if (typeof status === "string" && status.includes('"master_loaded":true')) break;
+  await new Promise((r) => setTimeout(r, 500));
+}
+
 if (navLabel) {
   const expr = `(() => {
     const b = [...document.querySelectorAll("button")].find(x => x.textContent.trim() === ${JSON.stringify(navLabel)});

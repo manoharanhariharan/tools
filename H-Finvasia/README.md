@@ -70,6 +70,13 @@ The executable lands at `src-tauri/target/release/h-finvasia-desktop.exe` and ru
 
 `scripts/release.ps1` does all of this and publishes to `releases/`.
 
+### Layout
+
+The workspace opens on a four-card account strip - **Account details** (user, account, login
+state), **Funds available**, **RPNL**, **MTM** - followed by three tabs: **Index**, **Option chain**,
+**Instruments**. Market watch and the account screens (Positions, Order book, Groups, Diagnostics)
+sit behind the **More** menu, so the working area stays uncluttered.
+
 ### Using it
 
 1. Double-click `h-finvasia-v<tag>.exe`.

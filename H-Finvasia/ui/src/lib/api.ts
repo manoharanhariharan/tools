@@ -44,6 +44,7 @@ export interface InstrumentDto {
 }
 
 export interface FundsDto {
+  profile: string | null;
   cash: string | null;
   payin: string | null;
   payout: string | null;
@@ -83,12 +84,21 @@ export interface PositionTotals {
   sell_value: string;
   net_value: string;
   mtm: string;
+  rpnl: string;
 }
 
 export interface PositionsView {
   funds: FundsDto | null;
   positions: PositionDto[];
   totals: PositionTotals;
+}
+
+export interface AccountSummaryDto {
+  session: SessionInfo;
+  funds: FundsDto | null;
+  totals: PositionTotals;
+  positions: number;
+  connected: boolean;
 }
 
 export interface OrderDto {
@@ -208,6 +218,7 @@ export const api = {
     invoke<ChainRowDto[]>("chain_load", { underlying, expiry, strikes, atm }),
   chainClose: () => invoke<void>("chain_close"),
   positionsLoad: () => invoke<PositionsView>("positions_load"),
+  accountSummary: () => invoke<AccountSummaryDto>("account_summary"),
   ordersLoad: () => invoke<OrderDto[]>("orders_load"),
   groupsList: () => invoke<GroupSummary[]>("groups_list"),
   groupSave: (name: string) => invoke<void>("group_save", { name }),

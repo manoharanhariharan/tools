@@ -1052,6 +1052,25 @@ Verified with one connection: 550-leg chain browsable, **42 subscribed**, `subsc
 
 ---
 
+### Phase 2f - workspace layout (implemented)
+
+The first layout pass replaces the sidebar shell with the structure the operator sketched:
+
+- **Account strip**: `Account details` (user, account, profile, login state, stored-session age,
+  position count), `Funds available` (cash, blocked, turnover), `RPNL` (realised, summed from
+  `rpnl`), `MTM` (unrealised, summed from `urmtom`). One `account_summary` call feeds all four and
+  only runs on mount, on first connect, or on manual refresh - never on a timer.
+- **Tabs**: `Index`, `Option chain`, `Instruments`. Market watch and the account screens moved to a
+  `More` menu.
+- `indices_list` needed a token allowlist because `FINVASIA_SYMBOL` tags indices as `strikeType: "EQ"`
+  with no segment; NSE index tokens 26000/26009/26013/26017/26037/26074 are verified against the
+  local master.
+- Two data defects fixed during the pass: `pendordvallmt` arrives as a sentinel (999999999999.00)
+  and is no longer shown, and the Index page raced the master load (it stayed empty because the
+  first refresh returned nothing and never retried).
+
+---
+
 ### Provenance of this document
 
 | Evidence | Source |

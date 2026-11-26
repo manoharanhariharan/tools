@@ -1,4 +1,4 @@
-//! Read-only account data over REST.
+﻿//! Read-only account data over REST.
 //!
 //! The persisted session is **web-scoped**, so account endpoints answer on
 //! `NorenWClientWeb` while `NorenWClientAPI` returns 401 for them. The client
@@ -20,6 +20,8 @@ static PREFERRED: AtomicU8 = AtomicU8::new(0);
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct FundsDto {
+    /// Profile name from `Limits` (e.g. SHOONYA).
+    pub profile: Option<String>,
     pub cash: Option<String>,
     pub payin: Option<String>,
     pub payout: Option<String>,
@@ -61,6 +63,8 @@ pub struct PositionTotals {
     pub sell_value: String,
     pub net_value: String,
     pub mtm: String,
+    /// Realised P&L (sum of `rpnl`).
+    pub rpnl: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -123,6 +127,7 @@ fn price_value(value: &Value, key: &str) -> Option<Price> {
 
 pub fn parse_funds(value: &Value) -> FundsDto {
     FundsDto {
+        profile: text(value, "prfname"),
         cash: price_text(value, "cash"),
         payin: price_text(value, "payin"),
         payout: price_text(value, "payout"),
@@ -195,6 +200,7 @@ pub fn position_totals(rows: &[PositionDto], raw: &[Value]) -> PositionTotals {
     let mut buy_value = Price::ZERO;
     let mut sell_value = Price::ZERO;
     let mut mtm = Price::ZERO;
+    let mut rpnl = Price::ZERO;
 
     for (index, row) in rows.iter().enumerate() {
         buy_qty = buy_qty.saturating_add(row.day_buy_qty);
@@ -209,6 +215,9 @@ pub fn position_totals(rows: &[PositionDto], raw: &[Value]) -> PositionTotals {
             if let Some(value) = price_value(source, "urmtom") {
                 mtm = mtm.checked_add(value).unwrap_or(mtm);
             }
+            if let Some(value) = price_value(source, "rpnl") {
+                rpnl = rpnl.checked_add(value).unwrap_or(rpnl);
+            }
         }
     }
 
@@ -221,6 +230,7 @@ pub fn position_totals(rows: &[PositionDto], raw: &[Value]) -> PositionTotals {
         sell_value: sell_value.format(2),
         net_value: net.format(2),
         mtm: mtm.format(2),
+        rpnl: rpnl.format(2),
     }
 }
 
@@ -267,7 +277,7 @@ impl RestClient {
             .map_err(|_| format!("{route}: HTTP {status}, non-JSON body"))
     }
 
-    /// POST with automatic base fallback (web ⇄ api) when the session scope is
+    /// POST with automatic base fallback (web â‡„ api) when the session scope is
     /// wrong for the chosen host.
     pub async fn post(&self, route: &str, json: &str, token: &str) -> Result<Value, String> {
         let preferred = match PREFERRED.load(Ordering::Relaxed) {
@@ -387,6 +397,7 @@ mod tests {
         assert_eq!(totals.sell_value, "0.00");
         assert_eq!(totals.net_value, "11563.50");
         assert_eq!(totals.mtm, "-1950.00");
+        assert_eq!(totals.rpnl, "0.00");
     }
 
     #[test]
