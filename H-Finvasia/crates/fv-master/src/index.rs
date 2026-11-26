@@ -1,4 +1,4 @@
-﻿//! Portable, platform-neutral instrument index.
+//! Portable, platform-neutral instrument index.
 //!
 //! Everything here is pure Rust with no database dependency, so it builds and
 //! tests identically on Windows, macOS and Linux, and in CI without Mongo.
@@ -181,6 +181,8 @@ pub struct MemoryMaster {
     items: Vec<Instrument>,
     by_key: HashMap<SymbolKey, usize>,
     by_underlying: HashMap<String, Vec<usize>>,
+    /// Underlyings that actually have option or futures legs.
+    fno_underlyings: std::collections::HashSet<String>,
 }
 
 impl MemoryMaster {
@@ -198,6 +200,7 @@ impl MemoryMaster {
 
         let mut by_key = HashMap::with_capacity(items.len());
         let mut by_underlying: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut fno_underlyings = std::collections::HashSet::new();
         for (i, item) in items.iter().enumerate() {
             by_key.insert(item.key.clone(), i);
             if let Some(u) = item.underlying.as_deref().filter(|u| !u.is_empty()) {
@@ -205,6 +208,9 @@ impl MemoryMaster {
                     .entry(u.to_ascii_uppercase())
                     .or_default()
                     .push(i);
+                if item.is_option() || item.is_future() {
+                    fno_underlyings.insert(u.to_ascii_uppercase());
+                }
             }
         }
 
@@ -212,6 +218,7 @@ impl MemoryMaster {
             items,
             by_key,
             by_underlying,
+            fno_underlyings,
         })
     }
 
@@ -326,6 +333,20 @@ impl MemoryMaster {
 
     pub fn items(&self) -> &[Instrument] {
         &self.items
+    }
+
+    /// True when `underlying` has any option or futures contract in the master.
+    /// Drives the "open option chain" action for equities and indices.
+    pub fn has_derivatives(&self, underlying: &str) -> bool {
+        self.fno_underlyings
+            .contains(&underlying.trim().to_ascii_uppercase())
+    }
+
+    /// Underlyings that have derivatives (sorted).
+    pub fn derivative_underlyings(&self) -> Vec<String> {
+        let mut list: Vec<String> = self.fno_underlyings.iter().cloned().collect();
+        list.sort();
+        list
     }
 
     /// Index instruments (for Index Watch / spot rates).
@@ -549,6 +570,22 @@ mod tests {
         let m = master();
         assert!(m.option_chain("DOESNOTEXIST", "2026-11-26").is_empty());
         assert!(m.expiries("DOESNOTEXIST").is_empty());
+    }
+
+    #[test]
+    fn derivatives_are_detected_per_underlying() {
+        let m = master();
+        assert!(
+            m.has_derivatives("NIFTY"),
+            "NIFTY has options in the fixture"
+        );
+        assert!(m.has_derivatives("nifty"), "case-insensitive");
+        assert!(m.has_derivatives("ZYDUSLIFE"));
+        assert!(!m.has_derivatives("RELIANCE-NOT-LISTED"));
+        assert!(m.derivative_underlyings().contains(&"NIFTY".to_string()));
+        assert!(m
+            .derivative_underlyings()
+            .contains(&"ZYDUSLIFE".to_string()));
     }
 
     #[test]

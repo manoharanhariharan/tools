@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { onMount } from "svelte";
   import {
     api,
@@ -48,6 +48,9 @@
   let notice = $state<string | null>(null);
   let busy = $state(false);
   let moreOpen = $state(false);
+  /// Set by the row context menu; OptionChain consumes it and loads.
+  let chainRequest = $state<{ underlying: string; nonce: number } | null>(null);
+  let chainNonce = 0;
 
   const selectedQuote = $derived(selected ? (quoteMap.get(selected) ?? null) : null);
   const watchedKeys = $derived(rows.map((row) => row.key));
@@ -160,6 +163,14 @@
     moreOpen = false;
   }
 
+  /// Open the option chain for an instrument whose underlying has derivatives.
+  function openChain(underlying: string) {
+    chainNonce += 1;
+    chainRequest = { underlying, nonce: chainNonce };
+    page = "chain";
+    moreOpen = false;
+  }
+
   // Metadata for the selected scrip; cancelled if the selection changes.
   $effect(() => {
     const key = selected;
@@ -234,9 +245,14 @@
           "master:ready",
           () =>
             events.onMasterReady(() => {
+              if (disposed) return;
               void api.status().then((next) => {
                 if (!disposed) status = next;
               });
+              // Rows restored before the master finished have no metadata
+              // (underlying / F&O / index). Re-hydrate so right-click actions
+              // and the spot-rate strip work before the first tick.
+              void hydrate();
             }),
         ],
         [
@@ -323,11 +339,20 @@
 
   <div class="workspace-body">
     {#if page === "index"}
-      <IndexWatch onadd={addInstrument} refreshToken={watchedKeys.length} />
+      <IndexWatch
+        onadd={addInstrument}
+        onchain={openChain}
+        refreshToken={watchedKeys.length}
+      />
     {:else if page === "chain"}
-      <OptionChain watched={watchedKeys} onadd={addInstrument} />
+      <OptionChain
+        watched={watchedKeys}
+        onadd={addInstrument}
+        pending={chainRequest}
+        onconsumed={() => (chainRequest = null)}
+      />
     {:else if page === "instruments"}
-      <InstrumentSearch watched={watchedKeys} onadd={addInstrument} />
+      <InstrumentSearch watched={watchedKeys} onadd={addInstrument} onchain={openChain} />
     {:else if page === "market"}
       <div class="ws-split">
         <MarketWatch
@@ -337,6 +362,7 @@
           onselect={(key) => (selected = key)}
           onremove={removeInstrument}
           onstart={startDemo}
+          onchain={openChain}
         />
         <SnapQuote quote={selectedQuote} instrument={instrumentMeta} onremove={removeInstrument} />
       </div>

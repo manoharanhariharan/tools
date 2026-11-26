@@ -1071,6 +1071,28 @@ The first layout pass replaces the sidebar shell with the structure the operator
 
 ---
 
+### Phase 2g - row actions and option-chain hand-off (implemented)
+
+- **Right-click anywhere a row appears** (`Index`, `Instruments`, `Market watch`) opens a context
+  menu. The first item is `Open option chain (UNDERLYING)` and is enabled only when
+  `MemoryMaster::has_derivatives` finds at least one option or future leg for that underlying
+  (`fno_underlyings`, case-insensitive). No broker call happens to decide this: it is answered from
+  the local master.
+- Choosing it hands `{underlying, nonce}` to `OptionChain`, which switches tab, sets the underlying,
+  loads the nearest expiry and applies the existing +/- strike subscription window. The chain is
+  still only subscribed on an explicit request, so the 100-instrument budget is untouched until then.
+- Two root causes fixed along the way:
+  - Rows restored from `watch.json` were created **before** the master finished loading and stayed
+    bare placeholders (no `underlying`, `has_fno: false`). The app now re-hydrates on `master:ready`.
+  - `watch_quotes` only returned keys present in the quote book, so a watched instrument with no
+    tick yet produced no row metadata at all. It now falls back to `placeholder_dto`, which carries
+    the symbol, underlying, index flag and F&O flag with no prices.
+- Verified against the built app with auto-connect disabled (no broker contact): right-clicking the
+  NIFTY index row showed `Open option chain (NIFTY)`, switched to the Option chain tab with `NIFTY`
+  selected, and loaded 550 legs with 42 subscribed.
+
+---
+
 ### Provenance of this document
 
 | Evidence | Source |

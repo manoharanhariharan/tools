@@ -80,13 +80,18 @@ sit behind the **More** menu, so the working area stays uncluttered.
 ### Using it
 
 1. Double-click `h-finvasia-v<tag>.exe`.
-2. **Demo feed** in the top bar (or *Diagnostics → Start demo feed*) replays a bundled capture at
+2. **More → Demo feed** (or *Diagnostics → Start demo feed*) replays a bundled capture at
    ~120 frames/s; the watch list auto-populates from the capture.
 3. Click a row to load the snap quote; **Instruments** searches the master and adds scrips.
    Search is relaxed and multi-term: `nifty 25800`, `25800 nifty`, `NIFTY 26NOV 25800` all find the
    25800-strike NIFTY contracts. Adding an instrument while **live** subscribes it on the open socket
    immediately — no reconnect, no manual refresh.
-4. **Diagnostics** shows backend (`mongo` vs `in-memory`), frame rate, decode errors, and the live
+4. **Right-click any row** (Index, Option chain source rows, Instruments, Market watch) for actions.
+   When the instrument's underlying has derivatives the menu offers **Open option chain
+   (UNDERLYING)**; choosing it switches to the Option chain tab, selects that underlying's nearest
+   expiry, and loads the chain with the usual +/- strikes subscription window. Instruments without
+   derivatives show the item disabled, so the broker is never asked for a chain that cannot exist.
+5. **Diagnostics** shows backend (`mongo` vs `in-memory`), frame rate, decode errors, and the live
    connect form.
 
 On launch the app restores the last watch list and, if a valid session is already stored,

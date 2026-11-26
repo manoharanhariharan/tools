@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import { formatVolume, QuoteTable, toRow, trendClass } from "./state";
 import type { QuoteDto } from "./api";
 
@@ -22,6 +22,8 @@ function quote(overrides: Partial<QuoteDto> = {}): QuoteDto {
     seq: 1,
     updated_at_ms: 1,
     is_index: false,
+    underlying: "ACC",
+    has_fno: true,
     ...overrides,
   };
 }

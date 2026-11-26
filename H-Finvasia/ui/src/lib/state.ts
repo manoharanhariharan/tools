@@ -1,4 +1,4 @@
-import type { QuoteDto, Trend } from "./api";
+﻿import type { QuoteDto, Trend } from "./api";
 
 /** A display-ready row. Formatting happens once, not per render. */
 export interface QuoteRow {
@@ -14,6 +14,8 @@ export interface QuoteRow {
   seq: number;
   updated: number;
   isIndex: boolean;
+  underlying: string | null;
+  hasFno: boolean;
 }
 
 const DASH = "-";
@@ -45,6 +47,8 @@ export function toRow(quote: QuoteDto): QuoteRow {
     seq: quote.seq,
     updated: quote.updated_at_ms,
     isIndex: quote.is_index,
+    underlying: quote.underlying,
+    hasFno: quote.has_fno,
   };
 }
 
@@ -67,6 +71,8 @@ export function placeholderRow(key: string): QuoteRow {
     seq: 0,
     updated: 0,
     isIndex: false,
+    underlying: null,
+    hasFno: false,
   };
 }
 

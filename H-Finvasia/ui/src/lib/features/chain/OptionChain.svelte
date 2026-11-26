@@ -7,8 +7,10 @@
   interface Props {
     watched: string[];
     onadd: (key: string) => void;
+    pending?: { underlying: string; nonce: number } | null;
+    onconsumed?: () => void;
   }
-  let { watched, onadd }: Props = $props();
+  let { watched, onadd, pending = null, onconsumed }: Props = $props();
 
   let underlying = $state("NIFTY");
   let expiries = $state<string[]>([]);
@@ -104,6 +106,14 @@
         // Expiries are local. The chain is NOT loaded automatically: subscribing
         // is an explicit action so the broker is only touched on request.
         await loadExpiries();
+
+        // Opened from a row context menu: load that underlying straight away.
+        if (pending) {
+          underlying = pending.underlying;
+          await loadExpiries();
+          await loadChain();
+          onconsumed?.();
+        }
       } catch (e) {
         if (!disposed) error = String(e);
       }

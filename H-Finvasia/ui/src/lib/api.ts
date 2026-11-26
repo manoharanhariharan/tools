@@ -29,6 +29,8 @@ export interface QuoteDto {
   updated_at_ms: number;
   /** True when this key is an index (drives the spot-rate strip). */
   is_index: boolean;
+  underlying: string | null;
+  has_fno: boolean;
 }
 
 export interface InstrumentDto {
@@ -41,6 +43,7 @@ export interface InstrumentDto {
   strike_type: string;
   lot_size: number;
   instrument_type: string;
+  has_fno: boolean;
 }
 
 export interface FundsDto {
@@ -132,6 +135,8 @@ export interface IndexRowDto {
   name: string | null;
   exchange: string;
   live: boolean;
+  underlying: string | null;
+  has_fno: boolean;
   quote: QuoteDto | null;
 }
 

@@ -1,12 +1,16 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { api, type InstrumentDto } from "../../api";
   import EmptyState from "../../components/EmptyState.svelte";
+  import ContextMenu from "../../components/ContextMenu.svelte";
 
   interface Props {
     watched: string[];
     onadd: (key: string) => void;
+    onchain: (underlying: string) => void;
   }
-  let { watched, onadd }: Props = $props();
+  let { watched, onadd, onchain }: Props = $props();
+
+  let menu = $state<{ x: number; y: number; row: InstrumentDto } | null>(null);
 
   let query = $state("");
   let results = $state<InstrumentDto[]>([]);
@@ -91,7 +95,13 @@
         </thead>
         <tbody>
           {#each results as item (item.key)}
-            <tr>
+            <tr
+              oncontextmenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                menu = { x: event.clientX, y: event.clientY, row: item };
+              }}
+            >
               <td class="l mono">{item.trading_symbol}</td>
               <td class="l">{item.underlying ?? "?"}</td>
               <td class="l mono dim">{item.expiry ?? "?"}</td>
@@ -109,5 +119,31 @@
         </tbody>
       </table>
     </div>
+  {/if}
+
+  {#if menu}
+    <ContextMenu
+      x={menu.x}
+      y={menu.y}
+      items={[
+        {
+          label: menu.row.underlying
+            ? `Open option chain (${menu.row.underlying})`
+            : "Open option chain",
+          disabled: !menu.row.has_fno,
+          action: () => {
+            if (menu?.row.underlying) onchain(menu.row.underlying);
+          },
+        },
+        {
+          label: watched.includes(menu.row.key) ? "Already watched" : "Add to watch",
+          disabled: watched.includes(menu.row.key),
+          action: () => {
+            if (menu) onadd(menu.row.key);
+          },
+        },
+      ]}
+      onclose={() => (menu = null)}
+    />
   {/if}
 </section>

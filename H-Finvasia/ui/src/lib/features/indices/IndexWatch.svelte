@@ -1,13 +1,17 @@
 ﻿<script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { api, events, type IndexRowDto } from "../../api";
   import EmptyState from "../../components/EmptyState.svelte";
+  import ContextMenu from "../../components/ContextMenu.svelte";
 
   interface Props {
     onadd: (key: string) => void;
     refreshToken: number;
+    onchain: (underlying: string) => void;
   }
-  let { onadd, refreshToken }: Props = $props();
+  let { onadd, refreshToken, onchain }: Props = $props();
+
+  let menu = $state<{ x: number; y: number; row: IndexRowDto } | null>(null);
 
   let indices = $state<IndexRowDto[]>([]);
   let loading = $state(false);
@@ -16,6 +20,9 @@
   let index = new Map<string, number>();
 
   async function refresh() {
+    // Guard against overlapping runs: the button must not toggle while a
+    // request is already in flight.
+    if (loading) return;
     loading = true;
     error = null;
     try {
@@ -75,12 +82,17 @@
     };
   });
 
-  // Refresh on mount and whenever the watch list changes (an Add flips a row
-  // to "watching"). Deliberately not gated on a non-empty result: the first call
-  // can legitimately return nothing while the master is still loading.
+  // Refresh when the watch list actually changes. `untrack` keeps the async
+  // refresh (which writes `indices`/`loading`) out of the dependency graph, so
+  // the effect cannot re-trigger itself.
+  let lastToken = -1;
   $effect(() => {
-    void refreshToken;
-    void refresh();
+    const token = refreshToken;
+    if (token === lastToken) return;
+    lastToken = token;
+    untrack(() => {
+      void refresh();
+    });
   });
 </script>
 
@@ -89,7 +101,7 @@
     <h2>Index watch</h2>
     <span class="muted">{indices.length} indices</span>
     <span class="spacer"></span>
-    <button disabled={loading} onclick={refresh}>{loading ? "Loading?" : "Refresh"}</button>
+    <button disabled={loading} onclick={refresh}>Refresh</button>
   </header>
 
   <div class="chain-toolbar" style="padding: 8px 14px">
@@ -124,7 +136,13 @@
         </thead>
         <tbody>
           {#each visible as row (row.key)}
-            <tr>
+            <tr
+              oncontextmenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                menu = { x: event.clientX, y: event.clientY, row };
+              }}
+            >
               <td class="l dim">{row.exchange}</td>
               <td class="l mono">{row.symbol}</td>
               <td class="l dim">{row.name ?? "-"}</td>
@@ -143,5 +161,33 @@
         </tbody>
       </table>
     </div>
+  {/if}
+
+  {#if menu}
+    <ContextMenu
+      x={menu.x}
+      y={menu.y}
+      items={[
+        {
+          label: menu.row.underlying
+            ? `Open option chain (${menu.row.underlying})`
+            : "Open option chain",
+          disabled: !menu.row.has_fno,
+          action: () => {
+            if (menu?.row.underlying) onchain(menu.row.underlying);
+          },
+        },
+        {
+          label: menu.row.live ? "Remove from watch" : "Add to watch",
+          action: () => {
+            if (!menu) return;
+            if (menu.row.live) return;
+            onadd(menu.row.key);
+          },
+          disabled: menu.row.live,
+        },
+      ]}
+      onclose={() => (menu = null)}
+    />
   {/if}
 </section>

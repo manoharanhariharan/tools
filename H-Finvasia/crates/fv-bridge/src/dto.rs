@@ -48,6 +48,10 @@ pub struct QuoteDto {
     pub updated_at_ms: i64,
     /// True when this key is an index (drives the spot-rate strip).
     pub is_index: bool,
+    /// Underlying symbol, when known (used to open its option chain).
+    pub underlying: Option<String>,
+    /// True when the underlying has option/futures contracts.
+    pub has_fno: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -61,6 +65,7 @@ pub struct InstrumentDto {
     pub strike_type: String,
     pub lot_size: i64,
     pub instrument_type: String,
+    pub has_fno: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -104,6 +109,8 @@ pub struct IndexRowDto {
     pub exchange: String,
     /// Subscribed (and therefore streaming) right now.
     pub live: bool,
+    pub underlying: Option<String>,
+    pub has_fno: bool,
     pub quote: Option<QuoteDto>,
 }
 

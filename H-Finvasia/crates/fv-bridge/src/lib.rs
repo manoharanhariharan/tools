@@ -165,6 +165,31 @@ mod tests {
     }
 
     #[test]
+    fn watch_rows_keep_metadata_before_the_first_tick() {
+        let mut md = market();
+        md.set_master(master());
+        md.set_watch(vec![SymbolKey::parse("NSE|2885").unwrap()]);
+
+        let rows = md.watch_quotes();
+        assert_eq!(rows.len(), 1, "a watched key always yields a row");
+        let row = &rows[0];
+        assert_eq!(row.trading_symbol.as_deref(), Some("RELIANCE-EQ"));
+        assert!(row.ltp.is_none(), "no price has arrived yet");
+        assert_eq!(row.underlying.as_deref(), Some("RELIANCE"));
+        assert!(!row.has_fno, "RELIANCE has no legs in this fixture");
+        assert!(!row.is_index);
+
+        // The same row, once the underlying has derivatives.
+        let mut md = market();
+        md.set_master(master());
+        md.set_watch(vec![SymbolKey::parse("NFO|158614").unwrap()]);
+        let row = &md.watch_quotes()[0];
+        assert!(row.ltp.is_none());
+        assert_eq!(row.underlying.as_deref(), Some("ZYDUSLIFE"));
+        assert!(row.has_fno);
+    }
+
+    #[test]
     fn watch_overflow_is_reported_not_silently_dropped() {
         let mut md = market().with_watch_limit(2);
         let keys: Vec<SymbolKey> = (1..=4)

@@ -1,4 +1,4 @@
-//! UI-facing market state.
+﻿//! UI-facing market state.
 //!
 //! Deliberately has **no Tauri dependency** so the whole thing is unit-testable
 //! without a webview. `src-tauri` is a thin adapter over this type.
@@ -220,11 +220,18 @@ impl MarketData {
     /// Current quotes for everything in the watch list, in stable order. Used to
     /// hydrate the grid immediately after a watch change.
     pub fn watch_quotes(&self) -> Vec<QuoteDto> {
+        let master = self.master.as_deref();
         self.watch
             .active()
             .iter()
-            .filter_map(|k| self.book.get(k))
-            .map(|q| quote_dto(q, self.master.as_deref()))
+            .filter_map(|key| match self.book.get(key) {
+                Some(quote) => Some(quote_dto(quote, master)),
+                // No tick yet: still return the instrument metadata so the row
+                // knows its underlying, index flag and F&O availability.
+                None => master
+                    .and_then(|m| m.get(key))
+                    .map(|instrument| placeholder_dto(instrument, master)),
+            })
             .collect()
     }
 
@@ -244,6 +251,12 @@ impl MarketData {
                 name: instrument.name.clone(),
                 exchange: instrument.key.exchange().to_string(),
                 live: self.watch.active().contains(&instrument.key),
+                underlying: instrument.underlying.clone(),
+                has_fno: instrument
+                    .underlying
+                    .as_deref()
+                    .map(|u| master.has_derivatives(u))
+                    .unwrap_or(false),
                 quote: self
                     .book
                     .get(&instrument.key)
@@ -341,7 +354,7 @@ impl MarketData {
         self.chain.len()
     }
 
-    /// Total unique instruments currently subscribed (watch ∪ chain).
+    /// Total unique instruments currently subscribed (watch âˆª chain).
     pub fn subscribed_len(&self) -> usize {
         self.desired_keys().len()
     }
@@ -403,7 +416,7 @@ impl MarketData {
             Some(master) => master
                 .search(query, limit)
                 .into_iter()
-                .map(|(instrument, _)| instrument_dto(instrument))
+                .map(|(instrument, _)| instrument_dto(instrument, self.master.as_deref()))
                 .collect(),
             None => Vec::new(),
         }
@@ -415,7 +428,7 @@ impl MarketData {
         self.master
             .as_ref()
             .and_then(|m| m.get(&key))
-            .map(instrument_dto)
+            .map(|i| instrument_dto(i, self.master.as_deref()))
     }
 }
 
@@ -478,6 +491,14 @@ fn decimals_for(quote: &Quote) -> u8 {
 }
 
 fn quote_dto(quote: &Quote, master: Option<&MemoryMaster>) -> QuoteDto {
+    let instrument = master.and_then(|m| m.get(&quote.key));
+    let is_index = instrument.map(fv_master::is_index).unwrap_or(false);
+    let underlying = instrument.and_then(|i| i.underlying.clone());
+    let has_fno = match (master, underlying.as_deref()) {
+        (Some(m), Some(u)) => m.has_derivatives(u),
+        _ => false,
+    };
+
     let d = decimals_for(quote);
     let change = quote.change();
     let trend = match change {
@@ -504,15 +525,49 @@ fn quote_dto(quote: &Quote, master: Option<&MemoryMaster>) -> QuoteDto {
         trend,
         seq: quote.seq,
         updated_at_ms: quote.updated_at_ms,
-        is_index: master
-            .and_then(|m| m.get(&quote.key))
-            .map(fv_master::is_index)
-            .unwrap_or(false),
+        is_index,
+        underlying: underlying.clone(),
+        has_fno,
     }
 }
 
-fn instrument_dto(instrument: &Instrument) -> InstrumentDto {
+/// A row for an instrument with no ticks yet: metadata only, no prices.
+fn placeholder_dto(instrument: &Instrument, master: Option<&MemoryMaster>) -> QuoteDto {
+    let has_fno = match (master, instrument.underlying.as_deref()) {
+        (Some(m), Some(u)) => m.has_derivatives(u),
+        _ => false,
+    };
+    QuoteDto {
+        key: instrument.key.as_wire(),
+        trading_symbol: Some(instrument.trading_symbol.clone()),
+        ltp: None,
+        change: None,
+        pct: None,
+        open: None,
+        high: None,
+        low: None,
+        prev_close: None,
+        volume: None,
+        bid: None,
+        ask: None,
+        bid_qty: None,
+        ask_qty: None,
+        trend: Trend::Flat,
+        seq: 0,
+        updated_at_ms: 0,
+        is_index: fv_master::is_index(instrument),
+        underlying: instrument.underlying.clone(),
+        has_fno,
+    }
+}
+
+fn instrument_dto(instrument: &Instrument, master: Option<&MemoryMaster>) -> InstrumentDto {
+    let has_fno = match (master, instrument.underlying.as_deref()) {
+        (Some(m), Some(u)) => m.has_derivatives(u),
+        _ => false,
+    };
     InstrumentDto {
+        has_fno,
         key: instrument.key.as_wire(),
         trading_symbol: instrument.trading_symbol.clone(),
         name: instrument.name.clone(),

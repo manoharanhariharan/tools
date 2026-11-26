@@ -1,6 +1,7 @@
-<script lang="ts">
+﻿<script lang="ts">
   import type { QuoteRow } from "../../state";
   import EmptyState from "../../components/EmptyState.svelte";
+  import ContextMenu from "../../components/ContextMenu.svelte";
 
   interface Props {
     rows: QuoteRow[];
@@ -9,8 +10,11 @@
     onselect: (key: string) => void;
     onremove: (key: string) => void;
     onstart: () => void;
+    onchain: (underlying: string) => void;
   }
-  let { rows, selected, busy, onselect, onremove, onstart }: Props = $props();
+  let { rows, selected, busy, onselect, onremove, onstart, onchain }: Props = $props();
+
+  let menu = $state<{ x: number; y: number; row: QuoteRow } | null>(null);
 
   // Watched indices become the spot-rate strip (no extra subscriptions).
   const indexRows = $derived(rows.filter((row) => row.isIndex));
@@ -64,6 +68,11 @@
               role="button"
               aria-label={`Select ${row.symbol}`}
               onclick={() => onselect(row.key)}
+              oncontextmenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                menu = { x: event.clientX, y: event.clientY, row };
+              }}
               onkeydown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
@@ -94,5 +103,26 @@
         </tbody>
       </table>
     </div>
+  {/if}
+
+  {#if menu}
+    <ContextMenu
+      x={menu.x}
+      y={menu.y}
+      items={[
+        {
+          label:
+            menu.row.hasFno && menu.row.underlying
+              ? `Open option chain (${menu.row.underlying})`
+              : "No F&O for this instrument",
+          disabled: !(menu.row.hasFno && menu.row.underlying),
+          action: () => {
+            if (menu?.row.underlying) onchain(menu.row.underlying);
+          },
+        },
+        { label: "Remove from watch", action: () => onremove(menu!.row.key) },
+      ]}
+      onclose={() => (menu = null)}
+    />
   {/if}
 </section>
