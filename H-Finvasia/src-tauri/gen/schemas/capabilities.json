@@ -1,1 +1,1 @@
-{}
+{"default":{"identifier":"default","description":"Core permissions for the main H-Finvasia window. Needed for IPC events (quotes:delta, status:changed, watch:changed, feed:changed) and basic window access.","local":true,"windows":["main"],"permissions":["core:default"]}}

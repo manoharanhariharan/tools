@@ -1,4 +1,4 @@
-# Finvasia / Shoonya "NorenTrader" (UFT) — Technology, Feed Architecture & Feature Inventory
+﻿# Finvasia / Shoonya "NorenTrader" (UFT) â€” Technology, Feed Architecture & Feature Inventory
 
 > **Purpose of this document:** reverse-engineer the installed Finvasia trading terminal well enough to
 > (a) understand where its performance bottlenecks come from and
@@ -20,9 +20,9 @@
 | Product | Finvasia Live (Shoonya) trading terminal; internally **"UFT" / "Noren Trader"** | window/type names `UFTrader.*`, `NorenTrader.exe.config` [Observed] |
 | Installer | Squirrel.Windows (delta packages, `Update.exe`) | `packages/*.nupkg`, `RELEASES`, `Squirrel.dll` [Observed] |
 | Installed build | `app-2025.1.14` | folder name, `RELEASES` [Observed] |
-| Main assembly | `Finvasia.exe` — .NET assembly name **NorenTrader**, file ver `1.0.8`, product ver `1.2.0` | PE metadata [Observed] |
+| Main assembly | `Finvasia.exe` â€” .NET assembly name **NorenTrader**, file ver `1.0.8`, product ver `1.2.0` | PE metadata [Observed] |
 | Signer / vendor | **KAMBALA SOLUTIONS PRIVATE LIMITED** | `FileVersionInfo.CompanyName` [Observed] |
-| Manual copyright | "© 2022 Kambala Solutions Pvt Ltd" | `doc/uft_document.chm` [Observed] |
+| Manual copyright | "Â© 2022 Kambala Solutions Pvt Ltd" | `doc/uft_document.chm` [Observed] |
 | Intended market | NSE / BSE / NFO / BFO / MCX / CDS; dealer + investor roles | config, logs, manual [Observed] |
 | Runtime footprint | 1 process, ~7.6 MB entry EXE + ~90 DLLs | file listing [Observed] |
 
@@ -34,7 +34,7 @@
 | `NorenPlugin.dll` | 465 | 21,358 | **all wire messages (`OmsProtos.*`)** + plugin SDK + shared controls |
 | `NorenApi.dll` | 107 | 709 | broker-channel API layer (Feed/Order/Req/TouchLine) |
 | `CozyMQ.dll` | 32 | 182 | **socket message bus** (transport + framing + auth) |
-| `CozyApi.NorenConnection` | – | – | device identity + license handshake |
+| `CozyApi.NorenConnection` | â€“ | â€“ | device identity + license handshake |
 | `NorenBluApi.dll` | 35 | 181 | BLU (bulk/line order) API |
 | `NorenRTD.dll` | 42 | 157 | Excel RTD server |
 | `NewsApi.dll` | 14 | 38 | news feed client |
@@ -42,7 +42,7 @@
 | `Plugins/EquitySipPlugin.dll` | 49 | 671 | equity SIP |
 | `Plugins/MutualFundPlugin.dll` | 74 | 1,471 | mutual funds |
 
-**This is a large, mature, single-process WPF monolith — not Electron and not a web app.**
+**This is a large, mature, single-process WPF monolith â€” not Electron and not a web app.**
 
 ---
 
@@ -54,7 +54,7 @@
 |---|---|---|
 | Runtime | **.NET Framework 4.6.2**, AnyCPU (x86/x64 interop DLLs shipped) | `Finvasia.exe.config` `<supportedRuntime>` [Observed] |
 | Language | C# (with WPF XAML), F# helper lib present (`FSharp.Core`) | [Observed] |
-| UI toolkit | **WPF** + **DevExpress XPF v20.2** (grids, docking, ribbon, charts, gauges, printing, RichEdit, PDF) | `DevExpress.*.v20.2.dll` ×20 [Observed] |
+| UI toolkit | **WPF** + **DevExpress XPF v20.2** (grids, docking, ribbon, charts, gauges, printing, RichEdit, PDF) | `DevExpress.*.v20.2.dll` Ã—20 [Observed] |
 | Theming | DevExpress `DXStyle`, `Office2019Black`, `Office2019Colorful` | [Observed] |
 | Embedded browser | **Microsoft WebView2** (Chromium/Edge) for web charts & disclaimers | `Microsoft.Web.WebView2.*`, `Finvasia.exe.WebView2/EBWebView` [Observed] |
 | Icons | `FontAwesome.WPF` | [Observed] |
@@ -117,14 +117,14 @@ Splitting channels this way is deliberate: a burst of ticks on FEED cannot delay
 ### 3.2 The protocol on the wire
 
 ```
-┌──────────┐   1. TCP connect (plain tcp:// or ssl://)      ┌─────────────┐
-│  Client  │ ───────────────────────────────────────────▶  │  CozyMQ bus │
-│ CozyMQ   │   2. handshake + device identity               │   broker    │
-│          │   3. license check (CMD_LICENSE_CHECK)         │             │
-│          │   4. SUB <trie.key> / R REG / R HND            │             │
-│          │ ◀───────────────────────────────────────────   │             │
-│          │   5. framed messages: control char + payload   │             │
-└──────────┘                                                └─────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”   1. TCP connect (plain tcp:// or ssl://)      â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  Client  â”‚ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¶  â”‚  CozyMQ bus â”‚
+â”‚ CozyMQ   â”‚   2. handshake + device identity               â”‚   broker    â”‚
+â”‚          â”‚   3. license check (CMD_LICENSE_CHECK)         â”‚             â”‚
+â”‚          â”‚   4. SUB <trie.key> / R REG / R HND            â”‚             â”‚
+â”‚          â”‚ â—€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€   â”‚             â”‚
+â”‚          â”‚   5. framed messages: control char + payload   â”‚             â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜                                                â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
                           payload = protobuf-net(OmsProtos.*)
 ```
 
@@ -138,13 +138,13 @@ Splitting channels this way is deliberate: a burst of ticks on FEED cannot delay
 - compression / crypto markers: `COZY_ENCRYPT_TYPE_LZ4_COMPRESS`, `AesGcm256`, `BCSHA256`.
 - bounded buffers: `COZY_DEVICE_READBUFFER_LEN`, `COZY_PAYLOAD_MAX`, `COZY_NUM_512_K`, `COZY_NUM_1_K`.
 
-**Application keys** are *not* opaque integers — they are short ASCII codes prefixed on the payload.
+**Application keys** are *not* opaque integers â€” they are short ASCII codes prefixed on the payload.
 Recovered from `NorenApi.dll` [Observed], e.g.:
 `swPlcOrd` (place), `swModOrd`, `swCanOrd`, `swSqrOff`, `crAuthUsr` (login), `crGtPrms` (limits),
 `crGtHolInf` (holdings), `crGtProflst`, `whiOrdGtHsty` (order history), `smGtInf` (scrip info),
 `OSW_UPD` / `OSW_FILL` / `OSW_ANC` (order/trade push), `EXCH_MSG`, `ADMIN_MSG`, `REQ_LMT`, `UI_MSG`.
 
-**Payload types** [Observed] — key market-data messages in `OmsProtos`:
+**Payload types** [Observed] â€” key market-data messages in `OmsProtos`:
 
 | Message | Meaning |
 |---|---|
@@ -158,13 +158,13 @@ Recovered from `NorenApi.dll` [Observed], e.g.:
 
 ### 3.3 Subscription lifecycle
 
-1. A scrip is added to a market-watch group ⇒ `FeedBroker.SubscribeFor_MW_Update(exch, token, bool)`
+1. A scrip is added to a market-watch group â‡’ `FeedBroker.SubscribeFor_MW_Update(exch, token, bool)`
    and (for depth) `TouchLineBroker.SubscribeFor_DEPTH_Update(...)`.
 2. Sectional extras attach themselves: `SubscribeFor_IV_Updates`, `AddExchStatusSubscription`,
    `AddExchMessageSubscription`, `AddAuctionFeedSubscription`, `AddLaggedFeedSubscription`.
 3. Active subscriptions are tracked in a "sub store" keyed by scrip, so duplicates are suppressed
    (`NorenDeviceCb.IsAlreadySubbed`, `AddToSubStore`, `FindAndRemove`).
-4. On reconnect (`OnBeginReconnect` → `OnReconnected`) the client **re-sends every subscription and
+4. On reconnect (`OnBeginReconnect` â†’ `OnReconnected`) the client **re-sends every subscription and
    registration** (`ReconSubscriptions`, `ReconRegistration`) and can fail over to a backup server
    (`SwitchToBackup`, `ConnectToBackupServer`).
 5. A broker-side cap applies. Observed log: `Max Watch Scrips Limit : 30` and
@@ -174,16 +174,16 @@ Recovered from `NorenApi.dll` [Observed], e.g.:
 
 ```
 CozyMQ socket thread
-   └─ CozyDeviceCallback.Process()                 // decode frames
-        └─ NorenApi.NorenDeviceCb.OnElseMsgNotify  // route by key
-             ├─ FeedBroker / TouchLineBroker       // MW & depth
-             ├─ OrderBroker                        // order/trade pushes
-             └─ ReqBroker                          // request responses
-                  └─ NorenApiNotify.On*Response     // typed callbacks
-                       └─ MarketWatchStore.UpdateScripInfo()
-                            ├─ FeedScripWatcher / DepthScripWatcher   // dedupe + merge
-                            └─ MTObservableCollection<T>.RaisePropertyChanged
-                                 └─ DevExpress GridControl (WPF binding)
+   â””â”€ CozyDeviceCallback.Process()                 // decode frames
+        â””â”€ NorenApi.NorenDeviceCb.OnElseMsgNotify  // route by key
+             â”œâ”€ FeedBroker / TouchLineBroker       // MW & depth
+             â”œâ”€ OrderBroker                        // order/trade pushes
+             â””â”€ ReqBroker                          // request responses
+                  â””â”€ NorenApiNotify.On*Response     // typed callbacks
+                       â””â”€ MarketWatchStore.UpdateScripInfo()
+                            â”œâ”€ FeedScripWatcher / DepthScripWatcher   // dedupe + merge
+                            â””â”€ MTObservableCollection<T>.RaisePropertyChanged
+                                 â””â”€ DevExpress GridControl (WPF binding)
 ```
 
 `MTObservableCollection<T>` + `SequencingService` exist specifically to marshal multi-threaded tick
@@ -198,12 +198,12 @@ Root: `%APPDATA%\NorenTrader\` (per-endpoint/per-user subfolder) [Observed]
 ```
 AppSettings.json                    last user, theme, device-remember flag
 <endpoint>_<key>_<user>\
-  ScripsData\SD_CS06\ScripsData.json   90.8 MB  ← full instrument master (~131k scrips)
+  ScripsData\SD_CS06\ScripsData.json   90.8 MB  â† full instrument master (~131k scrips)
   UserSettings\US_CS01\UserSettings.json  workspace/grid/colour/order prefs
   UFT_Workspace\WS_CS01\Workspace1.xml    dock layout (DevExpress, ~430 KB)
   UFT_Workspace\BarLayout.json, rbnSettings.xml, LocData.json
   MutualFundLayout\*.xml, VWapPlugin\VwapLayOut.xml
-  SessionLogs\SessionLog*.txt             1 MB – 10.5 MB per session  ← see §6.1
+  SessionLogs\SessionLog*.txt             1 MB â€“ 10.5 MB per session  â† see Â§6.1
 ```
 
 Scrip-master counts recorded in user settings [Observed]:
@@ -215,10 +215,10 @@ Scrip-master counts recorded in user settings [Observed]:
 | BSE | 12,748 |
 | BSTAR | 10,446 |
 | BFO | 582 |
-| **Total** | **≈131,072** |
+| **Total** | **â‰ˆ131,072** |
 
 Every scrip record carries ~35 fields (ISIN, lot size, tick size, price precision, expiry, strike,
-option type, underlying token, spread legs, SIP min/max …).
+option type, underlying token, spread legs, SIP min/max â€¦).
 
 ---
 
@@ -227,7 +227,7 @@ option type, underlying token, spread legs, SIP min/max …).
 Derived from the shipped manual (`uft_document.chm`, 20 chapters) **cross-checked against actual
 window/view-model/API names in the binaries**, so this is not just marketing copy.
 
-Legend — **P0** = required for a tradeable MVP · **P1** = expected by active traders · **P2** = niche/dealer · **P3** = defer.
+Legend â€” **P0** = required for a tradeable MVP Â· **P1** = expected by active traders Â· **P2** = niche/dealer Â· **P3** = defer.
 
 ### 5.1 Market data & discovery
 
@@ -253,7 +253,7 @@ Legend — **P0** = required for a tradeable MVP · **P1** = expected by active 
 
 | # | Feature | What it does | Internals | Pri |
 |---|---|---|---|---|
-| O1 | **Normal order entry** (`F1` buy / `F2` sell) | LIMIT / MARKET / SL-L / SL-M; product & duration; disclosed qty; remarks; inline depth; amount→qty calc; order-margin check | `OrderEntry`, `OrderEntryViewModel`, `PlaceOrderParams` | P0 |
+| O1 | **Normal order entry** (`F1` buy / `F2` sell) | LIMIT / MARKET / SL-L / SL-M; product & duration; disclosed qty; remarks; inline depth; amountâ†’qty calc; order-margin check | `OrderEntry`, `OrderEntryViewModel`, `PlaceOrderParams` | P0 |
 | O2 | **Products** | CNC, MIS, NRML, MTF (cash); MIS, NRML (F&O); CO, BO | `ProductLib`, `UI_*`/`LIB_*` constants | P0 |
 | O3 | **AMO** (`Ctrl+F1/F2`) | after-market orders with in-window indicator | `AMO` consts, `PlaceOrderParams` | P1 |
 | O4 | **Cover Order** (`Shift+F1/F2`) with trailing SL | entry + mandatory SL, trail | `CoverOrderEntry`, `CoverOrderEntryViewModel` | P1 |
@@ -279,7 +279,7 @@ Legend — **P0** = required for a tradeable MVP · **P1** = expected by active 
 | B4 | **Square-off** | multi-select square-off per position | `SendSqrOffOrder` | P0 |
 | B5 | **Net position book** (`Alt+F6`) | real-time dealer net positions | `DealerNetPositionsWindow`, `DlrNetPosViewModel` | P2 |
 | B6 | **Order history** | per-order audit trail | `OrderHistoryWindow`, `whiOrdGtHsty` | P1 |
-| B7 | **Product conversion** (`Ctrl+Shift+…`) + conversion report | MIS↔CNC/NRML | `PositionConversion`, `ProductConversionBook` | P1 |
+| B7 | **Product conversion** (`Ctrl+Shift+â€¦`) + conversion report | MISâ†”CNC/NRML | `PositionConversion`, `ProductConversionBook` | P1 |
 | B8 | **Holdings** (`Alt+F9`) | demat holdings; dealer view is read-only | `RedViewHoldings`, `ScripwiseHoldings` | P0 |
 | B9 | **Limits / margins** (`Ctrl+Shift+V` view, `Ctrl+Shift+U` update) | limits, margin used, margin available | `RedViewLimitWindow`, `RedSetLimitsWindow`, `SingleViewLimitWin` | P0 |
 | B10 | **Order margin / basket margin / span** (`Ctrl+Shift+L`) | pre-trade margin check, basket & SPAN calculator | `SpanCalculator`, `NOREN_REQ_GET_ORDER_MARGIN`, `npcCalSpan` | P1 |
@@ -349,9 +349,9 @@ Legend — **P0** = required for a tradeable MVP · **P1** = expected by active 
 
 ---
 
-## 6. Performance bottlenecks — evidence and root causes
+## 6. Performance bottlenecks â€” evidence and root causes
 
-### 6.1 Exchange-message flood (largest single hot spot) — **[Observed]**
+### 6.1 Exchange-message flood (largest single hot spot) â€” **[Observed]**
 
 Log-channel census from two real sessions:
 
@@ -362,7 +362,7 @@ Log-channel census from two real sessions:
 
 The stream is dominated by per-scrip price-band notices, e.g.
 `MCX : DPL Update - The Daily Price Limit for NATGASMINI 24Oct2025 260.0 PE has been updated to 0.05 - 18.25`
-— often the *same* contract at sub-minute intervals.
+â€” often the *same* contract at sub-minute intervals.
 
 **Root cause:** every `EXCH_MSG` is written synchronously to a session log file, forwarded to the
 `ExchMessageWin` view, *and* themed as an alert. Cost scales with message volume, on the UI thread
@@ -370,26 +370,26 @@ path, with no backpressure or coalescing.
 **Migration fix:** bounded ring buffer per channel; batch flush every 250 ms; virtualise the viewer;
 coalesce DPL updates to last-value-wins per (exch, symbol).
 
-### 6.2 90.8 MB single-line JSON instrument master — **[Observed file / Inferred parse]**
+### 6.2 90.8 MB single-line JSON instrument master â€” **[Observed file / Inferred parse]**
 
-`ScripsData.json` = one JSON **array** (one physical line) of ≈131,072 objects × ~35 fields.
-Loading it means: read 90.8 MB → `JsonSerializer` materialise ~131k POCOs → build lookup
+`ScripsData.json` = one JSON **array** (one physical line) of â‰ˆ131,072 objects Ã— ~35 fields.
+Loading it means: read 90.8 MB â†’ `JsonSerializer` materialise ~131k POCOs â†’ build lookup
 dictionaries. That is hundreds of MB of transient allocation and seconds of paused startup, every
 cold start, and it is re-validated against per-exchange `UpdTime`/`ScripCount` stamps.
 **Migration fix:** ship a binary master (framework-coded / bincode / FlatBuffers), or SQLite with
 indexes on `(exchange, token)`, `unique_key`, `symbol`, `isin`; memory-map it; load lazily per
-exchange. Expected: startup tens of seconds → **<1 s**.
+exchange. Expected: startup tens of seconds â†’ **<1 s**.
 
-### 6.3 One UI thread for everything — **[Observed architecture]**
+### 6.3 One UI thread for everything â€” **[Observed architecture]**
 
 WPF + DevExpress `GridControl` bound directly to `ObservableCollection` tick objects. `MTObservableCollection`
 and `SequencingService` demonstrate the authors marshalling concurrent tick writes back to the
-dispatcher. Every property change raises `PropertyChanged` → grid cell invalidation → layout/measure.
-**Migration fix:** decouple ingest from render. Rust actor per channel → coalescing store (latest
-value per scrip, 30–60 Hz) → push **deltas** to UI; render with virtualised rows
+dispatcher. Every property change raises `PropertyChanged` â†’ grid cell invalidation â†’ layout/measure.
+**Migration fix:** decouple ingest from render. Rust actor per channel â†’ coalescing store (latest
+value per scrip, 30â€“60 Hz) â†’ push **deltas** to UI; render with virtualised rows
 (tanstack-virtual / AG Grid) and repaint only visible cells.
 
-### 6.4 Per-scrip subscription churn — **[Observed]**
+### 6.4 Per-scrip subscription churn â€” **[Observed]**
 
 `SessionLog20251106T160510.txt` shows an option-chain open producing, *per strike*, an IV
 subscription **+** a touchline subscription **+** a `Get Scrips Info` request:
@@ -408,22 +408,22 @@ scan per removal).
 change instead of per-scrip calls, cache scrip info locally from the master, and surface a clear
 "subscription budget" indicator instead of silently failing.
 
-### 6.5 Unbounded in-memory books & logs — **[Inferred from types]**
+### 6.5 Unbounded in-memory books & logs â€” **[Inferred from types]**
 
 `OrdersStore`, `TradesStore`, `CNTOrdersStore`, `MultiLeg`/`OFS` stores keep the whole day in memory
 with no eviction; `SessionLogs` grow to 10.5 MB **per session** as plain text (retained indefinitely in
-`SessionLogs/`). Multi-day uptime ⇒ monotonic memory growth; no rotation policy observed.
+`SessionLogs/`). Multi-day uptime â‡’ monotonic memory growth; no rotation policy observed.
 **Migration fix:** bounded structures, ring buffer for logs, rotation + retention, structured
 `tracing` with sampling instead of full-text echo.
 
-### 6.6 Synchronous JSON settings I/O per preference — **[Inferred]**
+### 6.6 Synchronous JSON settings I/O per preference â€” **[Inferred]**
 
 `AppSettings.json`, `UserSettings.json` (per-grid keys `GRID_*`), `ColumnProfileLog.txt` (41 KB of
 appended profile events) are rewritten through plain file I/O, and settings are keyed per
 grid/column. Column chooser / workspace save touches many small files.
 **Migration fix:** single typed config store, debounced atomic writes, one coalesced document.
 
-### 6.7 Legacy runtime ceilings — **[Observed]**
+### 6.7 Legacy runtime ceilings â€” **[Observed]**
 
 .NET Framework 4.6.2 (2016) with WPF: no modern JIT/SIMD improvements, no `Span`-first parsing,
 `gen0` GC pressure from `string`-heavy JSON and per-tick boxing. DevExpress **v20.2** is six major
@@ -434,7 +434,7 @@ versions behind. Any rewrite gets these wins for free.
 - Startup performs assembly rewriting (`Mono.Cecil` shipped) and plugin scanning from `Plugins/`,
   plus `LoadLinkToExcelAddin.exe` / `LinkToExcelInstaller.exe` side processes.
 - `Assets/Tools/Profiler/RefLayout.xml` is **1.18 MB** of reference layout loaded by
-  `ColumnProfileApp.exe` for column profiling — a sign that grid layout is a known pain point.
+  `ColumnProfileApp.exe` for column profiling â€” a sign that grid layout is a known pain point.
 - Six sockets each with independent reconnect + re-subscribe storms can produce a thundering-herd on
   reconnect. **[Inferred]** Backoff/jitter was not observed; `Reconnect` strings exist but intervals
   are not static-readable.
@@ -466,7 +466,7 @@ ui/                SvelteKit/Svelte 5 + Vite; virtualised grids
 
 > **Replaces the earlier CozyMQ plan.** `fv-protocol` (protobuf/CozyMQ reimplementation) is dropped.
 > It was blocked on 5,485 unrecoverable field numbers and a vendor licence question; the official
-> Shoonya WebSocket removes both problems. See §7.6 and §12.
+> Shoonya WebSocket removes both problems. See Â§7.6 and Â§12.
 
 ### 7.2 Technology mapping
 
@@ -478,9 +478,9 @@ ui/                SvelteKit/Svelte 5 + Vite; virtualised grids
 | WebView2 host | Tauri webview (same engine, no separate host process) | one less runtime |
 | protobuf-net + `OmsProtos` | `serde` + typed frame enums (JSON, diff-merged) | documented contract, no schema recovery needed |
 | CozyMQ client | `tokio-tungstenite` over `wss://` | standard, TLS by default, one connection |
-| `System.Text.Json` @ 90.8 MB | **MongoDB `INSTRUMENT` / `FINVASIA_SYMBOL` already local** + in-process index | no 90 MB parse at all; see §7.9 |
-| SQLite + EF6 | MongoDB (existing local instance) + explicit repository layer | data already exists; see §7.9 |
-| `MTObservableCollection` + `SequencingService` | coalescing tick store + 30–60 Hz delta frame | batch instead of per-tick dispatch |
+| `System.Text.Json` @ 90.8 MB | **MongoDB `INSTRUMENT` / `FINVASIA_SYMBOL` already local** + in-process index | no 90 MB parse at all; see Â§7.9 |
+| SQLite + EF6 | MongoDB (existing local instance) + explicit repository layer | data already exists; see Â§7.9 |
+| `MTObservableCollection` + `SequencingService` | coalescing tick store + 30â€“60 Hz delta frame | batch instead of per-tick dispatch |
 | `tracing`-free text logs | `tracing` + `tracing-appender` + rolling retention | structured, sampled |
 | Squirrel.Windows | Tauri updater (`tauri-plugin-updater`) | signed delta updates |
 | `NamedPipeServer` + RTD/XLL | keep a narrow named-pipe bridge; Excel add-in as separate optional deliverable | P2/P3 |
@@ -489,23 +489,23 @@ ui/                SvelteKit/Svelte 5 + Vite; virtualised grids
 
 ### 7.3 Hard problems to plan for
 
-1. **~~Wire-schema recovery~~ — no longer blocking.** Replaced by the documented Shoonya WS contract
+1. **~~Wire-schema recovery~~ â€” no longer blocking.** Replaced by the documented Shoonya WS contract
    (`t:"a"` / `t:"tk"` / `t:"tf"` / `t:"om"`). The 317 `[ProtoContract]` / 5,485 `[ProtoMember]` figures
    remain useful only if the vendor later grants a supported CozyMQ integration.
-2. **Order-update head-of-line blocking.** One WS socket carries quotes *and* order updates (§7.6).
+2. **Order-update head-of-line blocking.** One WS socket carries quotes *and* order updates (Â§7.6).
    Mitigation is designed in, not retrofitted: `t`-field fast path before full deserialize.
-3. **~~Broker integration is contractual~~ — resolved by decision.** Use the official API. See §12.
+3. **~~Broker integration is contractual~~ â€” resolved by decision.** Use the official API. See Â§12.
 4. **Local MongoDB is on 4.4.2 (EOL).** Driver compatibility and a server-upgrade path must be
    planned; the app must degrade gracefully when Mongo is absent (developer laptops, CI).
 5. **Observability first.** Instrument the existing app (`.NET` counters / ETW) for a baseline on
-   §6.1–6.6; instrument the new core from day one (`tracing` spans + counters).
+   Â§6.1â€“6.6; instrument the new core from day one (`tracing` spans + counters).
 
 ### 7.4 Suggested delivery phases
 
 | Phase | Scope | Exit criteria |
 |---|---|---|
 | 0 | `fv-core` + `fv-feed` protocol/merge/replay; no network needed | replay fixture produces merged quotes; tests green |
-| 1 | Live WS ingest + Mongo master read + coalescing engine; headless `fv-cli` | 500 scrips, p99 tick→delta < 50 ms, < 150 MB RSS |
+| 1 | Live WS ingest + Mongo master read + coalescing engine; headless `fv-cli` | 500 scrips, p99 tickâ†’delta < 50 ms, < 150 MB RSS |
 | 2 | P0 UI: login, market watch, snap quote, order entry, order/trade/position books, limits | side-by-side with old terminal |
 | 3 | P1: depth, option chain, alerts, baskets, slicing, CO/BO, workspaces, settings, toasts | daily-driver parity for one trader |
 | 4 | P2: charts + greeks/payoff, top-N, mutual funds, equity SIP, Excel bridge (Windows-only, optional) | feature-parity sign-off |
@@ -517,43 +517,43 @@ Dealer/RMS back-office (entity manager, role manager, broker-level funds, BOD al
 baskets, BLU line/IOI trading, IVR) is a *separate product surface* already served by the vendor's
 web back-office. Migrating it is a multi-quarter effort on its own.
 
-### 7.6 Transport trade-off — CozyMQ bus vs official WebSocket
+### 7.6 Transport trade-off â€” CozyMQ bus vs official WebSocket
 
-**[Observed]** legacy transport · **[Documented]** Shoonya API · **[Estimated]** cost figures.
+**[Observed]** legacy transport Â· **[Documented]** Shoonya API Â· **[Estimated]** cost figures.
 
 | Dimension | CozyMQ (observed) | Shoonya WS (documented) | Impact |
 |---|---|---|---|
 | Framing | raw TCP, binary | TLS + WS frames | **+~50 B/msg** (~30 % on a 150 B tick) |
-| Payload | protobuf-net | JSON, 2-char keys, **diff-only after snapshot** | 3–8× more bytes |
+| Payload | protobuf-net | JSON, 2-char keys, **diff-only after snapshot** | 3â€“8Ã— more bytes |
 | Order channel | **dedicated socket :5801** | shared with the tick feed | **worse p99** |
 | Connections | 6 independent sockets | **1 per session (hard rule)** | simpler, but coupled |
 | Reconnect | 6-way re-subscribe storm | 1 reconnect + re-subscribe | **better** |
-| Encryption | `tcp://` — plaintext in the observed logs | `wss://` — TLS | **better** |
+| Encryption | `tcp://` â€” plaintext in the observed logs | `wss://` â€” TLS | **better** |
 | Order throughput cap | not published | **~10 req/sec** | **dominates all other terms** |
 
-**Verdict: yes, the wire is measurably slower — and it does not matter, except for order-ack tail
+**Verdict: yes, the wire is measurably slower â€” and it does not matter, except for order-ack tail
 latency, which is designed around.**
 
 The `~10 req/sec` order limit is the binding constraint. At that ceiling, a 2 ms vs 0.2 ms parse
-difference is noise next to the broker OMS → exchange → ack round trip (tens of ms).
+difference is noise next to the broker OMS â†’ exchange â†’ ack round trip (tens of ms).
 
 **Why JSON is not a problem here.** The feed is diff-streamed, not full-payload:
 
 | Frame | Meaning | Approx size |
 |---|---|---|
-| `t:"tk"` | full snapshot, once per subscribe | ~300–400 B |
-| `t:"tf"` | **only changed fields** | ~60–150 B |
-| `t:"om"` | order lifecycle event | ~250–400 B |
+| `t:"tk"` | full snapshot, once per subscribe | ~300â€“400 B |
+| `t:"tf"` | **only changed fields** | ~60â€“150 B |
+| `t:"om"` | order lifecycle event | ~250â€“400 B |
 
 Measured on this machine with the implementation in `crates/fv-feed` (`fv-cli bench`, release build):
 
 | Stage | Rate | Per frame |
 |---|---|---|
-| classify (`t` fast path) | 105,235,464 ops/s | **0.01 µs** |
-| parse only | 266,451 ops/s | 3.75 µs |
-| parse + merge into `QuoteBook` | 225,849 ops/s | 4.43 µs (46.8 MB/s) |
+| classify (`t` fast path) | 105,235,464 ops/s | **0.01 Âµs** |
+| parse only | 266,451 ops/s | 3.75 Âµs |
+| parse + merge into `QuoteBook` | 225,849 ops/s | 4.43 Âµs (46.8 MB/s) |
 
-At 5,000 frames/s the whole market-data path costs **4.43 µs × 5,000 ≈ 22 ms of CPU per second,
+At 5,000 frames/s the whole market-data path costs **4.43 Âµs Ã— 5,000 â‰ˆ 22 ms of CPU per second,
 about 2 % of one core**. The order-frame fast path is effectively free, which is precisely what
 protects ack latency. (The earlier estimate of <0.5 % was optimistic; the measured figure is still two
 orders of magnitude below what the legacy dispatcher + logging path consumed.)
@@ -561,22 +561,22 @@ orders of magnitude below what the legacy dispatcher + logging path consumed.)
 **The three risks, with the mitigation that is now implemented in `crates/fv-feed`:**
 
 1. **Head-of-line blocking (the real one).** Order updates share the socket with ticks.
-   → *Fast-path routing*: read `t` (always the first key) and dispatch `om` to a dedicated channel
+   â†’ *Fast-path routing*: read `t` (always the first key) and dispatch `om` to a dedicated channel
    **before** any market-data deserialization. A tick backlog can then never delay order state.
-2. **Parsing in the webview.** Never `new WebSocket()` + `JSON.parse` in the UI. → All ingest lives in
-   the Rust core; the webview only ever receives coalesced 30–60 Hz delta frames over Tauri IPC.
-3. **Subscription/rate discipline.** REST quotes are `~1 req/sec per instrument`; never poll. →
-   All continuous data comes from the socket; Mongo answers historical/lookup questions (§7.9).
+2. **Parsing in the webview.** Never `new WebSocket()` + `JSON.parse` in the UI. â†’ All ingest lives in
+   the Rust core; the webview only ever receives coalesced 30â€“60 Hz delta frames over Tauri IPC.
+3. **Subscription/rate discipline.** REST quotes are `~1 req/sec per instrument`; never poll. â†’
+   All continuous data comes from the socket; Mongo answers historical/lookup questions (Â§7.9).
 
 Net effect on the metrics that matter:
 
 | Metric | Old terminal | New (WS + Rust) | Direction |
 |---|---|---|---|
 | Cold start | seconds (90.8 MB JSON parse) | <1 s (Mongo + in-process index) | **much better** |
-| Tick → pixel | ~16–300 ms (dispatcher + grid) | 16–33 ms (coalesced frame) | **much better** |
-| Order submit → ack | broker-dominated | broker-dominated | unchanged |
+| Tick â†’ pixel | ~16â€“300 ms (dispatcher + grid) | 16â€“33 ms (coalesced frame) | **much better** |
+| Order submit â†’ ack | broker-dominated | broker-dominated | unchanged |
 | CPU at 500 scrips | high, GC churn | low, no GC | **much better** |
-| p99 order ack under tick burst | protected (separate socket) | **at risk** → mitigated by fast path | designed |
+| p99 order ack under tick burst | protected (separate socket) | **at risk** â†’ mitigated by fast path | designed |
 
 ### 7.7 Measurement plan (so the trade-off is falsifiable)
 
@@ -585,23 +585,23 @@ Net effect on the metrics that matter:
 
 | # | Test | Instrumentation | Pass criterion | Status |
 |---|---|---|---|---|
-| M1 | **Tick throughput** — 200 scrips, peak hours, 30 min | frames/s, bytes/s, parse µs p50/p99 | ≥ 3,000 frames/s sustained with <1 % dropped | harness ✅ / live ⬜ |
-| M2 | **Tick → delta frame** latency | monotonic timestamp at socket read vs emit | p99 < 50 ms | `Coalescer` tests ✅ / live ⬜ |
-| M3 | **Order-ack latency under burst** | synthetic 5k-frame burst immediately before a test order | p99 ack ≤ baseline + 20 ms | ⬜ (needs live) |
-| M4 | **Core CPU/RSS** | `tracing` counters + OS metrics | <10 % of one core, <150 MB RSS at 500 scrips | ⬜ (needs live) |
-| M5 | **Cold start** | process start → first rendered quote | <1 s | master load ✅ 2.7 s / render ⬜ |
-| M6 | **Reconnect cost** | drop socket, measure data-restored time | <2 s to full quote set | ⬜ (needs live) |
-| M7 | **JSON parse budget** | swap `serde_json` → `simd-json`, compare | if gain <10 %, keep `serde_json` | baseline ✅ (4.43 µs/frame) |
+| M1 | **Tick throughput** â€” 200 scrips, peak hours, 30 min | frames/s, bytes/s, parse Âµs p50/p99 | â‰¥ 3,000 frames/s sustained with <1 % dropped | harness âœ… / live â¬œ |
+| M2 | **Tick â†’ delta frame** latency | monotonic timestamp at socket read vs emit | p99 < 50 ms | `Coalescer` tests âœ… / live â¬œ |
+| M3 | **Order-ack latency under burst** | synthetic 5k-frame burst immediately before a test order | p99 ack â‰¤ baseline + 20 ms | â¬œ (needs live) |
+| M4 | **Core CPU/RSS** | `tracing` counters + OS metrics | <10 % of one core, <150 MB RSS at 500 scrips | â¬œ (needs live) |
+| M5 | **Cold start** | process start â†’ first rendered quote | <1 s | master load âœ… 2.7 s / render â¬œ |
+| M6 | **Reconnect cost** | drop socket, measure data-restored time | <2 s to full quote set | â¬œ (needs live) |
+| M7 | **JSON parse budget** | swap `serde_json` â†’ `simd-json`, compare | if gain <10 %, keep `serde_json` | baseline âœ… (4.43 Âµs/frame) |
 
 **Measured baseline today (release, x86-64 Windows, local Mongo 4.4.2):**
 
 | Metric | Value |
 |---|---|
-| classify only | 105,235,464 ops/s (0.01 µs/frame) |
-| parse only | 266,451 ops/s (3.75 µs/frame) |
-| parse + merge | 225,849 ops/s (4.43 µs/frame, 46.8 MB/s) |
+| classify only | 105,235,464 ops/s (0.01 Âµs/frame) |
+| parse only | 266,451 ops/s (3.75 Âµs/frame) |
+| parse + merge | 225,849 ops/s (4.43 Âµs/frame, 46.8 MB/s) |
 | instrument master load | 182,901 docs in **2.69 s** |
-| instrument search (`RELIANCE`) | 5 ranked hits, exact → prefix |
+| instrument search (`RELIANCE`) | 5 ranked hits, exact â†’ prefix |
 | option chain (`NIFTY`, one expiry) | 550 legs, strike-ordered |
 
 M7 verdict on this baseline: parsing is **2 % of one core at 5,000 frames/s**, so `simd-json` would
@@ -618,24 +618,24 @@ genuinely OS-bound integrations are conditional.
 | Concern | Windows | macOS | Linux | Design decision |
 |---|---|---|---|---|
 | UI | WebView2 | WKWebView | WebKitGTK | Tauri picks per-OS; **no OS-native UI widgets** |
-| Excel link (XLL/RTD) | ✅ | ❌ | ❌ | `#[cfg(windows)]` optional crate; excluded from default build |
+| Excel link (XLL/RTD) | âœ… | âŒ | âŒ | `#[cfg(windows)]` optional crate; excluded from default build |
 | Secret storage | Credential Manager | Keychain | Secret Service | `keyring` crate abstracts all three |
 | App data path | `%APPDATA%` | `~/Library/Application Support` | `$XDG_DATA_HOME` | `directories` crate; never hardcode |
 | Fonts | Segoe UI | SF | varies (may lack a UI font) | **ship fonts**; no OS font assumptions |
 | Tray / global hotkeys | Win32 | Cocoa | X11/Wayland | Tauri plugins; document Wayland limitations |
 | Single instance | mutex | NSDistinct | lockfile | `tauri-plugin-single-instance` |
-| Updater | Squirrel → Tauri | `.app` bundle | AppImage/deb | `tauri-plugin-updater`; separate signing keys |
+| Updater | Squirrel â†’ Tauri | `.app` bundle | AppImage/deb | `tauri-plugin-updater`; separate signing keys |
 | Numeric formatting | ICU | ICU | ICU | fixed-format numbers in core; locale only for display |
-| Time zones | — | — | — | **store UTC, render IST explicitly**; never rely on host TZ |
-| Endianness | — | — | — | any on-disk binary format is **explicit little-endian** |
+| Time zones | â€” | â€” | â€” | **store UTC, render IST explicitly**; never rely on host TZ |
+| Endianness | â€” | â€” | â€” | any on-disk binary format is **explicit little-endian** |
 | Crypto/TLS | SChannel | Security.framework | OpenSSL/rustls | **`rustls` everywhere** for identical behaviour |
-| MySQL/Mongo drivers | — | — | — | `mongodb` crate is pure Rust + rustls → same on all OS |
-| File watching / locks | — | — | — | `notify` crate; avoid OS-specific locking |
+| MySQL/Mongo drivers | â€” | â€” | â€” | `mongodb` crate is pure Rust + rustls â†’ same on all OS |
+| File watching / locks | â€” | â€” | â€” | `notify` crate; avoid OS-specific locking |
 
 **Determinism requirements** (they prevent "works on my machine"):
 
 - Money is `i64` **paise**, never `f64`. Prices cross the wire as strings (`"1287.30"`); convert once at
-  the boundary. This also kills the old paisa↔rupee float-conversion bugs.
+  the boundary. This also kills the old paisaâ†”rupee float-conversion bugs.
 - Quantities are `i64`; lot sizes `i64`.
 - All timestamps `chrono::DateTime<Utc>`; display layer formats IST.
 - Sorting/ranking uses explicit comparators (no locale-collation dependence).
@@ -648,27 +648,27 @@ genuinely OS-bound integrations are conditional.
 ### 7.9 Local MongoDB as the cache of record
 
 **[Observed]** on this machine (`mongodb://127.0.0.1:27017`, server **4.4.2**). The local instance
-already holds the reference data that the old terminal re-parsed from a 90.8 MB file — so the new
+already holds the reference data that the old terminal re-parsed from a 90.8 MB file â€” so the new
 core must **read from Mongo first and never re-query the broker for data it already has**.
 
 #### Observed databases & collections
 
 | DB | Collection | Docs | Role in the new app |
 |---|---|---:|---|
-| `STOCK` | `FINVASIA_SYMBOL` | 182,901 | **Primary symbol master** — Finvasia-native `EXCHANGE` + `token` (string) + `tradingSymbol`, `expiry`, `strikeType`, `strikePrice`, `underlying`, `lotSize` |
-| `STOCK` | `INSTRUMENT` | 131,903 | Kite-shaped master (`instrument_token`, `tradingsymbol`, `instrument_type`, `segment`, `strike`, `lot_size`, `expiry`) — cross-reference / back-compat |
+| `STOCK` | `FINVASIA_SYMBOL` | 182,901 | **Primary symbol master** â€” Finvasia-native `EXCHANGE` + `token` (string) + `tradingSymbol`, `expiry`, `strikeType`, `strikePrice`, `underlying`, `lotSize` |
+| `STOCK` | `INSTRUMENT` | 131,903 | Kite-shaped master (`instrument_token`, `tradingsymbol`, `instrument_type`, `segment`, `strike`, `lot_size`, `expiry`) â€” cross-reference / back-compat |
 | `STOCK` | `INSTRUMENT_DETAIL_TYPE` | 557,610 | Segment/type detail (Java `InstrumentDetailType`) |
 | `STOCK` | `SCRIP` | 2,923 | **Curated tradable universe** (`symbol`, `sector`, `hasDerivative`, `fragmentGroup`, `active`) |
-| `STOCK` | `SNAPSHOT_INTRADAY` | 321,240 | Intraday OHLC/OI snapshots — historical answer source |
+| `STOCK` | `SNAPSHOT_INTRADAY` | 321,240 | Intraday OHLC/OI snapshots â€” historical answer source |
 | `STOCK` | `DATA_STORED_TRACKER` | 87,061 | Backfill ledger (`underlying`, `instrument`, `dateUpdatedOn`, `foundInstrument`, `notFoundCount`) |
-| `STOCK` | `EXPIRY_LOT_DETAILS` | 14 | `underlying` + `expiry` + `type` → `lotSize` |
+| `STOCK` | `EXPIRY_LOT_DETAILS` | 14 | `underlying` + `expiry` + `type` â†’ `lotSize` |
 | `STOCK` | `HOLIDAY_LIST` | 123 | Trading holidays |
 | `STOCK` | `ALERTS_MANAGEMENT` | 1,341 | Alert definitions |
 | `STOCK` | `FV_ORDERS` | 0 | Target collection for the new app's order journal (currently unused) |
 | `STOCK` | `CONFIGS_GLOBAL` | 30 | Global config |
 | `STOCK` | `COMMAND_QUEUE` | 0 | Cross-process command channel (potential IPC to the app) |
 
-Field-shape notes (important for correctness — the two masters differ in casing):
+Field-shape notes (important for correctness â€” the two masters differ in casing):
 
 ```
 FINVASIA_SYMBOL  { Symbol, underlying, exchange, token:"158614", lotSize, tradingSymbol,
@@ -687,20 +687,20 @@ INSTRUMENT       { instrument_token:282257669, exchange_token:1102569, tradingsy
 ```
 loaded 182,901 instruments in 2.69 s
 underlyings     19,442
-NSE 10,103 · BSE 12,950 · NFO 81,110 · BFO 47,597 · MCX 18,014 · CDS 13,124
-NIFTY expiries  18 (2026-12-01 … 2031-06-24)
-option chain    NIFTY 2026-12-01 → 550 legs, strike-ordered
+NSE 10,103 Â· BSE 12,950 Â· NFO 81,110 Â· BFO 47,597 Â· MCX 18,014 Â· CDS 13,124
+NIFTY expiries  18 (2026-12-01 â€¦ 2031-06-24)
+option chain    NIFTY 2026-12-01 â†’ 550 legs, strike-ordered
 ```
 
 For comparison, the legacy terminal parses a **90.8 MB JSON file** on cold start before it can show a
 single quote. 2.7 s is already a large improvement but is not the <1 s target: the remaining cost is
-Mongo cursor iteration plus BSON→struct mapping. Next step is `RawDocumentBuf` zero-copy reads, or a
+Mongo cursor iteration plus BSONâ†’struct mapping. Next step is `RawDocumentBuf` zero-copy reads, or a
 cached binary snapshot refreshed from Mongo.
 
-#### Index finding — dead indexes (worth fixing, it is free throughput)
+#### Index finding â€” dead indexes (worth fixing, it is free throughput)
 
 **[Observed]** `INSTRUMENT` declares indexes on `tradingSymbol`, `dateStoredFor`, `candle`,
-`kiteInstrumentToken`, `strikeType`, `strikePrice` — but its documents use `tradingsymbol`
+`kiteInstrumentToken`, `strikeType`, `strikePrice` â€” but its documents use `tradingsymbol`
 (lowercase) and contain **none** of the other fields. Those indexes are idle storage and slow down
 every insert/update. The same generic index set is duplicated across `FINVASIA_SYMBOL`,
 `EXPIRY_LOT_DETAILS` and `DATA_STORED_TRACKER`.
@@ -723,25 +723,25 @@ db.FINVASIA_SYMBOL.createIndex({ underlying: 1, expiry: 1, strikeType: 1, strike
 |---|---|---|---|
 | Symbol master | Mongo (`FINVASIA_SYMBOL`) | per-exchange `UpdTime` stamp; refresh daily pre-market or on demand | call `GetInstrument`-style endpoint once, upsert, never per scrip |
 | Intraday snapshots | Mongo (`SNAPSHOT_INTRADAY`) | append-only; `DATA_STORED_TRACKER` prevents re-fetch | fetch the missing window only |
-| Live ticks / depth | **WS only — never cached as truth** | in-memory, coalesced | resubscribe |
+| Live ticks / depth | **WS only â€” never cached as truth** | in-memory, coalesced | resubscribe |
 | Orders / trades / positions | WS `t:"om"` for live; REST for reconciliation | reconcile on connect + every N min | REST, then journal to `FV_ORDERS` |
 | Holdings / limits | REST | on login + on demand | REST |
 | Holidays / lot sizes | Mongo | static | read once |
 
 **Hard rule: no per-scrip REST calls.** The old app issued `Request sent for Get Scrips Info` per
-strike (§6.4). The new app reads the master from Mongo; a scrip is only fetched when *genuinely absent*
+strike (Â§6.4). The new app reads the master from Mongo; a scrip is only fetched when *genuinely absent*
 and then written back.
 
 #### Graceful degradation (required for mac/linux dev and CI)
 
 `fv-store` exposes a `MasterStore` trait with three implementations:
 
-1. `MongoMaster` — production.
-2. `SqliteMaster` — embedded fallback so the app runs without a Mongo server.
-3. `MemoryMaster` — tests.
+1. `MongoMaster` â€” production.
+2. `SqliteMaster` â€” embedded fallback so the app runs without a Mongo server.
+3. `MemoryMaster` â€” tests.
 
-Selection at startup: `FV_MONGO_URI` → Mongo; else a local embedded snapshot; else a clear, actionable
-error. **The app must never hard-crash because Mongo is down** — it degrades to "live feed only, no
+Selection at startup: `FV_MONGO_URI` â†’ Mongo; else a local embedded snapshot; else a clear, actionable
+error. **The app must never hard-crash because Mongo is down** â€” it degrades to "live feed only, no
 history".
 
 #### Server version risk
@@ -757,12 +757,12 @@ deployment. Keep the repository layer free of version-specific aggregation so bo
 | Item | Observation | Action |
 |---|---|---|
 | Transport | Session log shows `tcp://` (plaintext) for FEED/ORDER/REQUEST/TCHLINE on :5817/:5801/:5809/:5813. CozyMQ *supports* `ssl://` and exposes `ValidateServerCertificate` | New client uses `wss://` only; no plaintext order path (DR-1) |
-| Credentials | Login uses user id + PIN/password + OTP/TOTP (`OTP_TOTP=True`); the **public API is OAuth 2.0** (app key + secret → auth code → access token) | Store tokens/secrets in OS keychain via `keyring`, never on disk in plaintext |
-| Local plaintext | Session logs contain client ids, order ids, scrip and exchange messages | Encrypt or redact logs; cap retention (see §6.5) |
+| Credentials | Login uses user id + PIN/password + OTP/TOTP (`OTP_TOTP=True`); the **public API is OAuth 2.0** (app key + secret â†’ auth code â†’ access token) | Store tokens/secrets in OS keychain via `keyring`, never on disk in plaintext |
+| Local plaintext | Session logs contain client ids, order ids, scrip and exchange messages | Encrypt or redact logs; cap retention (see Â§6.5) |
 | Shared crypto constants | `CozyMQ` embeds a static key/IV-looking literal (`D2D6A3D98346956B22CA59795E4A181C`) and a license-SHA literal | Vendor-internal; **not** used by the new codebase (DR-1) |
-| Licensing | Vendor is Kambala Solutions; redistribution of their DLLs is likely prohibited | Not applicable to the rewrite — official API only (DR-1) |
+| Licensing | Vendor is Kambala Solutions; redistribution of their DLLs is likely prohibited | Not applicable to the rewrite â€” official API only (DR-1) |
 | Exchange compliance | SEBI Algo ID framework governs automated order flow; higher order rates require an approved algo ID | Complete SEBI algo registration before enabling automated/strategy order placement |
-| Mongo server | Local instance is 4.4.2 (EOL); no security patches | Plan upgrade to 7.x; repository layer kept version-agnostic (§7.9) |
+| Mongo server | Local instance is 4.4.2 (EOL); no security patches | Plan upgrade to 7.x; repository layer kept version-agnostic (Â§7.9) |
 | Data retention | Session logs kept indefinitely (files from 2025-07 through 2026-11 present) | Define retention under your compliance policy |
 
 ---
@@ -813,7 +813,7 @@ Copy into your tracker; each row is one shippable slice.
 
 ---
 
-## 11. Appendix — key symbol index
+## 11. Appendix â€” key symbol index
 
 | Symbol | File | Meaning |
 |---|---|---|
@@ -821,7 +821,7 @@ Copy into your tracker; each row is one shippable slice.
 | `CozyMQFramework.CozyDevice` | `CozyMQ.dll` | one socket: `ConnectDevice`, `Read`, `WriteToDevice`, `Reconnect` |
 | `CozyMQFramework.CozyDeviceCallback` | `CozyMQ.dll` | callback maps: `AddSubSCBmap`, `AddReqSCBmap`, `Process` |
 | `CozyApi.NorenConnection` | `CozyMQ.dll` | `CheckLicense`, `GetProfile`, `GetAddressMessage` |
-| `CozyMQFramework.CozyConstants` | `CozyMQ.dll` | all protocol constants (`SUB`, `R SUB`, `fwd_all`, `LZ4`, …) |
+| `CozyMQFramework.CozyConstants` | `CozyMQ.dll` | all protocol constants (`SUB`, `R SUB`, `fwd_all`, `LZ4`, â€¦) |
 | `NorenApi.NorenApiMain` | `NorenApi.dll` | `CreateConnection`, `ConnectToBrokers`, `AddSubscription`, `SetHandOverRequest` |
 | `NorenApi.NorenDeviceCb` | `NorenApi.dll` | reconnect + `ReconSubscriptions` / `ReconRegistration` |
 | `NorenApi.FeedBroker` | `NorenApi.dll` | `SubscribeFor_MW_Update`, `SubscribeFor_IV_Updates`, auction/lagged feeds |
@@ -829,7 +829,7 @@ Copy into your tracker; each row is one shippable slice.
 | `NorenApi.OrderBroker` | `NorenApi.dll` | `PlaceNewOrder`, `CancelOrder`, `SendReqToModifyOrder`, `SendAutoSquareOff` |
 | `NorenApi.ReqBroker` | `NorenApi.dll` | all request/response RPCs (login, limits, positions, masters, admin) |
 | `NorenApi.UFT_Convertor` | `NorenApi.dll` | `ProtoSerialize` / `ProtoDeSerializer`, price & time conversion |
-| `NorenApi.PriceConvertor` | `NorenApi.dll` | paisa↔rupee, price formatting by precision |
+| `NorenApi.PriceConvertor` | `NorenApi.dll` | paisaâ†”rupee, price formatting by precision |
 | `NorenPlugin.ApiUtils` | `NorenPlugin.dll` | `ProtoSerialize`, `ProtoDeSerializer` |
 | `UFTrader.UFT_Stores.MarketWatchStore` | `Finvasia.exe` | group + scrip watch state, save/restore, subscription updates |
 | `UFTrader.UFT_Stores.MTObservableCollection<T>` | `Finvasia.exe` | thread-safe observable collection used by every grid |
@@ -844,31 +844,31 @@ Copy into your tracker; each row is one shippable slice.
 
 ## 12. Decision record
 
-**DR-1 — Transport: official Shoonya API, not the CozyMQ bus.** *(Accepted)*
+**DR-1 â€” Transport: official Shoonya API, not the CozyMQ bus.** *(Accepted)*
 
 - **Context.** The shipped terminal speaks a proprietary protobuf/CozyMQ bus (6 sockets, device
   identity + licence handshake). Re-implementing it requires bypassing an access control and
   reimplementing undocumented framing, plus a vendor-licence question.
 - **Decision.** Build on the documented Shoonya REST + WebSocket API (`api.shoonya.com`).
-- **Consequences.** Wire is somewhat slower (§7.6) and order-ack isolation must be engineered
-  (§7.6 risk 1). In exchange: no schema recovery, TLS by default, a supported contract, and
+- **Consequences.** Wire is somewhat slower (Â§7.6) and order-ack isolation must be engineered
+  (Â§7.6 risk 1). In exchange: no schema recovery, TLS by default, a supported contract, and
   ~6 months of Phase-0 work removed.
 - **Reversal cost.** Low for the UI/engine; the `fv-feed` transport is behind a trait, so a vendor
   CozyMQ integration could be added later without touching the core.
 
-**DR-2 — Local MongoDB is the cache of record for non-live data.** *(Accepted)*
+**DR-2 â€” Local MongoDB is the cache of record for non-live data.** *(Accepted)*
 
 - Already-populated locally (`INSTRUMENT` 131,903 / `FINVASIA_SYMBOL` 182,901 / `SNAPSHOT_INTRADAY`
   321,240). Eliminates the 90.8 MB startup parse and per-scrip server queries.
 - Live feed is **never** sourced from Mongo; Mongo supplies history, masters and reference data only.
-- Requires degrading gracefully when Mongo is unavailable (§7.9).
+- Requires degrading gracefully when Mongo is unavailable (Â§7.9).
 
-**DR-3 — Cross-platform from day one.** *(Accepted)*
+**DR-3 â€” Cross-platform from day one.** *(Accepted)*
 
 - Windows, macOS, Linux. Platform-neutral core; OS-bound features (Excel XLL) isolated behind
   `cfg(windows)`. Deterministic money (i64 paise), UTC timestamps, explicit LE on-disk formats.
 
-**DR-4 — Ingest never runs in the webview.** *(Accepted)*
+**DR-4 â€” Ingest never runs in the webview.** *(Accepted)*
 
 - Socket + JSON parse + state live in Rust; the webview receives coalesced delta frames only.
 
@@ -881,20 +881,20 @@ Phase 0/1 is implemented and verified ([`README.md`](README.md), [`docs/ARCHITEC
 | Crate | Scope | Tests |
 |---|---|---|
 | `fv-core` | `Price` (i64, 6 dp), `SymbolKey`, `Quote` | 17 |
-| `fv-feed` | frame classify/decode, `QuoteBook` diff-merge, subscription batching, replay, WS transport + backoff | 38 |
+| `fv-feed` | frame classify/decode, `QuoteBook` diff-merge, subscription batching, replay, legacy WS transport + heartbeat + scope fallback | 41 |
 | `fv-master` | `MemoryMaster` index/search/option-chain, Mongo loader (both collection shapes) | 14 |
 | `fv-store` | memory + Mongo backends, tracker freshness rule, snapshot upsert, order journal | 16 |
 | `fv-engine` | `Coalescer` (bounded, deterministic), `TokenBucket` (venue limits) | 12 |
 | `fv-bridge` | `MarketData` state, watch diffing, DTO formatting, trend/placeholder rules | 13 |
 | `fv-cli` | build-date calendar + CLI contract as a real process | 8 |
 | `ui/` | formatting + `QuoteTable` merge/prune/placeholder (vitest) | 14 |
-| **Total** | | **132** |
+| **Total** | | **135** |
 
-Gates: `cargo test --workspace` (118 Rust), `npm test` (14 UI), `cargo clippy --workspace
+Gates: `cargo test --workspace` (121 Rust), `npm test` (14 UI), `cargo clippy --workspace
 --all-targets -- -D warnings`, `cargo fmt --check`, `svelte-check` (0 errors/warnings).
 Shipped via `scripts/release.ps1` into `releases/` as a desktop app plus a CLI.
 
-### Phase 2a — desktop UI (implemented)
+### Phase 2a â€” desktop UI (implemented)
 
 `fv-bridge` + `src-tauri` + `ui/` add a Tauri 2 window over the same engine:
 
@@ -906,7 +906,7 @@ Shipped via `scripts/release.ps1` into `releases/` as a desktop app plus a CLI.
 | Diagnostics | backend, frame rate, decode errors, demo/live feed controls |
 | Status bar | source, backend, instrument count, watch budget, frames/s, build |
 
-Threading: one producer → one consumer that owns the state lock → 60 Hz delta events. The lock is
+Threading: one producer â†’ one consumer that owns the state lock â†’ 60 Hz delta events. The lock is
 never held across an `.await`, `stop_feed` aborts the producer, and the frontend releases every
 listener on teardown.
 
@@ -921,7 +921,7 @@ One defect was caught by measuring the running app rather than by a test:
 
 3. **Replay pacing was capped at ~64 Hz on Windows.** A per-frame `sleep(1/hz)` interacts badly with
    the ~15.6 ms timer granularity: a 120 Hz demo measured 65/s. Pacing now measures real elapsed time
-   and replenishes a frame budget, which holds 120/s (verified 119–122/s) and will replay a
+   and replenishes a frame budget, which holds 120/s (verified 119â€“122/s) and will replay a
    high-rate real capture at its true speed.
 
 End-to-end verification of the shipped app (`FV_AUTOSTART_DEMO=1`, debug log): window opens,
@@ -933,25 +933,56 @@ A fourth defect was reported from actually launching the released build:
 4. **The desktop window showed `ERR_CONNECTION_REFUSED` for `localhost:5173`.** Cause:
    `tauri-build` marks a build as *dev* unless the `tauri` crate is compiled with `custom-protocol`;
    a plain `cargo build --release` therefore loads `devUrl` instead of the embedded frontend. The
-   process, backend and master load all worked, which is why the earlier smoke test passed — it
+   process, backend and master load all worked, which is why the earlier smoke test passed â€” it
    verified the Rust side but not that the webview rendered. Fixed by building through
    `npm run tauri:build`, and `scripts/release.ps1` now probes port 5173 during release and fails if
    the shipped app reaches for the dev server.
 
-Notable defects found and fixed during implementation — each is a class of bug the legacy code had:
+### Phase 2b â€” live data (implemented)
+
+Reported symptom: *"start demo feed doesn't do anything"*. Two independent causes, both found by
+attaching to the running WebView2 over the DevTools protocol rather than guessing:
+
+5. **No Tauri capability file**, so `plugin:event|listen` was denied by the ACL
+   (`Command plugin:event|listen not allowed by ACL`). Every `listen()` failed, the init routine
+   aborted before hydrating, and the grid stayed empty. Added
+   `src-tauri/capabilities/default.json` with `core:default`, and made listener registration
+   per-listener so one failure can no longer blank the app.
+
+6. **The live protocol was the wrong generation.** The documented OAuth flow
+   (`wss://â€¦/NorenWSAPI/`, `t:"a"` + `accesstoken`) does not accept the sessions this account holds.
+   The working protocol â€” confirmed live â€” is the legacy one:
+   `wss://api.shoonya.com/NorenWSTP/`, frame `{"t":"c","uid","actid","susertoken","source":"WEB"}`,
+   ack `{"t":"ck","s":"OK"}`, heartbeat `{"t":"h"}` every 3 s. Web-minted tokens require
+   `source:"WEB"`; the client falls back to `"API"` on `NOT_OK`.
+   Also: `NorenWClientTP` (used by the older in-house client) now returns **502**; the live REST base
+   is `NorenWClientAPI`.
+
+7. **`report_schoonya` in `fv-cred.json` is a password, not an account id.** Using it as `actid`
+   made the handshake fail silently. `actid` now defaults to the user id.
+
+8. **The venue serves one websocket per token.** A pre-flight probe connection left the real
+   connection silent. The probe was removed; connection state is reported from the single session via
+   `FeedState`, so the UI shows *connected* only after the handshake actually succeeds.
+
+Verified end-to-end through the UI: session adopted from `CONFIGS_GLOBAL` (issued 2026-11-26),
+`live feed connected source=WEB`, NTPC 321.80 â†’ 321.70 with bid/ask and volume, ACC 1262.80,
+182,901 instruments loaded.
+
+Notable defects found and fixed during implementation â€” each is a class of bug the legacy code had:
 
 1. **Malformed JSON silently became an "unknown frame".** Now validated with `IgnoredAny`, so
    corruption is an error while a genuinely new frame type stays observable.
 2. **Mongo driver panicked at runtime teardown** (background pool outliving tokio). Fixed with an
    explicit `Store::shutdown()` / `Client::shutdown()` on every path. This is the resource-hygiene
-   rule from §6.5 applied to the new stack.
-3. **Backoff cap ignored jitter** (60 s × 1.2 = 72 s). Base now capped at 50 s with a hard 60 s clamp,
+   rule from Â§6.5 applied to the new stack.
+3. **Backoff cap ignored jitter** (60 s Ã— 1.2 = 72 s). Base now capped at 50 s with a hard 60 s clamp,
    and the jitter band is asserted by a test.
 4. **`Quote` derived `Default`**, which would have allowed a quote with an empty `SymbolKey`. Removed;
    construction goes through `Quote::empty(key)` so the invariant cannot be violated.
 
 Deliberately still absent: `fv-bridge`, `src-tauri`, `ui/`, `fv-market` (REST). Those are Phase 2 and
-need the P0 UI decisions in §5.1–5.4 plus OAuth app registration.
+need the P0 UI decisions in Â§5.1â€“5.4 plus OAuth app registration.
 
 ---
 
@@ -959,14 +990,14 @@ need the P0 UI decisions in §5.1–5.4 plus OAuth app registration.
 
 | Evidence | Source |
 |---|---|
-| Assembly identities, versions, type/method/field counts | REA managed-artifact + managed-members inspection of the 11 assemblies listed in §1.1 |
+| Assembly identities, versions, type/method/field counts | REA managed-artifact + managed-members inspection of the 11 assemblies listed in Â§1.1 |
 | All type/method/field/string names quoted | CLI metadata of `Finvasia.exe`, `NorenPlugin.dll`, `NorenApi.dll`, `CozyMQ.dll`, `Plugins/*.dll` |
 | `[ProtoContract]` = 317, `[ProtoMember]` = 5,485 | full scan of `NorenPlugin.dll` custom-attribute table |
 | Endpoints and ports | `Finvasia.exe.config`, `NorenTrader.exe.config`, `SessionLogs/*.txt` (`COZY` lines) |
 | Exchange-message flood ratios | line censuses of `SessionLog20251014T215103.txt` and `SessionLog20251023T221455.txt` |
 | Scrip counts, master size, subscription cap | `UserSettings.json`, `ScripsData.json` (90.8 MB), `SessionLog*.txt` |
 | Feature list | `doc/uft_document.chm` (20 chapters, decompiled) **plus** window/VM/API symbols in the binaries |
-| MongoDB collections, doc counts, sample shapes, indexes | `mongo` shell queries against `127.0.0.1:27017` (§7.9) |
+| MongoDB collections, doc counts, sample shapes, indexes | `mongo` shell queries against `127.0.0.1:27017` (Â§7.9) |
 | WS protocol, rate limits, 1-connection rule | shoonya.com official API documentation |
 
 *No target code was executed. All runtime numbers are taken from files the application wrote.*

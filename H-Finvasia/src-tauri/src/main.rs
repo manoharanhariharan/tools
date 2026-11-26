@@ -23,6 +23,8 @@ use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 use tauri::async_runtime::JoinHandle;
 
+mod session;
+
 /// Bundled master used when MongoDB is unavailable, so first-run search works.
 const SAMPLE_MASTER: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -255,25 +257,18 @@ async fn begin_feed(
     Ok(watched)
 }
 
-/// Connect to the venue. Requires `FV_ACCESS_TOKEN` and a non-empty watch list.
+#[tauri::command]
+async fn session_info() -> session::SessionInfo {
+    session::peek().await
+}
+
+/// Connect to the venue. The session is resolved automatically:
+/// env token → persisted Mongo token (validated) → TOTP login.
 #[tauri::command]
 async fn start_live(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
-    uid: String,
-    actid: String,
 ) -> Result<Vec<String>, String> {
-    let token = std::env::var("FV_ACCESS_TOKEN")
-        .ok()
-        .filter(|t| !t.trim().is_empty())
-        .ok_or_else(|| {
-            "FV_ACCESS_TOKEN is not set. Complete the OAuth flow and set it, then retry."
-                .to_string()
-        })?;
-    if uid.trim().is_empty() || actid.trim().is_empty() {
-        return Err("user id and account id are required".into());
-    }
-
     stop_feed_impl(state.inner());
 
     let keys: Vec<SymbolKey> = {
@@ -288,11 +283,20 @@ async fn start_live(
         return Err("add at least one instrument to the watch list first".into());
     }
 
-    let cfg = fv_feed::ws::WsConfig::new(uid.trim(), actid.trim(), token);
+    let resolved = session::resolve_session().await?;
+    tracing::info!(
+        uid = %resolved.uid,
+        actid = %resolved.actid,
+        token_source = resolved.source.as_str(),
+        "live session resolved"
+    );
+
+    let cfg = fv_feed::ws::WsConfig::new(&resolved.uid, &resolved.actid, &resolved.token);
     let (stop_tx, stop_rx) = mpsc::channel::<()>(1);
     *state.live_stop.lock().unwrap() = Some(stop_tx);
 
     let tx = state.tx.clone();
+    let feed_state = state.inner().clone();
     let shared = state.inner().clone();
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -302,6 +306,7 @@ async fn start_live(
             move |frame| {
                 let _ = tx.send(frame);
             },
+            move |event| apply_feed_state(&feed_state, event),
             stop_rx,
         )
         .await;
@@ -321,11 +326,40 @@ async fn start_live(
     let watched = {
         let mut market = state.market.lock().unwrap();
         market.set_source(SourceKind::Live);
+        // Real connectivity is reported by the feed task via FeedState.
+        market.set_connected(false);
         market.clear_error();
         market.watched()
     };
     let _ = app.emit("feed:changed", "live");
     Ok(watched)
+}
+
+/// Translate transport lifecycle events into UI state.
+fn apply_feed_state(state: &Arc<AppState>, event: fv_feed::ws::FeedState) {
+    use fv_feed::ws::FeedState;
+
+    let mut market = state.market.lock().unwrap();
+    match event {
+        FeedState::Connected { source } => {
+            market.set_source(SourceKind::Live);
+            market.set_connected(true);
+            market.clear_error();
+            tracing::info!(%source, "live feed connected");
+        }
+        FeedState::Rejected { source } => {
+            market.set_connected(false);
+            market.set_error(format!("session rejected for source '{source}'"));
+        }
+        FeedState::Error { message } => {
+            market.set_connected(false);
+            market.set_error(message);
+        }
+        FeedState::Reconnecting { attempt } => {
+            market.set_connected(false);
+            tracing::info!(attempt, "feed reconnecting");
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -526,6 +560,7 @@ fn main() {
             watch_remove,
             start_replay,
             start_live,
+            session_info,
             stop_feed,
         ])
         .run(tauri::generate_context!())

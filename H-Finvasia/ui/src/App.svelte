@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { onMount } from "svelte";
   import {
     api,
@@ -6,6 +6,7 @@
     type AppInfo,
     type InstrumentDto,
     type QuoteDto,
+    type SessionInfo,
     type StatusDto,
   } from "./lib/api";
   import { QuoteTable, type QuoteRow } from "./lib/state";
@@ -25,6 +26,7 @@
   let quoteMap = $state<Map<string, QuoteDto>>(new Map());
   let status = $state<StatusDto | null>(null);
   let info = $state<AppInfo | null>(null);
+  let session = $state<SessionInfo | null>(null);
   let selected = $state<string | null>(null);
   let instrumentMeta = $state<InstrumentDto | null>(null);
   let notice = $state<string | null>(null);
@@ -65,6 +67,9 @@
     notice = null;
     try {
       await api.startReplay(120);
+      // Belt and braces: the watch:changed event normally drives the grid, but
+      // re-hydrating means a dropped event can never leave the UI stale.
+      await hydrate();
     } catch (error) {
       notice = `Could not start the demo feed: ${String(error)}`;
     } finally {
@@ -81,11 +86,13 @@
     }
   }
 
-  async function startLive(uid: string, actid: string) {
+  async function startLive() {
     busy = true;
     notice = null;
     try {
-      await api.startLive(uid, actid);
+      await api.startLive();
+      session = await api.sessionInfo();
+      await hydrate();
     } catch (error) {
       notice = String(error);
     } finally {
@@ -98,7 +105,7 @@
     try {
       const plan = await api.watchAdd(key);
       if (plan.truncated) {
-        notice = `Watch limit reached — ${plan.rejected.length} instrument(s) were not added.`;
+        notice = `Watch limit reached â€” ${plan.rejected.length} instrument(s) were not added.`;
       }
       await hydrate();
       selected = key;
@@ -149,43 +156,69 @@
       else unlisteners.push(unlisten);
     }
 
+    // Each listener is registered independently: one failure (for example a
+    // missing capability) must not prevent hydration or blank the app.
+    async function subscribeAll() {
+      const subscriptions: Array<[string, () => Promise<() => void>]> = [
+        [
+          "quotes:delta",
+          () =>
+            events.onDelta((delta) => {
+              table.upsert(delta.quotes);
+              syncRows();
+              rememberQuotes(delta.quotes);
+            }),
+        ],
+        [
+          "watch:changed",
+          () =>
+            events.onWatch((payload) => {
+              table.setKeys(payload.keys, payload.quotes);
+              syncRows();
+              rememberQuotes(payload.quotes);
+            }),
+        ],
+        [
+          "status:changed",
+          () =>
+            events.onStatus((next) => {
+              status = next;
+            }),
+        ],
+        [
+          "master:ready",
+          () =>
+            events.onMasterReady(() => {
+              void api.status().then((next) => {
+                if (!disposed) status = next;
+              });
+            }),
+        ],
+        [
+          "feed:changed",
+          () =>
+            events.onFeed(() => {
+              if (!disposed) notice = null;
+            }),
+        ],
+      ];
+
+      for (const [name, subscribe] of subscriptions) {
+        try {
+          track(await subscribe());
+        } catch (error) {
+          console.warn(`event listener '${name}' failed`, error);
+        }
+      }
+    }
+
     (async () => {
       try {
-        track(
-          await events.onDelta((delta) => {
-            table.upsert(delta.quotes);
-            syncRows();
-            rememberQuotes(delta.quotes);
-          }),
-        );
-        track(
-          await events.onWatch((payload) => {
-            table.setKeys(payload.keys, payload.quotes);
-            syncRows();
-            rememberQuotes(payload.quotes);
-          }),
-        );
-        track(
-          await events.onStatus((next) => {
-            status = next;
-          }),
-        );
-        track(
-          await events.onMasterReady(() => {
-            void api.status().then((next) => {
-              if (!disposed) status = next;
-            });
-          }),
-        );
-        track(
-          await events.onFeed((state) => {
-            if (!disposed) notice = null;
-            void state;
-          }),
-        );
-
+        await subscribeAll();
         const appInfo = await api.appInfo();
         if (!disposed) info = appInfo;
+        const sessionInfo = await api.sessionInfo();
+        if (!disposed) session = sessionInfo;
         if (!disposed) await hydrate();
       } catch (error) {
         if (!disposed) notice = `Backend unavailable: ${String(error)}`;
@@ -209,14 +242,14 @@
       tone={status?.connected ? "ok" : "warn"}
       dot
     />
-    <Badge label={status?.backend ?? "…"} tone={status?.backend === "mongo" ? "ok" : "warn"} />
+    <Badge label={status?.backend ?? "â€¦"} tone={status?.backend === "mongo" ? "ok" : "warn"} />
     {#if status?.master_loaded === false}
       <Badge label="master loading" tone="warn" />
     {/if}
 
     <span class="spacer"></span>
 
-    <button disabled={busy} onclick={startDemo}>{busy ? "Starting…" : "Demo feed"}</button>
+    <button disabled={busy} onclick={startDemo}>{busy ? "Startingâ€¦" : "Demo feed"}</button>
     <button disabled={!status?.connected} onclick={stopFeed}>Stop</button>
   </header>
 
@@ -268,6 +301,7 @@
           <Diagnostics
             {status}
             {info}
+            {session}
             {busy}
             {notice}
             ondemo={startDemo}

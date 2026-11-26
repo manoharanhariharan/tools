@@ -153,9 +153,33 @@ Rules:
 The Mongo driver requires an explicit `shutdown()`; `fv-store` exposes it and the CLI calls it on
 every path. Without it the driver panics when the runtime is dropped.
 
-## 6. Cross-platform rules
+### 5.1 Session resolution (live feed)
 
-| Rule | Reason |
+```
+FV_ACCESS_TOKEN?  ──yes──▶ use it
+        │ no
+        ▼
+CONFIGS_GLOBAL.FINVASIA_LOGIN_DETAIL ──validate (GetQuotes)──▶ use it  (read-only)
+        │ invalid / absent
+        ▼
+fv-cred.json ──TOTP + QuickAuth──▶ use the returned susertoken
+```
+
+Rules:
+
+- **Never write** the session back. Logging in again would invalidate the token the user's other
+  tools are using, so a stored token is only adopted after it validates.
+- `actid` is the **user id**, not `report_schoonya` (that field holds a password).
+- The credential file is found via `FV_CRED_FILE`, then beside the exe, then `~/.fv/`, then
+  `C:/repo/`; secrets are never logged.
+- The REST base is `NorenWClientAPI` (`NorenWClientTP` is 502).
+- **One websocket per token.** The app opens a single socket and reports lifecycle through
+  `FeedState::{Connected, Rejected, Error, Reconnecting}`; it never opens a probe socket first, and
+  `connected` in the status bar only becomes true after the handshake is accepted.
+- Web-minted sessions need `source:"WEB"`; the client retries once with `"API"` on `NOT_OK` and then
+  surfaces `Rejected` to the UI instead of pretending to be live.
+
+## 6. Cross-platform rules| Rule | Reason |
 |---|---|
 | No `cfg(windows)` outside the optional Excel crate | core compiles identically everywhere |
 | `#[cfg_attr(not(debug_assertions), windows_subsystem = "windows")]` | no stray console in release builds, logs still visible in dev |

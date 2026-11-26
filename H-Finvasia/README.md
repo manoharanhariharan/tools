@@ -79,8 +79,10 @@ The executable lands at `src-tauri/target/release/h-finvasia-desktop.exe` and ru
 4. **Diagnostics** shows backend (`mongo` vs `in-memory`), frame rate, decode errors, and the live
    connect form.
 
-For live data set `FV_ACCESS_TOKEN` before launching, add scrips to the watch list, then connect from
-Diagnostics.
+For live data press **Diagnostics → Connect live**. The session is resolved automatically:
+`FV_ACCESS_TOKEN` → the session already persisted in `STOCK.CONFIGS_GLOBAL` (validated first) →
+a TOTP login from `fv-cred.json`. The stored token is only read, never overwritten, so other tools
+keep their session. Verified against the live venue (NTPC/ACC streaming with bid/ask and volume).
 
 ---
 
@@ -130,12 +132,17 @@ Measured against `STOCK.FINVASIA_SYMBOL` on this machine:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `FV_MONGO_URI` | `mongodb://127.0.0.1:27017` | Master + cache database |
+| `FV_CRED_FILE` | `fv-cred.json` beside the exe, `%USERPROFILE%\.fv\`, or `C:\repo\` | Credentials (`authparams.userid/password/api_secret/f2token`) |
+| `FV_ACCESS_TOKEN` | — | Explicit session override (skips resolution) |
+| `FV_UID` / `FV_ACTID` | from the credential file | Used when no credential file is present |
+| `FV_MONGO_URI` | `mongodb://127.0.0.1:27017` | Master + cache + persisted session |
 | `FV_MONGO_DB` | `STOCK` | Database name |
 | `FV_MONGO_MASTER_COLLECTION` | `FINVASIA_SYMBOL` | Master collection |
-| `FV_ACCESS_TOKEN` | — | OAuth access token for the live feed |
 | `FV_AUTOSTART_DEMO` | — | `1` starts the bundled replay at launch (kiosk / CI smoke test) |
 | `RUST_LOG` | `info` | `tracing` filter |
+
+**Credentials are never written back** to Mongo or to disk. `report_schoonya` in the existing
+credential file is a *password*, not an account id — it is deliberately ignored.
 
 **No credentials are read from disk.** The token comes from the environment; the planned keychain
 integration will replace that without changing call sites.
@@ -185,6 +192,12 @@ scripts/make-icon.ps1      regenerates src-tauri/icons
   binary that tries to load `localhost:5173` and shows `ERR_CONNECTION_REFUSED`. The release script
   enforces this with a live port probe.
 - **Order entry is absent**, not stubbed (Phase 2b).
+- **Live feed is verified for touchline ticks** (`tk`/`tf`). Depth (`dk`/`df`) and order updates
+  (`om`) are parsed but not yet wired to a UI panel.
+- **One websocket per session token.** Opening a second connection while the first is live makes the
+  venue go silent, so the app never probes and connects — it opens a single socket and reports the
+  real state through `FeedState`.
+- **REST base is `NorenWClientAPI`.** The older `NorenWClientTP` host now returns 502.
 - **Live feed is untested end-to-end** — needs OAuth app registration. The transport, routing and
   backoff logic are unit-tested; the venue handshake is not.
 - **Master load is 2.7 s**, not the <1 s target. Next step: `RawDocumentBuf` zero-copy reads.

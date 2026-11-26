@@ -1,18 +1,21 @@
-//! Live WebSocket transport.
+﻿//! Live WebSocket transport (legacy Noren handshake).
 //!
-//! Two properties matter more than raw speed (see `fv-features.md` §7.6):
+//! Verified against the live venue: `wss://api.shoonya.com/NorenWSTP/` (or
+//! `wss://trade.shoonya.com/NorenWSWeb/`) accepts
+//! `{"t":"c","uid":..,"actid":..,"susertoken":..,"source":"WEB"}` and replies
+//! `{"t":"ck","s":"OK"}`, then streams `tk` snapshots and `tf` diffs.
 //!
-//! 1. **Order updates are never queued behind market data.** The socket reader
-//!    peeks the `t` field first and hands `om` frames straight to the order
-//!    channel before any market-data parsing happens.
-//! 2. **Subscription set is restored on every (re)connect** — the venue does not
-//!    persist subscriptions across sockets.
+//! Three properties matter more than raw speed (`fv-features.md` Â§7.6):
 //!
-//! Reconnection uses exponential backoff with jitter so many clients cannot
-//! synchronise their retries after a venue restart.
+//! 1. **Order updates are never queued behind market data.** The reader peeks the
+//!    `t` field and hands `om` frames to the order path before parsing quotes.
+//! 2. **Subscriptions are restored on every (re)connect** â€” the venue keeps nothing.
+//! 3. **Source scope is auto-detected.** A token minted through the web login only
+//!    works with `source:"WEB"`; an API-minted token needs `"API"`. On `NOT_OK`
+//!    the session is retried once with the other scope instead of failing.
 
 use crate::frame::{parse, peek_kind, Frame, FrameKind};
-use crate::subscription::{connect_frame, subscribe_frames, DEFAULT_CHUNK};
+use crate::subscription::{connect_frame, subscribe_frames, DEFAULT_CHUNK, HEARTBEAT_FRAME};
 use crate::FeedError;
 use futures_util::{SinkExt, StreamExt};
 use fv_core::SymbolKey;
@@ -20,34 +23,46 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
-/// Connection parameters. Tokens come from the OAuth flow and must be supplied
-/// by the caller — this crate never reads credentials from disk.
+/// Default API websocket endpoint (legacy protocol).
+pub const DEFAULT_WS_URL: &str = "wss://api.shoonya.com/NorenWSTP/";
+
+/// Connection parameters. Tokens come from the caller; this crate never reads
+/// credentials from disk.
 #[derive(Debug, Clone)]
 pub struct WsConfig {
     pub url: String,
     pub uid: String,
     pub actid: String,
-    pub access_token: String,
+    pub token: String,
     pub source: String,
     pub subscribe_chunk: usize,
     pub handshake_timeout: Duration,
+    pub heartbeat: Duration,
 }
 
 impl WsConfig {
-    pub fn new(
-        uid: impl Into<String>,
-        actid: impl Into<String>,
-        access_token: impl Into<String>,
-    ) -> Self {
+    pub fn new(uid: impl Into<String>, actid: impl Into<String>, token: impl Into<String>) -> Self {
         WsConfig {
-            url: "wss://api.shoonya.com/NorenWSAPI/".to_string(),
+            url: DEFAULT_WS_URL.to_string(),
             uid: uid.into(),
             actid: actid.into(),
-            access_token: access_token.into(),
-            source: "API".to_string(),
+            token: token.into(),
+            // Web-minted sessions require WEB; flipped automatically on NOT_OK.
+            source: "WEB".to_string(),
             subscribe_chunk: DEFAULT_CHUNK,
             handshake_timeout: Duration::from_secs(15),
+            heartbeat: Duration::from_secs(3),
         }
+    }
+
+    pub fn with_source(mut self, source: impl Into<String>) -> Self {
+        self.source = source.into();
+        self
+    }
+
+    pub fn with_url(mut self, url: impl Into<String>) -> Self {
+        self.url = url.into();
+        self
     }
 }
 
@@ -60,8 +75,6 @@ pub struct FrameSink {
 }
 
 /// Split a batch of raw frames into priority buckets without parsing twice.
-///
-/// This is the pure, testable core of the fast path.
 pub fn route_batch(raws: &[Vec<u8>]) -> FrameSink {
     let mut sink = FrameSink::default();
     for raw in raws {
@@ -86,18 +99,34 @@ pub fn route_batch(raws: &[Vec<u8>]) -> FrameSink {
 pub async fn run_session<F>(
     cfg: &WsConfig,
     keys: &[SymbolKey],
-    mut on_frame: F,
+    on_frame: F,
 ) -> Result<(), FeedError>
 where
     F: FnMut(Frame),
+{
+    run_session_with(cfg, keys, on_frame, || {}).await
+}
+
+/// Like [`run_session`], but also invokes `on_connected` once the handshake has
+/// been accepted and subscriptions have been sent. The UI uses this to show the
+/// real connection state rather than an optimistic guess.
+pub async fn run_session_with<F, C>(
+    cfg: &WsConfig,
+    keys: &[SymbolKey],
+    mut on_frame: F,
+    mut on_connected: C,
+) -> Result<(), FeedError>
+where
+    F: FnMut(Frame),
+    C: FnMut(),
 {
     let (mut ws, _resp) = tokio_tungstenite::connect_async(cfg.url.as_str())
         .await
         .map_err(|e| FeedError::Transport(e.to_string()))?;
 
-    // 1. Connect handshake.
+    // 1. Handshake.
     ws.send(Message::Text(
-        connect_frame(&cfg.uid, &cfg.actid, &cfg.access_token, &cfg.source).into(),
+        connect_frame(&cfg.uid, &cfg.actid, &cfg.token, &cfg.source).into(),
     ))
     .await
     .map_err(|e| FeedError::Transport(e.to_string()))?;
@@ -114,7 +143,7 @@ where
             Message::Text(text) => {
                 let bytes = text.as_str().as_bytes().to_vec();
                 match parse(&bytes)? {
-                    Frame::Ack(a) if a.kind == "ak" || a.kind == "ck" => {
+                    Frame::Ack(a) if a.kind == "ck" || a.kind == "ak" => {
                         if a.is_ok() {
                             break;
                         }
@@ -125,7 +154,6 @@ where
                     other => on_frame(other),
                 }
             }
-            Message::Ping(_) => { /* tungstenite auto-responds on read */ }
             Message::Close(_) => {
                 return Err(FeedError::HandshakeRejected(
                     "closed during handshake".into(),
@@ -135,54 +163,78 @@ where
         }
     }
 
-    // 2. Subscribe. Every reconnect repeats this — nothing persists server-side.
+    // 2. Subscribe. Every reconnect repeats this â€” nothing persists server-side.
     for frame in subscribe_frames(keys, cfg.subscribe_chunk) {
         ws.send(Message::Text(frame.into()))
             .await
             .map_err(|e| FeedError::Transport(e.to_string()))?;
     }
+    on_connected();
 
-    // 3. Read loop.
+    // 3. Read loop with keepalive. The venue drops sockets that go quiet.
+    let mut heartbeat = tokio::time::interval(cfg.heartbeat);
+    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    heartbeat.tick().await; // consume the immediate first tick
+
     loop {
-        let msg = match ws.next().await {
-            Some(Ok(m)) => m,
-            Some(Err(e)) => return Err(FeedError::Transport(e.to_string())),
-            None => return Ok(()),
-        };
-        match msg {
-            Message::Text(text) => {
-                let bytes = text.as_str().as_bytes().to_vec();
-                match peek_kind(&bytes) {
-                    FrameKind::OrderUpdate => {
-                        if let f @ Frame::Order(_) = parse(&bytes)? {
-                            on_frame(f);
-                        }
-                    }
-                    _ => on_frame(parse(&bytes)?),
-                }
-            }
-            Message::Ping(payload) => {
-                ws.send(Message::Pong(payload))
+        tokio::select! {
+            _ = heartbeat.tick() => {
+                ws.send(Message::Text(HEARTBEAT_FRAME.into()))
                     .await
                     .map_err(|e| FeedError::Transport(e.to_string()))?;
             }
-            Message::Close(_) => return Ok(()),
-            _ => {}
+            incoming = ws.next() => {
+                let msg = match incoming {
+                    Some(Ok(m)) => m,
+                    Some(Err(e)) => return Err(FeedError::Transport(e.to_string())),
+                    None => return Ok(()),
+                };
+                match msg {
+                    Message::Text(text) => {
+                        let bytes = text.as_str().as_bytes().to_vec();
+                        match peek_kind(&bytes) {
+                            FrameKind::OrderUpdate => {
+                                if let f @ Frame::Order(_) = parse(&bytes)? {
+                                    on_frame(f);
+                                }
+                            }
+                            _ => on_frame(parse(&bytes)?),
+                        }
+                    }
+                    Message::Ping(payload) => {
+                        ws.send(Message::Pong(payload))
+                            .await
+                            .map_err(|e| FeedError::Transport(e.to_string()))?;
+                    }
+                    Message::Close(_) => return Ok(()),
+                    _ => {}
+                }
+            }
         }
     }
 }
 
-/// Backoff schedule: 1 s, 2 s, 4 s … capped at 60 s, with ±20 % jitter.
+/// Lifecycle notifications from [`run_forever`], so the UI can show the *real*
+/// connection state instead of an optimistic guess.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FeedState {
+    /// Handshake accepted and subscriptions sent.
+    Connected { source: String },
+    /// The venue rejected the token for this scope.
+    Rejected { source: String },
+    /// Transport or protocol failure.
+    Error { message: String },
+    /// Waiting before the next attempt.
+    Reconnecting { attempt: u32 },
+}
+
+/// Backoff schedule: 1 s, 2 s, 4 s â€¦ capped at 60 s, with Â±20 % jitter.
 ///
-/// The base is capped at 50 s so that the +20 % jitter band still lands at or
-/// below the 60 s ceiling; the final value is clamped as a hard guarantee.
-///
-/// Deterministic in tests via an injected `jitter` in `[0,1]` so the schedule is
-/// verifiable without a RNG dependency.
+/// The base is capped at 50 s so the +20 % jitter band still lands at or below
+/// 60 s; the final value is clamped as a hard guarantee.
 pub fn backoff_delay(attempt: u32, jitter: f64) -> Duration {
     let base_ms = 1_000u64.saturating_mul(2u64.saturating_pow(attempt.min(6)));
     let capped = base_ms.min(50_000) as f64;
-    // jitter in [0.8, 1.2]
     let scale = 0.8 + (jitter.clamp(0.0, 1.0) * 0.4);
     let ms = ((capped * scale) as u64).min(60_000);
     Duration::from_millis(ms)
@@ -190,35 +242,73 @@ pub fn backoff_delay(attempt: u32, jitter: f64) -> Duration {
 
 /// Run forever, reconnecting with backoff and re-subscribing each time.
 ///
-/// `on_frame` is invoked from the socket task; it must be cheap or forward to a
-/// channel. Blocking here stalls the connection.
-pub async fn run_forever<F>(
-    cfg: WsConfig,
+/// On an authentication rejection the session is retried once with the opposite
+/// `source` scope, which handles tokens minted by either login path.
+pub async fn run_forever<F, S>(
+    mut cfg: WsConfig,
     keys: Vec<SymbolKey>,
     mut on_frame: F,
-    shutdown: mpsc::Receiver<()>,
+    mut on_state: S,
+    mut shutdown: mpsc::Receiver<()>,
 ) -> Result<(), FeedError>
 where
     F: FnMut(Frame) + Send,
+    S: FnMut(FeedState) + Send,
 {
-    let mut shutdown = shutdown;
     let mut attempt: u32 = 0;
+    let mut scope_tried = false;
+
     loop {
         if shutdown.try_recv().is_ok() {
             return Ok(());
         }
-        tracing::info!(attempt, keys = keys.len(), "connecting feed");
-        let result = run_session(&cfg, &keys, &mut on_frame).await;
-        match result {
+        tracing::info!(
+            url = %cfg.url,
+            source = %cfg.source,
+            keys = keys.len(),
+            "connecting feed"
+        );
+
+        let source = cfg.source.clone();
+        match run_session_with(&cfg, &keys, &mut on_frame, || {
+            on_state(FeedState::Connected {
+                source: source.clone(),
+            });
+        })
+        .await
+        {
             Ok(()) => {
                 tracing::warn!("feed closed by peer");
                 attempt = 0;
             }
-            Err(e) => {
-                tracing::warn!(error = %e, "feed error");
+            Err(err) if err.is_auth_rejected() && !scope_tried => {
+                scope_tried = true;
+                on_state(FeedState::Rejected {
+                    source: cfg.source.clone(),
+                });
+                let next = if cfg.source.eq_ignore_ascii_case("WEB") {
+                    "API"
+                } else {
+                    "WEB"
+                };
+                tracing::warn!(
+                    rejected_source = %cfg.source,
+                    retry_source = next,
+                    "session scope rejected; retrying with the other scope"
+                );
+                cfg.source = next.to_string();
+                continue;
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, "feed error");
+                on_state(FeedState::Error {
+                    message: err.to_string(),
+                });
             }
         }
+
         let delay = backoff_delay(attempt, pseudo_jitter(attempt));
+        on_state(FeedState::Reconnecting { attempt });
         tracing::info!(?delay, "reconnecting");
         tokio::select! {
             _ = tokio::time::sleep(delay) => {}
@@ -228,8 +318,8 @@ where
     }
 }
 
-/// Cheap jitter without pulling in a RNG dependency: mixes the attempt counter
-/// with the process clock. Only used to de-synchronise retries.
+/// Cheap jitter without a RNG dependency: mixes the attempt counter with the
+/// process clock. Only used to de-synchronise retries.
 fn pseudo_jitter(attempt: u32) -> f64 {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -273,9 +363,7 @@ mod tests {
         let a1 = backoff_delay(1, 0.5);
         let a2 = backoff_delay(2, 0.5);
         assert!(a0 < a1 && a1 < a2);
-        assert!(a2 <= Duration::from_millis(60_000));
-        let capped = backoff_delay(20, 1.0);
-        assert!(capped <= Duration::from_millis(60_000));
+        assert!(backoff_delay(20, 1.0) <= Duration::from_millis(60_000));
     }
 
     #[test]
@@ -286,22 +374,23 @@ mod tests {
             assert!(high >= low);
             assert!(
                 (high / low - 1.5).abs() < 1e-9,
-                "band must be 0.8–1.2 (attempt {attempt}: {low} → {high})"
+                "band must be 0.8â€“1.2 (attempt {attempt}: {low} â†’ {high})"
             );
         }
     }
 
     #[test]
-    fn connect_frame_is_valid_json() {
-        let cfg = WsConfig::new("AB1234", "AB1234", "token");
-        let f: serde_json::Value = serde_json::from_str(&connect_frame(
-            &cfg.uid,
-            &cfg.actid,
-            &cfg.access_token,
-            &cfg.source,
-        ))
-        .unwrap();
-        assert_eq!(f["t"], "a");
-        assert_eq!(f["source"], "API");
+    fn default_config_targets_the_legacy_endpoint() {
+        let cfg = WsConfig::new("u", "a", "t");
+        assert_eq!(cfg.url, DEFAULT_WS_URL);
+        assert_eq!(cfg.source, "WEB");
+        assert_eq!(cfg.heartbeat, Duration::from_secs(3));
+    }
+
+    #[test]
+    fn auth_rejection_is_detected_for_scope_fallback() {
+        assert!(FeedError::HandshakeRejected("NOT_OK".into()).is_auth_rejected());
+        assert!(!FeedError::HandshakeRejected("timeout".into()).is_auth_rejected());
+        assert!(!FeedError::Transport("x".into()).is_auth_rejected());
     }
 }

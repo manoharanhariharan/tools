@@ -41,3 +41,13 @@ pub enum FeedError {
     #[error("websocket: {0}")]
     Transport(String),
 }
+
+impl FeedError {
+    /// True when the venue rejected the session token/scope (`{"t":"ck","s":"NOT_OK"}`).
+    ///
+    /// The caller uses this to retry with the other `source` scope rather than
+    /// treating it as a transient network failure.
+    pub fn is_auth_rejected(&self) -> bool {
+        matches!(self, FeedError::HandshakeRejected(status) if status.eq_ignore_ascii_case("NOT_OK"))
+    }
+}

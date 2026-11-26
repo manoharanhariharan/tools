@@ -79,6 +79,15 @@ export interface AppInfo {
   has_token: boolean;
 }
 
+export interface SessionInfo {
+  uid: string;
+  actid: string;
+  source: string;
+  has_credentials: boolean;
+  has_stored_token: boolean;
+  stored_date: string | null;
+}
+
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   status: () => invoke<StatusDto>("status"),
@@ -92,7 +101,8 @@ export const api = {
   startReplay: (hz = 120) => invoke<string[]>("start_replay", { path: null, hz }),
   startReplayFile: (path: string, hz = 120) =>
     invoke<string[]>("start_replay", { path, hz }),
-  startLive: (uid: string, actid: string) => invoke<string[]>("start_live", { uid, actid }),
+  startLive: () => invoke<string[]>("start_live"),
+  sessionInfo: () => invoke<SessionInfo>("session_info"),
   stopFeed: () => invoke<void>("stop_feed"),
 };
 

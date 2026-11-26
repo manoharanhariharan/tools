@@ -1,24 +1,36 @@
 <script lang="ts">
   import Badge from "../../components/Badge.svelte";
-  import type { AppInfo, StatusDto } from "../../api";
+  import type { AppInfo, SessionInfo, StatusDto } from "../../api";
 
   interface Props {
     status: StatusDto | null;
     info: AppInfo | null;
+    session: SessionInfo | null;
     busy: boolean;
     notice: string | null;
     ondemo: () => void;
     onstop: () => void;
-    onlive: (uid: string, actid: string) => void;
+    onlive: () => void;
     onnotice: (message: string | null) => void;
   }
-  let { status, info, busy, notice, ondemo, onstop, onlive, onnotice }: Props = $props();
-
-  let uid = $state("");
-  let actid = $state("");
+  let { status, info, session, busy, notice, ondemo, onstop, onlive, onnotice }: Props = $props();
 
   const connected = $derived(status?.connected ?? false);
-  const tokenMissing = $derived(info ? !info.has_token : false);
+  const sessionReady = $derived(
+    session !== null && (session.has_stored_token || session.has_credentials),
+  );
+
+  const sourceLabel = $derived(
+    session === null
+      ? "checking…"
+      : session.source === "env"
+        ? "token from FV_ACCESS_TOKEN"
+        : session.source === "stored"
+          ? "persisted session (MongoDB)"
+          : session.source === "login"
+            ? "will log in with TOTP"
+            : "no credentials",
+  );
 </script>
 
 <div class="stack">
@@ -57,27 +69,30 @@
     <h3>Live feed</h3>
     <div class="row" style="margin-bottom: 10px">
       <Badge
-        label={tokenMissing ? "FV_ACCESS_TOKEN not set" : "token present"}
-        tone={tokenMissing ? "warn" : "ok"}
+        label={sourceLabel}
+        tone={sessionReady ? "ok" : "err"}
         dot
       />
     </div>
-    <div class="row" style="margin-bottom: 10px">
-      <div class="field" style="flex: 1">
-        <label for="uid">User id</label>
-        <input id="uid" bind:value={uid} placeholder="AB1234" autocomplete="off" />
-      </div>
-      <div class="field" style="flex: 1">
-        <label for="actid">Account id</label>
-        <input id="actid" bind:value={actid} placeholder="AB1234" autocomplete="off" />
-      </div>
+    <dl class="kv" style="margin-bottom: 10px">
+      <dt>User id</dt>
+      <dd>{session?.uid || "—"}</dd>
+      <dt>Account id</dt>
+      <dd>{session?.actid || "—"}</dd>
+      <dt>Stored session</dt>
+      <dd>{session?.has_stored_token ? `yes (${session.stored_date ?? "date unknown"})` : "no"}</dd>
+      <dt>Credential file</dt>
+      <dd>{session?.has_credentials ? "found" : "not found"}</dd>
+    </dl>
+    <div class="row">
+      <button class="primary" disabled={busy || !sessionReady} onclick={onlive}>
+        {busy ? "Connecting…" : "Connect live"}
+      </button>
     </div>
-    <button disabled={busy || tokenMissing || !uid.trim() || !actid.trim()} onclick={() => onlive(uid, actid)}>
-      Connect live
-    </button>
     <p class="hint" style="margin-top: 10px">
-      Requires an OAuth access token in <code>FV_ACCESS_TOKEN</code> and at least one instrument in
-      the watch list. Set the token before launching the app.
+      Uses the session already persisted in <code>STOCK.CONFIGS_GLOBAL</code> when it still
+      validates, otherwise logs in with the TOTP secret from <code>fv-cred.json</code>.
+      The stored token is only read, never overwritten, so other tools keep their session.
     </p>
   </div>
 
@@ -86,6 +101,8 @@
     <dl class="kv">
       <dt>Build</dt>
       <dd>{status?.build ?? "—"}</dd>
+      <dt>Version</dt>
+      <dd>{info?.version ?? "—"}</dd>
       <dt>Source</dt>
       <dd>{status?.source ?? "—"}</dd>
       <dt>Frames ingested</dt>
@@ -105,8 +122,8 @@
   <div class="section">
     <h3>Not implemented yet</h3>
     <p class="hint">
-      Order entry, order/trade/position books and holdings need the REST client plus an authorised
-      session. They are the next slice (Phase 2b) and are intentionally absent rather than faked.
+      Order entry, order/trade/position books and holdings are the next slice. They need the
+      write-side REST routes and are intentionally absent rather than faked.
     </p>
   </div>
 </div>

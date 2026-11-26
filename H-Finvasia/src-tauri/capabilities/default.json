@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Core permissions for the main H-Finvasia window. Needed for IPC events (quotes:delta, status:changed, watch:changed, feed:changed) and basic window access.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

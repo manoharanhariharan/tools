@@ -127,15 +127,23 @@ fn build_frames(kind: &str, keys: &[SymbolKey], chunk: usize) -> Vec<String> {
 }
 
 /// The connect frame sent immediately after the socket opens.
-pub fn connect_frame(uid: &str, actid: &str, access_token: &str, source: &str) -> String {
+///
+/// This is the **legacy** Noren handshake: `t:"c"` with `susertoken`. The newer
+/// OAuth gateways use `t:"a"` + `accesstoken`; both are accepted server-side
+/// depending on how the session was minted, but the accounts in use here are
+/// minted through the legacy path.
+pub fn connect_frame(uid: &str, actid: &str, token: &str, source: &str) -> String {
     format!(
-        r#"{{"t":"a","uid":"{}","actid":"{}","source":"{}","accesstoken":"{}"}}"#,
+        r#"{{"t":"c","uid":"{}","actid":"{}","susertoken":"{}","source":"{}"}}"#,
         json_escape(uid),
         json_escape(actid),
-        json_escape(source),
-        json_escape(access_token)
+        json_escape(token),
+        json_escape(source)
     )
 }
+
+/// Keepalive. The venue drops idle sockets; send this every few seconds.
+pub const HEARTBEAT_FRAME: &str = r#"{"t":"h"}"#;
 
 fn json_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -257,13 +265,28 @@ mod tests {
     }
 
     #[test]
+    fn connect_frame_uses_the_legacy_handshake() {
+        let frame = connect_frame("AB1234", "AB1234", "tok", "WEB");
+        let value: serde_json::Value = serde_json::from_str(&frame).unwrap();
+        assert_eq!(value["t"], "c");
+        assert_eq!(value["susertoken"], "tok");
+        assert_eq!(value["source"], "WEB");
+        assert_eq!(value["actid"], "AB1234");
+    }
+
+    #[test]
     fn connect_frame_escapes_dangerous_characters() {
-        let f = connect_frame("ab\"c", "ac", "to\\ken", "API");
-        assert!(f.contains(r#""uid":"ab\"c""#));
-        assert!(f.contains(r#""accesstoken":"to\\ken""#));
-        // Must be valid JSON after escaping.
-        let v: serde_json::Value = serde_json::from_str(&f).unwrap();
-        assert_eq!(v["t"], "a");
-        assert_eq!(v["source"], "API");
+        let frame = connect_frame("ab\"c", "ac", "to\\ken", "API");
+        assert!(frame.contains(r#""uid":"ab\"c""#));
+        assert!(frame.contains(r#""susertoken":"to\\ken""#));
+        let value: serde_json::Value = serde_json::from_str(&frame).unwrap();
+        assert_eq!(value["t"], "c");
+        assert_eq!(value["source"], "API");
+    }
+
+    #[test]
+    fn heartbeat_frame_is_minimal_json() {
+        let value: serde_json::Value = serde_json::from_str(HEARTBEAT_FRAME).unwrap();
+        assert_eq!(value["t"], "h");
     }
 }
