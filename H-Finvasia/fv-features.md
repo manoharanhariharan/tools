@@ -882,13 +882,13 @@ Phase 0/1 is implemented and verified ([`README.md`](README.md), [`docs/ARCHITEC
 |---|---|---|
 | `fv-core` | `Price` (i64, 6 dp), `SymbolKey`, `Quote` | 17 |
 | `fv-feed` | frame decode, `QuoteBook` diff-merge, subscription batching, replay, legacy WS transport + heartbeat + scope fallback + live subscribe commands | 42 |
-| `fv-master` | `MemoryMaster` index/search/option-chain, Mongo loader (both collection shapes) | 14 |
+| `fv-master` | `MemoryMaster` index/search/option-chain, Mongo loader (both collection shapes), multi-term search | 18 |
 | `fv-store` | memory + Mongo backends, tracker freshness rule, snapshot upsert, order journal | 16 |
 | `fv-engine` | `Coalescer` (bounded, deterministic), `TokenBucket` (venue limits) | 12 |
 | `fv-bridge` | `MarketData` state, watch diffing, DTO formatting, trend/placeholder rules | 13 |
 | `fv-cli` | build-date calendar + CLI contract as a real process | 8 |
 | `ui/` | formatting + `QuoteTable` merge/prune/placeholder (vitest) | 14 |
-| **Total** | | **136** |
+| **Total** | | **140** |
 
 Gates: `cargo test --workspace` (122 Rust), `npm test` (14 UI), `cargo clippy --workspace
 --all-targets -- -D warnings`, `cargo fmt --check`, `svelte-check` (0 errors/warnings).
