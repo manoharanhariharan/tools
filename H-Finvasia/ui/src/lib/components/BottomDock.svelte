@@ -128,7 +128,7 @@
       <span class="dock-chevron">{open ? "v" : "^"}</span>
       Positions &amp; order book
     </button>
-    <span class="muted">read-only</span>
+    <span class="muted">positions support square-off</span>
     <span class="spacer"></span>
     {#if open}
       <span class="dock-hint">drag the top edge or the divider to resize</span>

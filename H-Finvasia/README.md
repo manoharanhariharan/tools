@@ -107,7 +107,8 @@ The outermost column on each side exposes B/S on row hover; both open the same p
 The default view is the 10 strikes either side of the ATM; the rest of the chain remains in the
 local master but is not streamed.
 
-**Bottom dock** holds the read-only position book and order book side by side. Drag its top edge to
+**Bottom dock** holds the position book (live, with right-click square-off) and the read-only order
+book side by side. Drag its top edge to
 resize the height, drag the middle divider to resize the columns, and collapse it back to a footer
 bar. It is collapsed by default so no account REST calls happen until you open it; refreshes are
 manual, never on a timer.

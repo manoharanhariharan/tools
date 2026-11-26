@@ -68,7 +68,7 @@
 <section class="panel">
   <header class="panel-head">
     <h2>Net position book</h2>
-    <span class="muted">read-only</span>
+    <span class="muted">live - right-click to square off</span>
     <span class="spacer"></span>
     <button disabled={loading} onclick={refresh}>{loading ? "Loading?" : "Refresh"}</button>
   </header>
