@@ -57,12 +57,16 @@ First run compiles the Tauri dependency tree, so expect several minutes. Later r
 
 ```bash
 npm install
-npm run build:ui                      # frontend -> ui/dist
-cd src-tauri
-cargo build --release
+npm run tauri:build          # runs build:ui, then `tauri build --no-bundle`
 ```
 
 The executable lands at `src-tauri/target/release/h-finvasia-desktop.exe` and runs standalone.
+
+> **Do not use `cargo build --release` for the desktop app.** That omits the `custom-protocol`
+> feature, so `tauri-build` marks the build as *dev* and the window tries `devUrl`
+> (`localhost:5173`) instead of the embedded frontend — you get `ERR_CONNECTION_REFUSED`.
+> `tauri.conf.json`'s `devUrl` is only meant for `tauri dev`. `scripts/release.ps1` builds through
+> the CLI and then probes port 5173 to prove the shipped app never touches it.
 
 `scripts/release.ps1` does all of this and publishes to `releases/`.
 
@@ -177,6 +181,9 @@ scripts/make-icon.ps1      regenerates src-tauri/icons
 
 ## Known limitations
 
+- **Desktop builds must go through `npm run tauri:build`.** A plain `cargo build --release` produces a
+  binary that tries to load `localhost:5173` and shows `ERR_CONNECTION_REFUSED`. The release script
+  enforces this with a live port probe.
 - **Order entry is absent**, not stubbed (Phase 2b).
 - **Live feed is untested end-to-end** — needs OAuth app registration. The transport, routing and
   backoff logic are unit-tested; the venue handshake is not.

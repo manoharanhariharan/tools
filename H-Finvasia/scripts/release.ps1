@@ -22,7 +22,8 @@ param(
     [string]$Message = "",
     [switch]$SkipTests,
     [switch]$IncludeUntracked,
-    [switch]$NoPush
+    [switch]$NoPush,
+    [switch]$SkipDevUrlProbe
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,6 +48,34 @@ function Get-BuildDate {
     return @{
         Text = $versionText
         Date = $match.Groups[1].Value
+    }
+}
+
+# Start the desktop app with a listener on the dev-server port. If the webview
+# connects to 5173 the build is a dev build (assets not embedded).
+function Test-DesktopUsesEmbeddedFrontend {
+    param([string]$Exe)
+
+    $listener = $null
+    try {
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any, 5173)
+        $listener.Start()
+    } catch {
+        Write-Host "    port 5173 is busy; cannot run the probe"
+        if ($listener) { $listener.Stop() }
+        return $true
+    }
+
+    try {
+        $proc = Start-Process -FilePath $Exe -PassThru
+        Start-Sleep -Seconds 8
+        $hit = $listener.Pending()
+        if (-not $proc.HasExited) { $proc.Kill() }
+        if ($hit) { Write-Host "    FAIL: webview connected to localhost:5173" }
+        else { Write-Host "    ok: no dev-server connection" }
+        return (-not $hit)
+    } finally {
+        $listener.Stop()
     }
 }
 
@@ -140,17 +169,29 @@ try {
 
     Invoke-Step "cargo build --release (workspace)" { cargo build --release --workspace }
 
-    Push-Location (Join-Path $root "src-tauri")
-    try {
-        Invoke-Step "cargo build --release (desktop)" { cargo build --release }
-    } finally {
-        Pop-Location
-    }
+    # Build the desktop app through the Tauri CLI: it enables the
+    # `custom-protocol` feature so the frontend is embedded. A plain
+    # `cargo build --release` silently marks the build as dev and the window
+    # tries devUrl (localhost:5173) instead — see the assertion below.
+    Invoke-Step "npm run tauri:build (desktop)" { npm run tauri:build }
 
     $cliExe = Join-Path $root "target\release\$toolName.exe"
     $guiExe = Join-Path $root "src-tauri\target\release\$toolName-desktop.exe"
     if (-not (Test-Path $cliExe)) { throw "CLI binary not found at $cliExe." }
     if (-not (Test-Path $guiExe)) { throw "Desktop binary not found at $guiExe." }
+
+    # Behavioural guard. The config (including devUrl) is always embedded, so a
+    # string search proves nothing. What matters is whether the window reaches
+    # for the dev server at runtime: with `custom-protocol` enabled it loads the
+    # embedded assets and never touches port 5173.
+    if (-not $SkipDevUrlProbe) {
+        Write-Host "==> verify desktop loads embedded assets (brief window will open)"
+        if (-not (Test-DesktopUsesEmbeddedFrontend $guiExe)) {
+            throw "Desktop build tried to reach devUrl (localhost:5173); it would show ERR_CONNECTION_REFUSED. Build with 'npm run tauri:build' so the custom-protocol feature is enabled."
+        }
+    } else {
+        Write-Host "==> dev-URL probe skipped (-SkipDevUrlProbe)"
+    }
 
     $build = Get-BuildDate $cliExe
     $stamp = $build.Date.Substring(2).Replace("-", ".")

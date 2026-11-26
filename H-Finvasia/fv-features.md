@@ -928,6 +928,16 @@ End-to-end verification of the shipped app (`FV_AUTOSTART_DEMO=1`, debug log): w
 182,901 instruments load from Mongo, 3 capture symbols enter the watch, frame counter climbs
 ~120/s with 0 decode errors.
 
+A fourth defect was reported from actually launching the released build:
+
+4. **The desktop window showed `ERR_CONNECTION_REFUSED` for `localhost:5173`.** Cause:
+   `tauri-build` marks a build as *dev* unless the `tauri` crate is compiled with `custom-protocol`;
+   a plain `cargo build --release` therefore loads `devUrl` instead of the embedded frontend. The
+   process, backend and master load all worked, which is why the earlier smoke test passed — it
+   verified the Rust side but not that the webview rendered. Fixed by building through
+   `npm run tauri:build`, and `scripts/release.ps1` now probes port 5173 during release and fails if
+   the shipped app reaches for the dev server.
+
 Notable defects found and fixed during implementation — each is a class of bug the legacy code had:
 
 1. **Malformed JSON silently became an "unknown frame".** Now validated with `IgnoredAny`, so

@@ -53,14 +53,34 @@ without a webview or a window server, on every platform.
 
 ## 3. Why `src-tauri` is a separate workspace
 
-The Tauri build embeds `ui/dist` at compile time, so `cargo build` in `src-tauri` requires a built
-frontend. Keeping it out of the root workspace means:
+The Tauri build embeds `ui/dist` at compile time, so building `src-tauri` requires a built frontend.
+Keeping it out of the root workspace means:
 
 - `cargo test --workspace` stays fast and **never depends on Node**;
 - CI can run the Rust gates on a machine with no `npm`;
-- the desktop build is an explicit, separate step (`scripts/release.ps1` builds UI → desktop).
+- the desktop build is an explicit, separate step (`scripts/release.ps1`).
 
 Cost: two `target/` directories and a separate `cargo fmt`/`clippy` invocation. Accepted.
+
+### 3.1 Dev vs production asset resolution (a real trap)
+
+`tauri-build` decides whether the window loads `devUrl` or the embedded assets from
+`DEP_TAURI_DEV`, which is `"true"` unless the `tauri` crate is compiled with the **`custom-protocol`**
+feature:
+
+```rust
+pub fn is_dev() -> bool {
+    env::var_os("DEP_TAURI_DEV").expect(..) == "true"
+}
+```
+
+Only `tauri build` (the CLI) enables that feature. A plain `cargo build --release` therefore produces a
+*release binary* that still behaves like a dev build: it loads `http://localhost:5173` and shows
+`ERR_CONNECTION_REFUSED` when no dev server is running. The binary still contains the config
+(including `devUrl`), so a string search cannot detect this.
+
+The guard is behavioural: `scripts/release.ps1` starts the built app with a TCP listener on port
+5173 and fails the release if a connection arrives. `SkipDevUrlProbe` exists for headless CI.
 
 ## 4. Invariants (each has a test)
 

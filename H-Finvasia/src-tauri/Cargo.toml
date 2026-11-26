@@ -15,6 +15,13 @@ default-run = "h-finvasia-desktop"
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+# Required for production builds. Without it `tauri-build` marks the build as dev
+# (DEP_TAURI_DEV=true) and the window loads `devUrl` instead of the embedded
+# frontend — which shows ERR_CONNECTION_REFUSED when no dev server is running.
+# `tauri build` enables this automatically; plain `cargo build --release` does not.
+custom-protocol = ["tauri/custom-protocol"]
+
 [dependencies]
 fv-bridge = { path = "../crates/fv-bridge" }
 fv-core = { path = "../crates/fv-core" }
