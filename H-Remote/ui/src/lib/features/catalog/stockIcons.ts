@@ -142,6 +142,140 @@ export const STOCK_ICONS: StockIcon[] = [
         '<path d="M26 43v6h12v-6M20 51h24" fill="none" stroke="#E8F1F6" stroke-width="3" stroke-linecap="round"/>',
     ),
   },
+  {
+    id: "network",
+    name: "Network",
+    svg: icon(
+      '<rect width="64" height="64" rx="13" fill="#2F5D7C"/>' +
+        '<path d="M32 17v10M16 47l12-12M48 47L36 35" stroke="#DCEBF6" stroke-width="3" stroke-linecap="round"/>' +
+        '<circle cx="32" cy="15" r="5" fill="#DCEBF6"/><circle cx="15" cy="49" r="5" fill="#DCEBF6"/><circle cx="49" cy="49" r="5" fill="#DCEBF6"/>' +
+        '<circle cx="32" cy="33" r="6" fill="#8FD0FF"/>',
+    ),
+  },
+  {
+    id: "switch",
+    name: "Switch",
+    svg: icon(
+      '<rect width="64" height="64" rx="13" fill="#31536B"/>' +
+        '<rect x="9" y="24" width="46" height="18" rx="4" fill="#E2EFF8"/>' +
+        '<circle cx="18" cy="33" r="2.4" fill="#3EA66B"/><circle cx="26" cy="33" r="2.4" fill="#3EA66B"/>' +
+        '<path d="M34 33h14M41 28l5 5-5 5" fill="none" stroke="#5F8AA8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>',
+    ),
+  },
+  {
+    id: "wifi",
+    name: "Wi-Fi",
+    svg: icon(
+      '<rect width="64" height="64" rx="13" fill="#2B6C75"/>' +
+        '<path d="M12 27a28 28 0 0 1 40 0M19 35a18 18 0 0 1 26 0M26 43a8 8 0 0 1 12 0" fill="none" stroke="#E3F7F4" stroke-width="4" stroke-linecap="round"/>' +
+        '<circle cx="32" cy="50" r="3.5" fill="#8FE3D6"/>',
+    ),
+  },
+  {
+    id: "printer",
+    name: "Printer",
+    svg: icon(
+      '<rect width="64" height="64" rx="13" fill="#4B5D6A"/>' +
+        '<rect x="17" y="12" width="30" height="16" rx="2" fill="#EAF2F7"/>' +
+        '<rect x="10" y="27" width="44" height="20" rx="4" fill="#B9CFDD"/>' +
+        '<rect x="19" y="39" width="26" height="14" rx="2" fill="#EAF2F7"/>' +
+        '<circle cx="47" cy="33" r="2" fill="#49B675"/>',
+    ),
+  },
+  {
+    id: "nas",
+    name: "NAS / Storage",
+    svg: icon(
+      '<rect width="64" height="64" rx="13" fill="#3E5268"/>' +
+        '<rect x="14" y="11" width="36" height="13" rx="3" fill="#DCE8F2"/>' +
+        '<rect x="14" y="26" width="36" height="13" rx="3" fill="#C5D9E8"/>' +
+        '<rect x="14" y="41" width="36" height="13" rx="3" fill="#DCE8F2"/>' +
+        '<circle cx="21" cy="17.5" r="2" fill="#3EA66B"/><circle cx="21" cy="32.5" r="2" fill="#3EA66B"/><circle cx="21" cy="47.5" r="2" fill="#3EA66B"/>',
+    ),
+  },
+  {
+    id: "backup",
+    name: "Backup",
+    svg: icon(
+      '<rect width="64" height="64" rx="13" fill="#5A4A7A"/>' +
+        '<path d="M49 32a17 17 0 1 1-5-12" fill="none" stroke="#F0E9FA" stroke-width="3.4" stroke-linecap="round"/>' +
+        '<path d="M45 12v9h-9" fill="none" stroke="#F0E9FA" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<ellipse cx="32" cy="35" rx="10" ry="4" fill="#C9B6E8"/>' +
+        '<path d="M22 35v9c0 2.2 4.5 4 10 4s10-1.8 10-4v-9" fill="#C9B6E8"/>',
+    ),
+  },
+  {
+    id: "docker",
+    name: "Docker",
+    svg: icon(
+      '<rect width="64" height="64" rx="13" fill="#1C6E9E"/>' +
+        '<rect x="13" y="31" width="7" height="7" fill="#E6F5FC"/><rect x="22" y="31" width="7" height="7" fill="#E6F5FC"/>' +
+        '<rect x="31" y="31" width="7" height="7" fill="#E6F5FC"/><rect x="22" y="22" width="7" height="7" fill="#E6F5FC"/>' +
+        '<rect x="31" y="22" width="7" height="7" fill="#E6F5FC"/><rect x="40" y="31" width="7" height="7" fill="#E6F5FC"/>' +
+        '<path d="M10 42h39c3 0 5-2 5-5-3 0-5 1-6 2 0-5-4-8-9-8" fill="none" stroke="#E6F5FC" stroke-width="3" stroke-linecap="round"/>',
+    ),
+  },
+  {
+    id: "kubernetes",
+    name: "Kubernetes",
+    svg: icon(
+      '<rect width="64" height="64" rx="13" fill="#2C4C8C"/>' +
+        '<path d="M32 9l18 10v20L32 55 14 39V19z" fill="#DCE7FA"/>' +
+        '<circle cx="32" cy="32" r="10" fill="none" stroke="#2C4C8C" stroke-width="2.6"/>' +
+        '<path d="M32 22v20M22 32h20M25 25l14 14M39 25 25 39" stroke="#2C4C8C" stroke-width="2.2"/>',
+    ),
+  },
+  {
+    id: "git",
+    name: "Git",
+    svg: icon(
+      '<rect width="64" height="64" rx="13" fill="#5B3B2E"/>' +
+        '<path d="M20 46V24a8 8 0 0 1 8-8h8" fill="none" stroke="#F6E4D8" stroke-width="3" stroke-linecap="round"/>' +
+        '<path d="M36 32v14" fill="none" stroke="#F6E4D8" stroke-width="3" stroke-linecap="round"/>' +
+        '<circle cx="20" cy="50" r="5" fill="#F6E4D8"/><circle cx="36" cy="50" r="5" fill="#F6E4D8"/><circle cx="36" cy="18" r="5" fill="#F6E4D8"/>',
+    ),
+  },
+  {
+    id: "proxy",
+    name: "Proxy",
+    svg: icon(
+      '<rect width="64" height="64" rx="13" fill="#3D5A6C"/>' +
+        '<rect x="10" y="20" width="16" height="12" rx="2" fill="#DCEAF5"/>' +
+        '<rect x="38" y="32" width="16" height="12" rx="2" fill="#DCEAF5"/>' +
+        '<path d="M26 26h8a6 6 0 0 1 6 6v0M38 38h-8a6 6 0 0 1-6-6v0" fill="none" stroke="#8FD0FF" stroke-width="3" stroke-linecap="round"/>' +
+        '<path d="M30 22l4 4-4 4M34 34l-4 4 4 4" fill="none" stroke="#8FD0FF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>',
+    ),
+  },
+  {
+    id: "camera",
+    name: "Camera",
+    svg: icon(
+      '<rect width="64" height="64" rx="13" fill="#43505A"/>' +
+        '<rect x="11" y="22" width="42" height="26" rx="5" fill="#E7EEF4"/>' +
+        '<path d="M24 22l3-5h10l3 5" fill="#C2D1DD"/>' +
+        '<circle cx="32" cy="35" r="8" fill="#6E8EA8"/><circle cx="32" cy="35" r="4" fill="#E7EEF4"/>',
+    ),
+  },
+  {
+    id: "phone",
+    name: "Phone",
+    svg: icon(
+      '<rect width="64" height="64" rx="13" fill="#3F4D63"/>' +
+        '<rect x="21" y="9" width="22" height="46" rx="5" fill="#E8EEF6"/>' +
+        '<rect x="25" y="16" width="14" height="27" rx="2" fill="#8FB0CE"/>' +
+        '<circle cx="32" cy="49" r="2.4" fill="#3F4D63"/>',
+    ),
+  },
+  {
+    id: "laptop",
+    name: "Laptop",
+    svg: icon(
+      '<rect width="64" height="64" rx="13" fill="#4A5560"/>' +
+        '<rect x="14" y="16" width="36" height="24" rx="3" fill="#EAF0F5"/>' +
+        '<rect x="19" y="21" width="26" height="14" rx="1.5" fill="#7FA6C5"/>' +
+        '<path d="M10 44h44l-3 6H13z" fill="#C5D3DE"/>',
+    ),
+  },
 ];
 
 export function stockIconDataUrl(icon: StockIcon): string {

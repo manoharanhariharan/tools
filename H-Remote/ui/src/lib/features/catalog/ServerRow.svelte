@@ -52,7 +52,7 @@
     catalog.snapshot?.connectionRecords.records[server.id]?.lastConnectedAt,
   );
   const template = $derived(
-    `30px ${columns.protocol}px ${columns.name}px ${columns.ip}px ${showNote ? `${columns.note}px ` : ""}${columns.target}px 62px`,
+    `46px ${columns.protocol}px minmax(${columns.name}px, 1.2fr) ${columns.ip}px ${showNote ? `${columns.note}px ` : ""}minmax(${columns.target}px, 1fr) 62px`,
   );
 
   function startAddressEdit(event: MouseEvent) {
@@ -249,6 +249,7 @@
   style:grid-template-columns={template}
   role="row"
   tabindex="0"
+  title="Double-click to connect · F2 to rename · drag the row to a folder"
   draggable={!readOnly && !editingAddress && !editingName}
   ondragstart={onRowDragStart}
   ondblclick={(event) => {
@@ -258,10 +259,6 @@
     addressEditTimer = undefined;
     const target = event.target as HTMLElement | null;
     if (target?.closest("input, textarea, select")) {
-      return;
-    }
-    if (target?.closest(".name-button")) {
-      catalog.openEdit(server);
       return;
     }
     void catalog.connect([server]);
@@ -282,6 +279,9 @@
   oncontextmenu={openMenu}
 >
   <div class="cell select">
+    <span class="drag-grip" title="Drag connection" aria-hidden="true">
+      <Icon name="grip" size={12} />
+    </span>
     <TriStateCheckbox
       checked={selected}
       label={`Select ${server.displayName}`}
@@ -440,7 +440,7 @@
     min-height: 48px;
     padding: 4px 10px;
     border-bottom: 1px solid var(--hr-border);
-    cursor: default;
+    cursor: grab;
     /* Skip layout/paint for offscreen rows in large catalogs (P10-06). */
     content-visibility: auto;
     contain-intrinsic-size: auto 48px;
@@ -471,7 +471,20 @@
 
   .select {
     display: flex;
+    align-items: center;
     justify-content: center;
+    gap: 4px;
+  }
+
+  .drag-grip {
+    display: grid;
+    place-items: center;
+    color: color-mix(in srgb, var(--hr-background-text) 38%, transparent);
+    cursor: grab;
+  }
+
+  .drag-grip:hover {
+    color: var(--hr-accent-light);
   }
 
   .protocol .badge {

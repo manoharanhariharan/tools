@@ -25,7 +25,7 @@
   const showNotes = $derived(app.config?.general.showNoteInList ?? true);
   const columns = $derived(catalog.columnWidths);
   const template = $derived(
-    `30px ${columns.protocol}px ${columns.name}px ${columns.ip}px ${showNotes ? `${columns.note}px ` : ""}${columns.target}px 62px`,
+    `46px ${columns.protocol}px minmax(${columns.name}px, 1.2fr) ${columns.ip}px ${showNotes ? `${columns.note}px ` : ""}minmax(${columns.target}px, 1fr) 62px`,
   );
   const totalServers = $derived(catalog.snapshot?.servers.length ?? 0);
 

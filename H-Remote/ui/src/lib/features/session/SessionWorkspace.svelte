@@ -541,14 +541,6 @@
       >
         <Icon name="maximize" size={14} /> Display
       </Button>
-      <Button
-        size="sm"
-        variant="secondary"
-        title="Minimize this window"
-        onclick={() => void minimizeCurrentWindow().catch((error) => app.reportError(error))}
-      >
-        <Icon name="minimize" size={14} /> Minimize
-      </Button>
       {#if focused}
         <Button size="sm" variant="secondary" onclick={() => sessions.leaveFocus()}>
           All tabs
@@ -587,9 +579,6 @@
       {/if}
       <Button size="sm" variant="secondary" title="Toggle full screen (F11)" onclick={() => void toggleFullscreen()}>
         <Icon name={fullscreen ? "restore" : "maximize"} size={14} />
-      </Button>
-      <Button size="sm" variant="ghost" title={i18n.t("common.close")} onclick={() => void closeAll()}>
-        <Icon name="close" size={14} />
       </Button>
     </div>
 

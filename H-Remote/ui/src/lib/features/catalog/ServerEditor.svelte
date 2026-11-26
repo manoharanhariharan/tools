@@ -474,7 +474,7 @@
           <ServerIcon server={draft} size={52} />
           <div class="icon-actions">
             <Button size="sm" variant="secondary" onclick={generateIcon}>Generate</Button>
-            <Button size="sm" variant="secondary" onclick={toggleStockIcons}>Stock</Button>
+            <Button size="sm" variant="secondary" onclick={toggleStockIcons}>Icons</Button>
             <Button size="sm" variant="secondary" onclick={() => void openLibrary()}>Library</Button>
             <label class="file-button">
               Upload
@@ -622,7 +622,7 @@
           <div class="row">
             <label class="field"><span>Audio</span>
               <select value={draft.audioRedirectionMode ?? "redirectToLocal"} onchange={(event) => updateString("audioRedirectionMode", event.currentTarget.value)}>
-                <option value="redirectToLocal">Play on this computer</option>
+                <option value="redirectToLocal">Play on this computer (default)</option>
                 <option value="leaveOnRemote">Leave on the remote computer</option>
                 <option value="disabled">Do not play</option>
               </select>
@@ -633,6 +633,10 @@
               </select>
             </label>
           </div>
+          <p class="hr-small hr-muted">
+            “Play on this computer” routes remote audio to your default Windows output device. It is
+            the default for new servers; existing servers keep their saved value.
+          </p>
           <div class="checks">
             <Toggle id="fullscreen" label="Connect in full screen" checked={bool("isConnWithFullScreen")} onchange={(checked) => updateBool("isConnWithFullScreen", checked)} />
             <Toggle id="multimon" label="Use all monitors" checked={bool("useMultimon")} onchange={(checked) => updateBool("useMultimon", checked)} />
@@ -765,10 +769,10 @@
     </footer>
 
     {#if stockOpen}
-      <div class="library stock-library" role="dialog" aria-label="Stock icons">
+      <div class="library stock-library" role="dialog" aria-label="Icons">
         <header>
-          <h3>Stock icons</h3>
-          <button type="button" aria-label="Close stock icons" onclick={() => (stockOpen = false)}>×</button>
+          <h3>Icons</h3>
+          <button type="button" aria-label="Close icons" onclick={() => (stockOpen = false)}>×</button>
         </header>
         <div class="library-grid">
           {#each STOCK_ICONS as icon (icon.id)}

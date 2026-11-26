@@ -55,14 +55,16 @@ features/catalog/
   CatalogList.svelte        list rows + nested folder groups (recursive)
   CatalogCards.svelte       card grid + nested folder groups (recursive)
   CatalogTree.svelte        tree view with drag & drop and folder menus
-  ServerRow.svelte          list row: inline address edit (Enter saves without
-                            connecting), F2 inline rename, draggable, custom-order
-                            up/down controls, note, context menu
+  ServerRow.svelte          list row: drag grip + whole-row drag, inline address
+                            edit (Enter saves without connecting), F2 inline rename,
+                            custom-order up/down controls, note, context menu
   ServerCard.svelte         card presentation
   ServerEditor.svelte       side panel: protocol tabs, credentials, stock/library
                             icons, bulk; bounded to the visible window width
-  stockIcons.ts             built-in Windows/Linux/macOS/server/database/cloud/
-                            web/terminal/container/firewall/VM/desktop icons
+  stockIcons.ts             built-in “Icons” set: Windows/Linux/macOS/server/
+                            database/cloud/web/terminal/container/firewall/VM/
+                            desktop/network/switch/Wi-Fi/printer/NAS/backup/
+                            Docker/Kubernetes/Git/proxy/camera/phone/laptop
   ImportExportDialog.svelte JSON/CSV/RDP/DB import and JSON/RDP export
 ```
 
@@ -112,7 +114,8 @@ bootstrap payload.
 ```
 features/session/
   SessionWorkspace.svelte   single combined header (drag handle, tabs, actions,
-                            window controls), theme-aware surfaces, grid/snap
+                            conventional min/max/close controls at far right),
+                            theme-aware surfaces, grid/snap
                             layouts (including 4-screen presets), focus/full-screen,
                             context menus, close-all; standalone in the shared
                             `sessions` window

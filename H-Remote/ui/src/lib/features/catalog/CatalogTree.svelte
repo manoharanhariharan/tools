@@ -4,6 +4,7 @@
   import { catalog } from "../../state/catalog.svelte";
   import { dialogs } from "../../state/dialogs.svelte";
   import ContextMenu, { type MenuItem } from "../../components/ContextMenu.svelte";
+  import Icon from "../../components/Icon.svelte";
   import ServerIcon from "../../components/ServerIcon.svelte";
   import TriStateCheckbox from "../../components/TriStateCheckbox.svelte";
   import { i18n } from "../../i18n/index.svelte";
@@ -200,10 +201,12 @@
       role="treeitem"
       aria-selected={catalog.selected.has(server.id) ? "true" : "false"}
       tabindex="0"
+      title="Double-click to connect · drag the row to a folder"
       ondragstart={(event) => dragStart(event, `server:${server.id}`)}
       ondblclick={() => catalog.connect([server])}
       oncontextmenu={(event) => serverMenu(event, server)}
     >
+      <span class="drag-grip" aria-hidden="true"><Icon name="grip" size={12} /></span>
       <TriStateCheckbox
         checked={catalog.selected.has(server.id)}
         label={`Select ${server.displayName}`}
@@ -268,6 +271,17 @@
   .folder-row:hover,
   .server-row:hover {
     background: color-mix(in srgb, var(--hr-accent-mid) 8%, transparent);
+  }
+
+  .server-row {
+    cursor: grab;
+  }
+
+  .drag-grip {
+    display: grid;
+    place-items: center;
+    color: color-mix(in srgb, var(--hr-background-text) 38%, transparent);
+    cursor: grab;
   }
 
   .toggle {

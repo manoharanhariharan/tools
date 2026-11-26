@@ -133,10 +133,10 @@ test.describe("H-Remote shell", () => {
     expect(editor!.x).toBeGreaterThanOrEqual(0);
     expect(editor!.x + editor!.width).toBeLessThanOrEqual(viewport.width + 1);
 
-    await page.getByRole("button", { name: "Stock", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "Stock icons" })).toBeVisible();
+    await page.getByRole("button", { name: "Icons", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Icons", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Windows", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "Stock icons" })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Icons", exact: true })).toHaveCount(0);
 
     await page.getByRole("button", { name: "Connection", exact: true }).click();
     await page.getByLabel("Address", { exact: true }).fill("10.0.0.77");

@@ -54,6 +54,7 @@
   class:selected
   role="button"
   tabindex="0"
+  title="Double-click to connect · drag to a folder"
   draggable={!catalog.isReadOnly(server)}
   ondragstart={(event) => {
     if (catalog.isReadOnly(server)) {
@@ -145,7 +146,7 @@
     border-radius: var(--hr-radius);
     border: 1px solid var(--hr-border);
     background: color-mix(in srgb, var(--hr-primary-dark) 32%, transparent);
-    cursor: default;
+    cursor: grab;
     min-width: 0;
     /* Defer offscreen card work in large catalogs (P10-06). */
     content-visibility: auto;

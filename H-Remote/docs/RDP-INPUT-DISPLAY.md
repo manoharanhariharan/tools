@@ -106,8 +106,11 @@ context-menu entry:
 
 - The embedded engine enables IronRDP's `sound` feature and attaches the RDPSND
   channel when the server's **Audio** setting is *Play on this computer*
-  (`redirectToLocal`). *Leave on the remote computer* and *Do not play* do not
-  advertise audio playback, so the server keeps or drops the sound itself.
+  (`redirectToLocal`). This is the default for new servers. *Leave on the remote
+  computer* and *Do not play* do not advertise audio playback, so the server
+  keeps or drops the sound itself. Audio is played through the default Windows
+  output device; check the VM's own Remote Desktop audio policy if a
+  redirectToLocal session is still silent.
 - Audio is played through the native `cpal` backend. PCM is decoded by default;
   Opus is not compiled in because the vendored `ironrdp-rdpsnd-native` copy
   disables its bundled-CMake feature to keep builds toolchain-independent.
