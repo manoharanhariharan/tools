@@ -14,7 +14,7 @@
   <p class="hint" style="max-width: 420px">{hint}</p>
   {#if action && onaction}
     <button class="primary" disabled={busy} onclick={onaction}>
-      {busy ? "Working…" : action}
+      {busy ? "Working?" : action}
     </button>
   {/if}
 </div>

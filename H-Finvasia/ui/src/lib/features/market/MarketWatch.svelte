@@ -1,4 +1,4 @@
-﻿<script lang="ts">
+<script lang="ts">
   import type { QuoteRow } from "../../state";
   import EmptyState from "../../components/EmptyState.svelte";
 
@@ -86,7 +86,7 @@
                   onclick={(event) => {
                     event.stopPropagation();
                     onremove(row.key);
-                  }}>Ã—</button
+                  }}>x</button
                 >
               </td>
             </tr>

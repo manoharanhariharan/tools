@@ -1,4 +1,4 @@
-﻿import type { QuoteDto, Trend } from "./api";
+import type { QuoteDto, Trend } from "./api";
 
 /** A display-ready row. Formatting happens once, not per render. */
 export interface QuoteRow {
@@ -16,7 +16,7 @@ export interface QuoteRow {
   isIndex: boolean;
 }
 
-const DASH = "â€”";
+const DASH = "-";
 
 export function formatVolume(value: number | null | undefined): string {
   if (value === null || value === undefined) return DASH;

@@ -1,4 +1,4 @@
-﻿<script lang="ts">
+<script lang="ts">
   import type { StatusDto } from "../api";
 
   interface Props {
@@ -7,7 +7,7 @@
   let { status }: Props = $props();
 
   const sourceLabel = $derived(
-    status ? { idle: "Idle", replay: "Replay", live: "Live" }[status.source] : "â€¦",
+    status ? { idle: "Idle", replay: "Replay", live: "Live" }[status.source] : "...",
   );
 </script>
 
@@ -15,7 +15,7 @@
   <span class:up={status?.connected} class:dim={!status?.connected}>
     <strong>{sourceLabel}</strong>
   </span>
-  <span>backend <strong>{status?.backend ?? "â€¦"}</strong></span>
+  <span>backend <strong>{status?.backend ?? "..."}</strong></span>
   <span>instruments <strong>{status?.instruments?.toLocaleString() ?? "0"}</strong></span>
   <span>watching <strong>{status?.watched ?? 0}</strong>/{status?.watch_limit ?? 0}</span>
   <span title="Total instruments subscribed at the broker">
@@ -28,7 +28,7 @@
   {/if}
   <span class="spacer"></span>
   {#if status?.last_error}
-    <span class="warn" title={status.last_error}>âš  {status.last_error.slice(0, 80)}</span>
+    <span class="warn" title={status.last_error}>? {status.last_error.slice(0, 80)}</span>
   {/if}
   <span class="dim">h-finvasia {status?.build ?? ""}</span>
 </footer>

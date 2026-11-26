@@ -113,7 +113,7 @@
   {#if groups.length === 0}
     <EmptyState
       title="No saved groups"
-      hint="Build a watch list, then save it as a named group. Groups are local files — no broker calls."
+      hint="Build a watch list, then save it as a named group. Groups are local files ? no broker calls."
     />
   {:else}
     <div class="grid-wrap">
@@ -132,7 +132,7 @@
               <td class="num mono">{group.count}</td>
               <td class="num">
                 <button disabled={busy} onclick={() => load(group.name)}>Load</button>
-                <button class="icon" title="Delete group" onclick={() => remove(group.name)}>×</button>
+                <button class="icon" title="Delete group" onclick={() => remove(group.name)}>?</button>
               </td>
             </tr>
           {/each}

@@ -36,7 +36,7 @@
     <h2>Order book</h2>
     <span class="muted">read-only</span>
     <span class="spacer"></span>
-    <button disabled={loading} onclick={refresh}>{loading ? "Loading…" : "Refresh"}</button>
+    <button disabled={loading} onclick={refresh}>{loading ? "Loading?" : "Refresh"}</button>
   </header>
 
   <div class="chain-toolbar" style="padding: 8px 14px">

@@ -22,7 +22,7 @@
 
   const sourceLabel = $derived(
     session === null
-      ? "checking…"
+      ? "checking?"
       : session.source === "env"
         ? "token from FV_ACCESS_TOKEN"
         : session.source === "stored"
@@ -49,13 +49,13 @@
         tone={connected ? "ok" : "warn"}
         dot
       />
-      <Badge label={`backend: ${status?.backend ?? "…"}`} tone={status?.backend === "mongo" ? "ok" : "warn"} />
+      <Badge label={`backend: ${status?.backend ?? "?"}`} tone={status?.backend === "mongo" ? "ok" : "warn"} />
       <Badge label={`${status?.instruments?.toLocaleString() ?? 0} instruments`} />
       <Badge label={`${status?.watched ?? 0} watching`} />
     </div>
     <div class="row">
       <button class="primary" disabled={busy} onclick={ondemo}>
-        {busy ? "Starting…" : "Start demo feed (replay)"}
+        {busy ? "Starting?" : "Start demo feed (replay)"}
       </button>
       <button disabled={busy || !connected} onclick={onstop}>Stop feed</button>
     </div>
@@ -76,9 +76,9 @@
     </div>
     <dl class="kv" style="margin-bottom: 10px">
       <dt>User id</dt>
-      <dd>{session?.uid || "—"}</dd>
+      <dd>{session?.uid || "?"}</dd>
       <dt>Account id</dt>
-      <dd>{session?.actid || "—"}</dd>
+      <dd>{session?.actid || "?"}</dd>
       <dt>Stored session</dt>
       <dd>{session?.has_stored_token ? `yes (${session.stored_date ?? "date unknown"})` : "no"}</dd>
       <dt>Credential file</dt>
@@ -86,7 +86,7 @@
     </dl>
     <div class="row">
       <button class="primary" disabled={busy || !sessionReady} onclick={onlive}>
-        {busy ? "Connecting…" : "Connect live"}
+        {busy ? "Connecting?" : "Connect live"}
       </button>
     </div>
     <p class="hint" style="margin-top: 10px">
@@ -100,11 +100,11 @@
     <h3>Runtime</h3>
     <dl class="kv">
       <dt>Build</dt>
-      <dd>{status?.build ?? "—"}</dd>
+      <dd>{status?.build ?? "?"}</dd>
       <dt>Version</dt>
-      <dd>{info?.version ?? "—"}</dd>
+      <dd>{info?.version ?? "?"}</dd>
       <dt>Source</dt>
-      <dd>{status?.source ?? "—"}</dd>
+      <dd>{status?.source ?? "?"}</dd>
       <dt>Frames ingested</dt>
       <dd>{status?.frames_total?.toLocaleString() ?? 0}</dd>
       <dt>Decode errors</dt>

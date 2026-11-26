@@ -793,7 +793,7 @@ fn main() {
                 .map(|value| value != "1")
                 .unwrap_or(true);
 
-            if !demo_mode && auto_connect {
+            if !demo_mode {
                 let resume_state = setup_state.clone();
                 let resume_handle = handle.clone();
                 tauri::async_runtime::spawn(async move {
@@ -802,19 +802,23 @@ fn main() {
                         .iter()
                         .filter_map(|key| SymbolKey::parse(key).ok())
                         .collect();
-                    if keys.is_empty() {
-                        return;
+
+                    // Restoring the watch list is local and always happens.
+                    if !keys.is_empty() {
+                        let payload = {
+                            let mut market = resume_state.market.lock().unwrap();
+                            market.set_watch(keys.clone());
+                            WatchChanged {
+                                keys: market.watched(),
+                                quotes: market.watch_quotes(),
+                            }
+                        };
+                        let _ = resume_handle.emit("watch:changed", payload);
                     }
 
-                    let payload = {
-                        let mut market = resume_state.market.lock().unwrap();
-                        market.set_watch(keys.clone());
-                        WatchChanged {
-                            keys: market.watched(),
-                            quotes: market.watch_quotes(),
-                        }
-                    };
-                    let _ = resume_handle.emit("watch:changed", payload);
+                    if !auto_connect || keys.is_empty() {
+                        return;
+                    }
 
                     // Only adopt an existing session; never log in silently at
                     // startup, because that could invalidate another tool.

@@ -9,7 +9,7 @@
   }
   let { quote, instrument, onremove }: Props = $props();
 
-  const title = $derived(instrument?.trading_symbol ?? quote?.trading_symbol ?? quote?.key ?? "—");
+  const title = $derived(instrument?.trading_symbol ?? quote?.trading_symbol ?? quote?.key ?? "?");
   const trend = $derived(quote?.trend ?? "flat");
 </script>
 
@@ -18,7 +18,7 @@
     <h2>Snap quote</h2>
     <span class="spacer"></span>
     {#if quote}
-      <button class="icon" title="Remove from watch" onclick={() => onremove(quote.key)}>×</button>
+      <button class="icon" title="Remove from watch" onclick={() => onremove(quote.key)}>?</button>
     {/if}
   </header>
 
@@ -30,8 +30,8 @@
     <div class="snap-body">
       <div>
         <div class="snap-price">
-          <span class="big mono {trend}">{quote.ltp?.text ?? "—"}</span>
-          <span class="mono {trend}">{quote.change?.text ?? "—"}</span>
+          <span class="big mono {trend}">{quote.ltp?.text ?? "?"}</span>
+          <span class="mono {trend}">{quote.change?.text ?? "?"}</span>
           <span class="mono {trend}">{quote.pct ?? ""}</span>
         </div>
         <div class="muted mono" style="margin-top: 4px">{title}</div>
@@ -40,17 +40,17 @@
 
       <dl class="kv">
         <dt>Open</dt>
-        <dd>{quote.open?.text ?? "—"}</dd>
+        <dd>{quote.open?.text ?? "?"}</dd>
         <dt>High</dt>
-        <dd>{quote.high?.text ?? "—"}</dd>
+        <dd>{quote.high?.text ?? "?"}</dd>
         <dt>Low</dt>
-        <dd>{quote.low?.text ?? "—"}</dd>
+        <dd>{quote.low?.text ?? "?"}</dd>
         <dt>Prev close</dt>
-        <dd>{quote.prev_close?.text ?? "—"}</dd>
+        <dd>{quote.prev_close?.text ?? "?"}</dd>
         <dt>Best bid</dt>
-        <dd>{quote.bid?.text ?? "—"}</dd>
+        <dd>{quote.bid?.text ?? "?"}</dd>
         <dt>Best ask</dt>
-        <dd>{quote.ask?.text ?? "—"}</dd>
+        <dd>{quote.ask?.text ?? "?"}</dd>
         <dt>Volume</dt>
         <dd>{formatVolume(quote.volume)}</dd>
       </dl>
@@ -62,15 +62,15 @@
           <dt>Token</dt>
           <dd>{instrument.key.split("|")[1]}</dd>
           <dt>Type</dt>
-          <dd>{instrument.instrument_type || "—"}</dd>
+          <dd>{instrument.instrument_type || "?"}</dd>
           <dt>Lot size</dt>
           <dd>{instrument.lot_size}</dd>
           <dt>Expiry</dt>
-          <dd>{instrument.expiry ?? "—"}</dd>
+          <dd>{instrument.expiry ?? "?"}</dd>
           <dt>Strike</dt>
           <dd>{instrument.strike} {instrument.strike_type !== "XX" ? instrument.strike_type : ""}</dd>
           <dt>Underlying</dt>
-          <dd>{instrument.underlying ?? "—"}</dd>
+          <dd>{instrument.underlying ?? "?"}</dd>
         </dl>
       {/if}
 

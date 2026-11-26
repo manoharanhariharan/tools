@@ -48,7 +48,7 @@
   <header class="panel-head">
     <h2>Instruments</h2>
     <span class="muted">
-      {#if loading}searching…{:else if query.trim()} {results.length} result{results.length === 1 ? "" : "s"}{:else}search the instrument master{/if}
+      {#if loading}searching?{:else if query.trim()} {results.length} result{results.length === 1 ? "" : "s"}{:else}search the instrument master{/if}
     </span>
   </header>
 
@@ -93,8 +93,8 @@
           {#each results as item (item.key)}
             <tr>
               <td class="l mono">{item.trading_symbol}</td>
-              <td class="l">{item.underlying ?? "—"}</td>
-              <td class="l mono dim">{item.expiry ?? "—"}</td>
+              <td class="l">{item.underlying ?? "?"}</td>
+              <td class="l mono dim">{item.expiry ?? "?"}</td>
               <td class="num mono">{item.strike}</td>
               <td class="num mono dim">{item.lot_size}</td>
               <td class="num">

@@ -80,13 +80,13 @@
     <h2>Index watch</h2>
     <span class="muted">{indices.length} indices</span>
     <span class="spacer"></span>
-    <button disabled={loading} onclick={refresh}>{loading ? "Loading…" : "Refresh"}</button>
+    <button disabled={loading} onclick={refresh}>{loading ? "Loading?" : "Refresh"}</button>
   </header>
 
   <div class="chain-toolbar" style="padding: 8px 14px">
     <div class="field" style="flex: 1; min-width: 160px">
       <label for="index-search">Filter</label>
-      <input id="index-search" bind:value={query} placeholder="NIFTY, BANKNIFTY…" />
+      <input id="index-search" bind:value={query} placeholder="NIFTY, BANKNIFTY?" />
     </div>
   </div>
 

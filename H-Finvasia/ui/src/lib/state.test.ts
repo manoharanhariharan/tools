@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { formatVolume, QuoteTable, toRow, trendClass } from "./state";
 import type { QuoteDto } from "./api";
 
@@ -35,8 +35,8 @@ describe("formatVolume", () => {
   });
 
   it("renders a dash for missing values", () => {
-    expect(formatVolume(null)).toBe("â€”");
-    expect(formatVolume(undefined)).toBe("â€”");
+    expect(formatVolume(null)).toBe("-");
+    expect(formatVolume(undefined)).toBe("-");
   });
 
   it("keeps negative values readable", () => {
@@ -60,9 +60,9 @@ describe("toRow", () => {
 
   it("uses dashes for absent prices", () => {
     const row = toRow(quote({ ltp: null, change: null, pct: null, bid: null, ask: null }));
-    expect(row.ltp).toBe("â€”");
-    expect(row.change).toBe("â€”");
-    expect(row.pct).toBe("â€”");
+    expect(row.ltp).toBe("-");
+    expect(row.change).toBe("-");
+    expect(row.pct).toBe("-");
   });
 });
 
@@ -109,7 +109,7 @@ describe("QuoteTable", () => {
     table.setKeys(["NSE|2885"]);
     const row = table.get("NSE|2885");
     expect(row).toBeDefined();
-    expect(row?.ltp).toBe("â€”");
+    expect(row?.ltp).toBe("-");
     expect(table.rows()).toHaveLength(1);
   });
 

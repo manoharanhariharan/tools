@@ -1,4 +1,4 @@
-﻿<script lang="ts">
+<script lang="ts">
   import { onMount } from "svelte";
   import {
     api,
@@ -252,7 +252,7 @@
       tone={status?.connected ? "ok" : "warn"}
       dot
     />
-    <Badge label={status?.backend ?? "…"} tone={status?.backend === "mongo" ? "ok" : "warn"} />
+    <Badge label={status?.backend ?? "?"} tone={status?.backend === "mongo" ? "ok" : "warn"} />
     {#if status?.master_loaded === false}
       <Badge label="master loading" tone="warn" />
     {/if}
