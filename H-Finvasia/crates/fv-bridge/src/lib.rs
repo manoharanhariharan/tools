@@ -293,6 +293,27 @@ mod tests {
     }
 
     #[test]
+    fn container_rows_normalise_a_blank_equity_type() {
+        let items = vec![Instrument {
+            key: SymbolKey::parse("BSE|500477").unwrap(),
+            trading_symbol: "ASHOKLEY".into(),
+            name: Some("Ashok Leyland".into()),
+            underlying: Some("ASHOKLEY".into()),
+            expiry: None,
+            strike: fv_core::Price::ZERO,
+            strike_type: StrikeType::Other,
+            lot_size: 1,
+            instrument_type: String::new(),
+            segment: Some("BSE-EQ".into()),
+            tick_size: None,
+        }];
+        let mut md = market();
+        md.set_master(Arc::new(MemoryMaster::build(items).expect("master builds")));
+        let card = md.container_card("BSE", None, &["BSE|500477".into()], Vec::new());
+        assert_eq!(card.rows[0].instrument_type, "EQ");
+    }
+
+    #[test]
     fn watch_overflow_is_reported_not_silently_dropped() {
         let mut md = market().with_watch_limit(2);
         let keys: Vec<SymbolKey> = (1..=4)

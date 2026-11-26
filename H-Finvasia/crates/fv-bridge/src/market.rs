@@ -339,7 +339,12 @@ impl MarketData {
             exchange: key.exchange().to_string(),
             // The FINVASIA_SYMBOL shape often omits instrumentType for cash
             // equities; the master's own classifier is the authority there.
-            instrument_type: if cash_equity {
+            instrument_type: if cash_equity
+                || (instrument.instrument_type.trim().is_empty()
+                    && !fv_master::is_index(instrument)
+                    && !instrument.is_option()
+                    && !instrument.is_future())
+            {
                 "EQ".to_string()
             } else {
                 instrument.instrument_type.clone()
