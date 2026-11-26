@@ -1,8 +1,8 @@
-//! Headless harness.
+﻿//! Headless harness.
 //!
 //! Deliberately has no UI: the point is to prove the ingest, merge, pacing and
 //! cache layers independently of Tauri, and to provide the M1/M2/M5/M7
-//! measurements from `fv-features.md` §7.7 in CI.
+//! measurements from `fv-features.md` Â§7.7 in CI.
 
 use clap::{Parser, Subcommand};
 #[cfg(feature = "ws")]
@@ -255,7 +255,7 @@ fn cmd_bench(file: &PathBuf, iters: u32) -> Result<(), Box<dyn std::error::Error
     fn report(label: &str, count: u64, elapsed: std::time::Duration) {
         let secs = elapsed.as_secs_f64().max(1e-9);
         println!(
-            "  {:<24} {:>10} ops in {:>10.3} ms  => {:>12.0} ops/s  ({:.2} µs/op)",
+            "  {:<24} {:>10} ops in {:>10.3} ms  => {:>12.0} ops/s  ({:.2} Âµs/op)",
             label,
             count,
             secs * 1000.0,
@@ -300,7 +300,7 @@ async fn cmd_master(command: MasterCommand) -> Result<(), Box<dyn std::error::Er
                 if json {
                     let rows: Vec<serde_json::Value> = hits
                         .iter()
-                        .map(|(i, rank)| {
+                        .map(|(i, score)| {
                             serde_json::json!({
                                 "key": i.key.as_wire(),
                                 "trading_symbol": i.trading_symbol,
@@ -309,14 +309,14 @@ async fn cmd_master(command: MasterCommand) -> Result<(), Box<dyn std::error::Er
                                 "strike": i.strike.format(2),
                                 "strike_type": i.strike_type.as_str(),
                                 "lot_size": i.lot_size,
-                                "rank": format!("{rank:?}"),
+                                "score": score,
                             })
                         })
                         .collect();
                     println!("{}", serde_json::to_string_pretty(&rows)?);
                 } else {
                     println!("  {} hits for {:?}", hits.len(), query);
-                    for (inst, rank) in hits {
+                    for (inst, score) in hits {
                         println!(
                             "  {:<14} {:<28} {:<12} {:>10} {:<3} lot={:<6} {:?}",
                             inst.key.as_wire(),
@@ -325,7 +325,7 @@ async fn cmd_master(command: MasterCommand) -> Result<(), Box<dyn std::error::Er
                             inst.strike.format(2),
                             inst.strike_type.as_str(),
                             inst.lot_size,
-                            rank
+                            score
                         );
                     }
                 }

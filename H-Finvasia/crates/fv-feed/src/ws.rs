@@ -1,30 +1,55 @@
-﻿//! Live WebSocket transport (legacy Noren handshake).
+//! Live WebSocket transport (legacy Noren handshake).
 //!
-//! Verified against the live venue: `wss://api.shoonya.com/NorenWSTP/` (or
-//! `wss://trade.shoonya.com/NorenWSWeb/`) accepts
+//! Verified against the live venue: `wss://api.shoonya.com/NorenWSTP/` accepts
 //! `{"t":"c","uid":..,"actid":..,"susertoken":..,"source":"WEB"}` and replies
 //! `{"t":"ck","s":"OK"}`, then streams `tk` snapshots and `tf` diffs.
 //!
-//! Three properties matter more than raw speed (`fv-features.md` Â§7.6):
+//! Three properties matter more than raw speed (`fv-features.md` §7.6):
 //!
 //! 1. **Order updates are never queued behind market data.** The reader peeks the
 //!    `t` field and hands `om` frames to the order path before parsing quotes.
-//! 2. **Subscriptions are restored on every (re)connect** â€” the venue keeps nothing.
-//! 3. **Source scope is auto-detected.** A token minted through the web login only
-//!    works with `source:"WEB"`; an API-minted token needs `"API"`. On `NOT_OK`
-//!    the session is retried once with the other scope instead of failing.
+//! 2. **The subscription set is live.** [`FeedCommand`] adds/removes instruments
+//!    on the open socket, and the full set is re-sent after every reconnect.
+//! 3. **Source scope is auto-detected.** A web-minted token only works with
+//!    `source:"WEB"`; on `NOT_OK` the session retries once with `"API"`.
 
 use crate::frame::{parse, peek_kind, Frame, FrameKind};
-use crate::subscription::{connect_frame, subscribe_frames, DEFAULT_CHUNK, HEARTBEAT_FRAME};
+use crate::subscription::{
+    connect_frame, subscribe_frames, unsubscribe_frames, DEFAULT_CHUNK, HEARTBEAT_FRAME,
+};
 use crate::FeedError;
 use futures_util::{SinkExt, StreamExt};
 use fv_core::SymbolKey;
+use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
 /// Default API websocket endpoint (legacy protocol).
 pub const DEFAULT_WS_URL: &str = "wss://api.shoonya.com/NorenWSTP/";
+
+/// A change to the live subscription set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FeedCommand {
+    Subscribe(Vec<SymbolKey>),
+    Unsubscribe(Vec<SymbolKey>),
+    Shutdown,
+}
+
+/// Lifecycle notifications from [`run_forever`], so the UI can show the *real*
+/// connection state instead of an optimistic guess.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FeedState {
+    /// Handshake accepted and subscriptions sent.
+    Connected { source: String },
+    /// The venue rejected the token for this scope.
+    Rejected { source: String },
+    /// Transport or protocol failure.
+    Error { message: String },
+    /// Waiting before the next attempt.
+    Reconnecting { attempt: u32 },
+}
 
 /// Connection parameters. Tokens come from the caller; this crate never reads
 /// credentials from disk.
@@ -95,7 +120,7 @@ pub fn route_batch(raws: &[Vec<u8>]) -> FrameSink {
     sink
 }
 
-/// One connected session. Returns when the socket closes or errors.
+/// One-shot session with a fixed subscription set (used by the CLI harness).
 pub async fn run_session<F>(
     cfg: &WsConfig,
     keys: &[SymbolKey],
@@ -104,17 +129,18 @@ pub async fn run_session<F>(
 where
     F: FnMut(Frame),
 {
-    run_session_with(cfg, keys, on_frame, || {}).await
+    let desired: Arc<Mutex<BTreeSet<SymbolKey>>> =
+        Arc::new(Mutex::new(keys.iter().cloned().collect()));
+    run_session_inner(cfg, &desired, on_frame, || {}, None).await
 }
 
-/// Like [`run_session`], but also invokes `on_connected` once the handshake has
-/// been accepted and subscriptions have been sent. The UI uses this to show the
-/// real connection state rather than an optimistic guess.
-pub async fn run_session_with<F, C>(
+/// Core session: handshake, subscribe, then stream while accepting commands.
+async fn run_session_inner<F, C>(
     cfg: &WsConfig,
-    keys: &[SymbolKey],
+    desired: &Arc<Mutex<BTreeSet<SymbolKey>>>,
     mut on_frame: F,
     mut on_connected: C,
+    mut commands: Option<&mut mpsc::UnboundedReceiver<FeedCommand>>,
 ) -> Result<(), FeedError>
 where
     F: FnMut(Frame),
@@ -163,20 +189,30 @@ where
         }
     }
 
-    // 2. Subscribe. Every reconnect repeats this â€” nothing persists server-side.
-    for frame in subscribe_frames(keys, cfg.subscribe_chunk) {
+    // 2. Subscribe the current set. Every reconnect repeats this.
+    let keys: Vec<SymbolKey> = desired.lock().unwrap().iter().cloned().collect();
+    for frame in subscribe_frames(&keys, cfg.subscribe_chunk) {
         ws.send(Message::Text(frame.into()))
             .await
             .map_err(|e| FeedError::Transport(e.to_string()))?;
     }
     on_connected();
 
-    // 3. Read loop with keepalive. The venue drops sockets that go quiet.
+    // 3. Stream, with keepalive and live subscription commands.
     let mut heartbeat = tokio::time::interval(cfg.heartbeat);
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     heartbeat.tick().await; // consume the immediate first tick
 
     loop {
+        // A future that never completes when no command channel is attached, so
+        // the select! below stays uniform.
+        let command_future = async {
+            match commands.as_deref_mut() {
+                Some(rx) => rx.recv().await,
+                None => std::future::pending::<Option<FeedCommand>>().await,
+            }
+        };
+
         tokio::select! {
             _ = heartbeat.tick() => {
                 ws.send(Message::Text(HEARTBEAT_FRAME.into()))
@@ -210,28 +246,40 @@ where
                     _ => {}
                 }
             }
+            command = command_future => {
+                match command {
+                    None | Some(FeedCommand::Shutdown) => return Ok(()),
+                    Some(FeedCommand::Subscribe(list)) => {
+                        let fresh = {
+                            let mut set = desired.lock().unwrap();
+                            list.into_iter().filter(|k| set.insert(k.clone())).collect::<Vec<_>>()
+                        };
+                        for frame in subscribe_frames(&fresh, cfg.subscribe_chunk) {
+                            ws.send(Message::Text(frame.into()))
+                                .await
+                                .map_err(|e| FeedError::Transport(e.to_string()))?;
+                        }
+                        tracing::info!(count = fresh.len(), "subscribed while live");
+                    }
+                    Some(FeedCommand::Unsubscribe(list)) => {
+                        let gone = {
+                            let mut set = desired.lock().unwrap();
+                            list.into_iter().filter(|k| set.remove(k)).collect::<Vec<_>>()
+                        };
+                        for frame in unsubscribe_frames(&gone, cfg.subscribe_chunk) {
+                            ws.send(Message::Text(frame.into()))
+                                .await
+                                .map_err(|e| FeedError::Transport(e.to_string()))?;
+                        }
+                        tracing::info!(count = gone.len(), "unsubscribed while live");
+                    }
+                }
+            }
         }
     }
 }
 
-/// Lifecycle notifications from [`run_forever`], so the UI can show the *real*
-/// connection state instead of an optimistic guess.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FeedState {
-    /// Handshake accepted and subscriptions sent.
-    Connected { source: String },
-    /// The venue rejected the token for this scope.
-    Rejected { source: String },
-    /// Transport or protocol failure.
-    Error { message: String },
-    /// Waiting before the next attempt.
-    Reconnecting { attempt: u32 },
-}
-
-/// Backoff schedule: 1 s, 2 s, 4 s â€¦ capped at 60 s, with Â±20 % jitter.
-///
-/// The base is capped at 50 s so the +20 % jitter band still lands at or below
-/// 60 s; the final value is clamped as a hard guarantee.
+/// Backoff schedule: 1 s, 2 s, 4 s … capped at 60 s, with ±20 % jitter.
 pub fn backoff_delay(attempt: u32, jitter: f64) -> Duration {
     let base_ms = 1_000u64.saturating_mul(2u64.saturating_pow(attempt.min(6)));
     let capped = base_ms.min(50_000) as f64;
@@ -240,43 +288,78 @@ pub fn backoff_delay(attempt: u32, jitter: f64) -> Duration {
     Duration::from_millis(ms)
 }
 
-/// Run forever, reconnecting with backoff and re-subscribing each time.
+fn apply_command(desired: &Arc<Mutex<BTreeSet<SymbolKey>>>, command: FeedCommand) {
+    let mut set = desired.lock().unwrap();
+    match command {
+        FeedCommand::Subscribe(list) => {
+            for key in list {
+                set.insert(key);
+            }
+        }
+        FeedCommand::Unsubscribe(list) => {
+            for key in list {
+                set.remove(&key);
+            }
+        }
+        FeedCommand::Shutdown => {}
+    }
+}
+
+/// Run forever, reconnecting with backoff and re-subscribing the current set.
 ///
-/// On an authentication rejection the session is retried once with the opposite
+/// On an authentication rejection the session retries once with the opposite
 /// `source` scope, which handles tokens minted by either login path.
+/// Commands received while disconnected update the set and take effect on the
+/// next connect.
 pub async fn run_forever<F, S>(
     mut cfg: WsConfig,
     keys: Vec<SymbolKey>,
     mut on_frame: F,
     mut on_state: S,
-    mut shutdown: mpsc::Receiver<()>,
+    mut commands: mpsc::UnboundedReceiver<FeedCommand>,
 ) -> Result<(), FeedError>
 where
     F: FnMut(Frame) + Send,
     S: FnMut(FeedState) + Send,
 {
+    let desired: Arc<Mutex<BTreeSet<SymbolKey>>> = Arc::new(Mutex::new(keys.into_iter().collect()));
     let mut attempt: u32 = 0;
     let mut scope_tried = false;
 
     loop {
-        if shutdown.try_recv().is_ok() {
-            return Ok(());
+        // Drain anything queued while disconnected.
+        loop {
+            match commands.try_recv() {
+                Ok(FeedCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
+                    return Ok(())
+                }
+                Ok(command) => apply_command(&desired, command),
+                Err(mpsc::error::TryRecvError::Empty) => break,
+            }
         }
+
         tracing::info!(
             url = %cfg.url,
             source = %cfg.source,
-            keys = keys.len(),
+            keys = desired.lock().unwrap().len(),
             "connecting feed"
         );
 
         let source = cfg.source.clone();
-        match run_session_with(&cfg, &keys, &mut on_frame, || {
-            on_state(FeedState::Connected {
-                source: source.clone(),
-            });
-        })
-        .await
-        {
+        let result = run_session_inner(
+            &cfg,
+            &desired,
+            &mut on_frame,
+            || {
+                on_state(FeedState::Connected {
+                    source: source.clone(),
+                })
+            },
+            Some(&mut commands),
+        )
+        .await;
+
+        match result {
             Ok(()) => {
                 tracing::warn!("feed closed by peer");
                 attempt = 0;
@@ -286,17 +369,12 @@ where
                 on_state(FeedState::Rejected {
                     source: cfg.source.clone(),
                 });
-                let next = if cfg.source.eq_ignore_ascii_case("WEB") {
-                    "API"
+                cfg.source = if cfg.source.eq_ignore_ascii_case("WEB") {
+                    "API".to_string()
                 } else {
-                    "WEB"
+                    "WEB".to_string()
                 };
-                tracing::warn!(
-                    rejected_source = %cfg.source,
-                    retry_source = next,
-                    "session scope rejected; retrying with the other scope"
-                );
-                cfg.source = next.to_string();
+                tracing::warn!(retry_source = %cfg.source, "scope rejected; retrying");
                 continue;
             }
             Err(err) => {
@@ -310,9 +388,15 @@ where
         let delay = backoff_delay(attempt, pseudo_jitter(attempt));
         on_state(FeedState::Reconnecting { attempt });
         tracing::info!(?delay, "reconnecting");
-        tokio::select! {
-            _ = tokio::time::sleep(delay) => {}
-            _ = shutdown.recv() => return Ok(()),
+        let wake = tokio::time::Instant::now() + delay;
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep_until(wake) => break,
+                command = commands.recv() => match command {
+                    None | Some(FeedCommand::Shutdown) => return Ok(()),
+                    Some(other) => apply_command(&desired, other),
+                }
+            }
         }
         attempt = attempt.saturating_add(1);
     }
@@ -332,6 +416,10 @@ fn pseudo_jitter(attempt: u32) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn key(wire: &str) -> SymbolKey {
+        SymbolKey::parse(wire).unwrap()
+    }
 
     #[test]
     fn routing_sends_orders_to_the_order_bucket_only() {
@@ -359,10 +447,8 @@ mod tests {
 
     #[test]
     fn backoff_grows_and_caps() {
-        let a0 = backoff_delay(0, 0.5);
-        let a1 = backoff_delay(1, 0.5);
-        let a2 = backoff_delay(2, 0.5);
-        assert!(a0 < a1 && a1 < a2);
+        assert!(backoff_delay(0, 0.5) < backoff_delay(1, 0.5));
+        assert!(backoff_delay(1, 0.5) < backoff_delay(2, 0.5));
         assert!(backoff_delay(20, 1.0) <= Duration::from_millis(60_000));
     }
 
@@ -374,7 +460,7 @@ mod tests {
             assert!(high >= low);
             assert!(
                 (high / low - 1.5).abs() < 1e-9,
-                "band must be 0.8â€“1.2 (attempt {attempt}: {low} â†’ {high})"
+                "band must be 0.8–1.2 (attempt {attempt}: {low} → {high})"
             );
         }
     }
@@ -392,5 +478,22 @@ mod tests {
         assert!(FeedError::HandshakeRejected("NOT_OK".into()).is_auth_rejected());
         assert!(!FeedError::HandshakeRejected("timeout".into()).is_auth_rejected());
         assert!(!FeedError::Transport("x".into()).is_auth_rejected());
+    }
+
+    #[test]
+    fn commands_update_the_desired_set() {
+        let desired: Arc<Mutex<BTreeSet<SymbolKey>>> =
+            Arc::new(Mutex::new([key("NSE|1")].into_iter().collect()));
+
+        apply_command(&desired, FeedCommand::Subscribe(vec![key("NSE|2")]));
+        assert_eq!(desired.lock().unwrap().len(), 2);
+
+        // Re-subscribing is idempotent.
+        apply_command(&desired, FeedCommand::Subscribe(vec![key("NSE|2")]));
+        assert_eq!(desired.lock().unwrap().len(), 2);
+
+        apply_command(&desired, FeedCommand::Unsubscribe(vec![key("NSE|1")]));
+        assert_eq!(desired.lock().unwrap().len(), 1);
+        assert!(desired.lock().unwrap().contains(&key("NSE|2")));
     }
 }

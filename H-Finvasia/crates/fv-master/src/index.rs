@@ -76,14 +76,80 @@ impl Instrument {
     }
 }
 
-/// A search result with its ranking signal, exposed for diagnostics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum MatchRank {
-    ExactSymbol = 0,
-    SymbolPrefix = 1,
-    SymbolContains = 2,
-    UnderlyingPrefix = 3,
-    NameContains = 4,
+/// Ranking signal for a search hit: lower is better.
+///
+/// Replaced the old fixed enum with a score because queries are now multi-term
+/// (`"nifty 25800"`), and the score is the sum of each term's best match.
+pub type MatchScore = u32;
+
+/// Split a query into uppercase terms on whitespace and common separators.
+fn query_terms(query: &str) -> Vec<String> {
+    query
+        .split(|c: char| c.is_whitespace() || c == ',' || c == ';' || c == '/')
+        .map(|part| part.trim().to_ascii_uppercase())
+        .filter(|part| !part.is_empty())
+        .collect()
+}
+
+/// Score a strike against a term, comparing integers-as-strings so no float
+/// arithmetic is involved.
+fn strike_score(strike: Price, term: &str) -> Option<MatchScore> {
+    if strike.scaled() <= 0 {
+        return None;
+    }
+    let whole = strike.format(0);
+    let exact = strike.format(2);
+    if whole == term || exact == term {
+        return Some(0);
+    }
+    if term.len() >= 3 && whole.starts_with(term) {
+        return Some(1);
+    }
+    if term.len() >= 4 && whole.contains(term) {
+        return Some(2);
+    }
+    None
+}
+
+/// Best score for one term across all searchable fields.
+fn term_score(item: &Instrument, term: &str) -> Option<MatchScore> {
+    let symbol = item.trading_symbol.to_ascii_uppercase();
+    let underlying = item
+        .underlying
+        .as_deref()
+        .unwrap_or("")
+        .to_ascii_uppercase();
+    let name = item.name.as_deref().unwrap_or("").to_ascii_uppercase();
+
+    let mut best = u32::MAX;
+    let mut take = |score: MatchScore| {
+        if score < best {
+            best = score;
+        }
+    };
+
+    if symbol == term || underlying == term {
+        take(0);
+    }
+    if symbol.starts_with(term) || underlying.starts_with(term) {
+        take(1);
+    }
+    if symbol.contains(term) {
+        take(2);
+    }
+    if name.contains(term) {
+        take(3);
+    }
+    // Numeric terms usually mean a strike ("nifty 25800").
+    if let Some(score) = strike_score(item.strike, term) {
+        take(score);
+    }
+
+    if best == u32::MAX {
+        None
+    } else {
+        Some(best)
+    }
 }
 
 #[derive(Debug)]
@@ -144,48 +210,34 @@ impl MemoryMaster {
             .find(|i| i.trading_symbol.eq_ignore_ascii_case(&target))
     }
 
-    /// Substring/prefix search over symbol, underlying and name.
+    /// Relaxed, multi-term search.
     ///
-    /// Deterministic: ranked, then alphabetically by trading symbol.
-    pub fn search(&self, query: &str, limit: usize) -> Vec<(&Instrument, MatchRank)> {
-        let q = query.trim().to_ascii_uppercase();
-        if q.is_empty() || limit == 0 {
+    /// Every whitespace-separated term must match somewhere (AND semantics), so
+    /// `"nifty 25800"` and `"25800 nifty"` both find the 25800-strike NIFTY
+    /// contracts. Terms match a symbol/underlying prefix, a symbol/name
+    /// substring, or a strike price. Lower score = better match.
+    ///
+    /// Deterministic: score, then alphabetically by trading symbol.
+    pub fn search(&self, query: &str, limit: usize) -> Vec<(&Instrument, MatchScore)> {
+        let terms = query_terms(query);
+        if terms.is_empty() || limit == 0 {
             return Vec::new();
         }
 
-        let mut hits: Vec<(&Instrument, MatchRank)> = Vec::new();
-        for item in &self.items {
-            let sym = item.trading_symbol.to_ascii_uppercase();
-            let rank = if sym == q {
-                Some(MatchRank::ExactSymbol)
-            } else if sym.starts_with(&q) {
-                Some(MatchRank::SymbolPrefix)
-            } else if sym.contains(&q) {
-                Some(MatchRank::SymbolContains)
-            } else if item
-                .underlying
-                .as_deref()
-                .map(|u| u.to_ascii_uppercase().starts_with(&q))
-                .unwrap_or(false)
-            {
-                Some(MatchRank::UnderlyingPrefix)
-            } else if item
-                .name
-                .as_deref()
-                .map(|n| n.to_ascii_uppercase().contains(&q))
-                .unwrap_or(false)
-            {
-                Some(MatchRank::NameContains)
-            } else {
-                None
-            };
-            if let Some(rank) = rank {
-                hits.push((item, rank));
+        let mut hits: Vec<(&Instrument, MatchScore)> = Vec::new();
+        'items: for item in &self.items {
+            let mut total: MatchScore = 0;
+            for term in &terms {
+                match term_score(item, term) {
+                    Some(score) => total = total.saturating_add(score),
+                    None => continue 'items,
+                }
             }
+            hits.push((item, total));
         }
 
-        hits.sort_by(|(a, ra), (b, rb)| {
-            ra.cmp(rb)
+        hits.sort_by(|(a, sa), (b, sb)| {
+            sa.cmp(sb)
                 .then_with(|| a.trading_symbol.cmp(&b.trading_symbol))
                 .then_with(|| a.key.cmp(&b.key))
         });
@@ -365,11 +417,46 @@ mod tests {
         let hits = m.search("RELIANCE", 10);
         assert!(!hits.is_empty());
         // `BSE|500325` is literally "RELIANCE"; `NSE|2885` is "RELIANCE-EQ".
-        assert_eq!(hits[0].1, MatchRank::ExactSymbol);
         assert_eq!(hits[0].0.trading_symbol, "RELIANCE");
+        assert!(hits.iter().any(|(i, _)| i.trading_symbol == "RELIANCE-EQ"));
+    }
+
+    #[test]
+    fn search_accepts_symbol_and_strike_in_any_order() {
+        let m = master();
+        let forward = m.search("nifty 24000", 50);
+        let reversed = m.search("24000 nifty", 50);
+        assert_eq!(forward.len(), reversed.len(), "term order must not matter");
+        assert!(!forward.is_empty(), "expected NIFTY 24000 contracts");
+        assert!(forward
+            .iter()
+            .all(|(i, _)| i.trading_symbol.contains("24000")));
+        assert!(forward
+            .iter()
+            .all(|(i, _)| i.underlying.as_deref() == Some("NIFTY")));
+    }
+
+    #[test]
+    fn search_matches_a_strike_prefix() {
+        let m = master();
+        let hits = m.search("NIFTY 242", 20);
+        assert!(!hits.is_empty());
         assert!(hits
             .iter()
-            .any(|(i, r)| { i.trading_symbol == "RELIANCE-EQ" && *r == MatchRank::SymbolPrefix }));
+            .all(|(i, _)| i.strike.format(0).starts_with("242")));
+    }
+
+    #[test]
+    fn multi_term_search_requires_every_term() {
+        let m = master();
+        assert!(m.search("nifty 99999", 20).is_empty());
+        assert!(m.search("banknifty 24000", 20).is_empty());
+    }
+
+    #[test]
+    fn search_handles_extra_separators_and_whitespace() {
+        let m = master();
+        assert!(!m.search("  nifty,  24000  ", 20).is_empty());
     }
 
     #[test]

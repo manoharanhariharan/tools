@@ -1,4 +1,4 @@
-﻿# Finvasia / Shoonya "NorenTrader" (UFT) â€” Technology, Feed Architecture & Feature Inventory
+# Finvasia / Shoonya "NorenTrader" (UFT) â€” Technology, Feed Architecture & Feature Inventory
 
 > **Purpose of this document:** reverse-engineer the installed Finvasia trading terminal well enough to
 > (a) understand where its performance bottlenecks come from and
@@ -881,16 +881,16 @@ Phase 0/1 is implemented and verified ([`README.md`](README.md), [`docs/ARCHITEC
 | Crate | Scope | Tests |
 |---|---|---|
 | `fv-core` | `Price` (i64, 6 dp), `SymbolKey`, `Quote` | 17 |
-| `fv-feed` | frame classify/decode, `QuoteBook` diff-merge, subscription batching, replay, legacy WS transport + heartbeat + scope fallback | 41 |
+| `fv-feed` | frame decode, `QuoteBook` diff-merge, subscription batching, replay, legacy WS transport + heartbeat + scope fallback + live subscribe commands | 42 |
 | `fv-master` | `MemoryMaster` index/search/option-chain, Mongo loader (both collection shapes) | 14 |
 | `fv-store` | memory + Mongo backends, tracker freshness rule, snapshot upsert, order journal | 16 |
 | `fv-engine` | `Coalescer` (bounded, deterministic), `TokenBucket` (venue limits) | 12 |
 | `fv-bridge` | `MarketData` state, watch diffing, DTO formatting, trend/placeholder rules | 13 |
 | `fv-cli` | build-date calendar + CLI contract as a real process | 8 |
 | `ui/` | formatting + `QuoteTable` merge/prune/placeholder (vitest) | 14 |
-| **Total** | | **135** |
+| **Total** | | **136** |
 
-Gates: `cargo test --workspace` (121 Rust), `npm test` (14 UI), `cargo clippy --workspace
+Gates: `cargo test --workspace` (122 Rust), `npm test` (14 UI), `cargo clippy --workspace
 --all-targets -- -D warnings`, `cargo fmt --check`, `svelte-check` (0 errors/warnings).
 Shipped via `scripts/release.ps1` into `releases/` as a desktop app plus a CLI.
 
@@ -983,6 +983,25 @@ Notable defects found and fixed during implementation â€” each is a class o
 
 Deliberately still absent: `fv-bridge`, `src-tauri`, `ui/`, `fv-market` (REST). Those are Phase 2 and
 need the P0 UI decisions in Â§5.1â€“5.4 plus OAuth app registration.
+
+---
+
+### Phase 2c - relaxed search + live subscription (implemented)
+
+Two usability gaps reported after using the app:
+
+9. **Search was a single substring match**, so `"nifty 25800"` found nothing. It is now multi-term
+   with AND semantics: every term must match a symbol prefix, underlying prefix, symbol/name
+   substring, or a strike price (strike compared as integer strings - no float arithmetic).
+   `"nifty 25800"` and `"25800 nifty"` return the same contracts. Verified against the live master:
+   6 NIFTY 25800 CE/PE legs across expiries; `"nifty 99999"` correctly returns nothing.
+
+10. **Adding an instrument did not subscribe it.** The watch change only updated the UI; the socket
+    subscribed once at connect. `fv-feed` now exposes `FeedCommand::{Subscribe, Unsubscribe,
+    Shutdown}` on a channel the session selects on, so a watch change is applied to the open socket
+    and the full set is re-sent after any reconnect. Verified live: adding
+    `NIFTY01DEC26C25800` logged `subscribed while live count=1` and the row began ticking
+    (245.65 -> 245.30 with bid/ask and volume) on the *same* connection - no reconnect.
 
 ---
 

@@ -6,7 +6,7 @@
 //! Thin adapter over [`fv_bridge::MarketData`]: owns no market logic itself, only
 //! the Tauri plumbing (commands, events, task lifecycle).
 //!
-//! Threading model — deliberately simple and leak-free:
+//! Threading model â€” deliberately simple and leak-free:
 //! * one producer task feeds decoded [`Frame`]s into an mpsc channel;
 //! * one consumer task owns the state lock, absorbs frames, and emits bounded
 //!   `quotes:delta` batches at ~60 Hz;
@@ -41,7 +41,8 @@ pub struct AppState {
     market: Mutex<MarketData>,
     tx: UnboundedSender<Frame>,
     producer: Mutex<Option<JoinHandle<()>>>,
-    live_stop: Mutex<Option<mpsc::Sender<()>>>,
+    /// Commands to the running live session (subscribe/unsubscribe/shutdown).
+    feed_cmd: Mutex<Option<mpsc::UnboundedSender<fv_feed::ws::FeedCommand>>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -131,6 +132,7 @@ fn watch_add(
         };
         (plan, payload)
     };
+    forward_plan_to_live(&state, &plan);
     let _ = app.emit("watch:changed", payload);
     Ok(plan)
 }
@@ -150,8 +152,36 @@ fn watch_remove(
         };
         (plan, payload)
     };
+    forward_plan_to_live(&state, &plan);
     let _ = app.emit("watch:changed", payload);
     Ok(plan)
+}
+
+/// Push a watch-list change to the open live socket, so a newly added
+/// instrument starts ticking immediately instead of waiting for a reconnect.
+///
+/// No-op when no live session is running (replay/idle).
+fn forward_plan_to_live(state: &Arc<AppState>, plan: &PlanDto) {
+    let Some(sender) = state.feed_cmd.lock().unwrap().clone() else {
+        return;
+    };
+
+    let to_keys = |wire: &[String]| -> Vec<SymbolKey> {
+        wire.iter()
+            .filter_map(|k| SymbolKey::parse(k).ok())
+            .collect()
+    };
+
+    if !plan.subscribe.is_empty() {
+        let _ = sender.send(fv_feed::ws::FeedCommand::Subscribe(to_keys(
+            &plan.subscribe,
+        )));
+    }
+    if !plan.unsubscribe.is_empty() {
+        let _ = sender.send(fv_feed::ws::FeedCommand::Unsubscribe(to_keys(
+            &plan.unsubscribe,
+        )));
+    }
 }
 
 #[tauri::command]
@@ -165,8 +195,8 @@ fn stop_feed_impl(state: &Arc<AppState>) {
     if let Some(handle) = state.producer.lock().unwrap().take() {
         handle.abort();
     }
-    if let Some(stop) = state.live_stop.lock().unwrap().take() {
-        let _ = stop.try_send(());
+    if let Some(cmd) = state.feed_cmd.lock().unwrap().take() {
+        let _ = cmd.send(fv_feed::ws::FeedCommand::Shutdown);
     }
     let mut market = state.market.lock().unwrap();
     market.set_source(SourceKind::Idle);
@@ -263,7 +293,7 @@ async fn session_info() -> session::SessionInfo {
 }
 
 /// Connect to the venue. The session is resolved automatically:
-/// env token → persisted Mongo token (validated) → TOTP login.
+/// env token â†’ persisted Mongo token (validated) â†’ TOTP login.
 #[tauri::command]
 async fn start_live(
     app: AppHandle,
@@ -292,8 +322,8 @@ async fn start_live(
     );
 
     let cfg = fv_feed::ws::WsConfig::new(&resolved.uid, &resolved.actid, &resolved.token);
-    let (stop_tx, stop_rx) = mpsc::channel::<()>(1);
-    *state.live_stop.lock().unwrap() = Some(stop_tx);
+    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<fv_feed::ws::FeedCommand>();
+    *state.feed_cmd.lock().unwrap() = Some(cmd_tx);
 
     let tx = state.tx.clone();
     let feed_state = state.inner().clone();
@@ -307,7 +337,7 @@ async fn start_live(
                 let _ = tx.send(frame);
             },
             move |event| apply_feed_state(&feed_state, event),
-            stop_rx,
+            cmd_rx,
         )
         .await;
 
@@ -509,7 +539,7 @@ fn main() {
         market: Mutex::new(MarketData::new(env!("CARGO_PKG_VERSION"))),
         tx,
         producer: Mutex::new(None),
-        live_stop: Mutex::new(None),
+        feed_cmd: Mutex::new(None),
     });
 
     let rx_slot = Arc::new(Mutex::new(Some(rx)));

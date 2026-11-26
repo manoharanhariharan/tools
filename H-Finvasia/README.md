@@ -76,6 +76,9 @@ The executable lands at `src-tauri/target/release/h-finvasia-desktop.exe` and ru
 2. **Demo feed** in the top bar (or *Diagnostics → Start demo feed*) replays a bundled capture at
    ~120 frames/s; the watch list auto-populates from the capture.
 3. Click a row to load the snap quote; **Instruments** searches the master and adds scrips.
+   Search is relaxed and multi-term: `nifty 25800`, `25800 nifty`, `NIFTY 26NOV 25800` all find the
+   25800-strike NIFTY contracts. Adding an instrument while **live** subscribes it on the open socket
+   immediately — no reconnect, no manual refresh.
 4. **Diagnostics** shows backend (`mongo` vs `in-memory`), frame rate, decode errors, and the live
    connect form.
 
