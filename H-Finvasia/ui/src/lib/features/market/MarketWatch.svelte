@@ -6,14 +6,12 @@
   interface Props {
     rows: QuoteRow[];
     selected: string | null;
-    busy: boolean;
     onselect: (key: string) => void;
     onremove: (key: string) => void;
-    onstart: () => void;
     onchain: (underlying: string) => void;
     onactive: (key: string, label: string) => void;
   }
-  let { rows, selected, busy, onselect, onremove, onstart, onchain, onactive }: Props = $props();
+  let { rows, selected, onselect, onremove, onchain, onactive }: Props = $props();
 
   let menu = $state<{ x: number; y: number; row: QuoteRow } | null>(null);
 
@@ -30,10 +28,7 @@
   {#if rows.length === 0}
     <EmptyState
       title="Nothing watched yet"
-      hint="Start the bundled demo feed to see live-updating quotes, or add instruments from the Instruments page."
-      action="Start demo feed"
-      {busy}
-      onaction={onstart}
+      hint="Add instruments from the Instruments page, or from a Stocks group card."
     />
   {:else}
     {#if indexRows.length > 0}

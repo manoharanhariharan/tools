@@ -903,7 +903,8 @@ Shipped via `scripts/release.ps1` into `releases/` as a desktop app plus a CLI.
 | Market watch | coalesced deltas, trend colouring, placeholder row immediately on add |
 | Snap quote | merged quote + instrument metadata, read-only (order entry is Phase 2b) |
 | Instruments | debounced master search (Mongo, else bundled sample) and watch add/remove |
-| Diagnostics | backend, frame rate, decode errors, demo/live feed controls |
+| Stocks | list or 3-column draggable group cards; card search adds stocks/options/futures/indices |
+| Diagnostics | backend, frame rate, decode errors and the live connect control (no demo switch) |
 | Status bar | source, backend, instrument count, watch budget, frames/s, build |
 
 Threading: one producer â†’ one consumer that owns the state lock â†’ 60 Hz delta events. The lock is
@@ -1201,10 +1202,33 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
   switching loads it, and add/remove writes back to the active group.
 - Each group persists a `#RRGGBB` colour in `watch-groups.json`; the Stocks sidebar shows a colour
   chip that opens the system picker. Colours follow group rename/delete.
-- **Appearance** offers Midnight, Graphite, Ocean, Contrast and Light themes plus six accent presets
-  and a custom accent. Theme and accent are applied before mount (`main.ts`) and stored locally.
+- **Appearance** offers Midnight, Graphite, Ocean, Contrast, Light, Nord, Solarized, Tokyo Night,
+  Forest, Plum and Sand themes plus six accent presets and a custom accent. Theme and accent are
+  applied before mount (`main.ts`), applied live on every picker click, and stored locally.
   CSS colour variables cover the account strip, tabs, chain bands, strike/ATM cells, modals and
   banners, so the Light theme is not just an inverted background.
+
+### Phase 2p - compact header, group cards and theme polish (implemented)
+
+- **Account header collapses** to a 34 px single band (feed state, account, cash, RPNL, MTM and
+  position count) with a chevron. The choice is persisted in `fv.headerCollapsed`.
+- **Demo/Stop controls were removed from the UI** (More menu, Market Watch empty state and
+  Diagnostics). The replay backend remains for the CLI and `FV_AUTOSTART_DEMO=1` smoke tests, but a
+  normal user only connects the live session.
+- **Theme changes apply immediately.** The picker no longer has an Apply step; every theme or accent
+  click rewrites `data-theme`/accent variables and localStorage at once. Six themes were added
+  (Nord, Solarized, Tokyo Night, Forest, Plum, Sand).
+- **Stocks -> Cards** is a second layout: three-column group cards in an endlessly scrolling grid.
+  Cards drag to reorder (order persisted in `watch-groups.json`), collapse independently
+  (localStorage), and show mixed instrument kinds with live quotes while the group is active.
+- Each card's **+** opens a full-master search (stocks, futures, indices and **options**) and adds
+  the chosen key to that group (`container_add`). Removing (`container_remove`) and reordering
+  (`container_reorder`) are group-scoped; when the edited group is active the watch list is
+  reconciled and re-subscribed within the existing budget. Inactive groups stay local and show
+  dashes until activated.
+- Pure ordering/label helpers live in `ui/src/lib/features/stocks/cards.ts`; preference parsing lives
+  in `ui/src/lib/layoutPrefs.ts`. Both are unit-tested. Rust tests cover group add/remove/reorder,
+  order persistence across rename and the mixed card row builder.
 
 ---
 

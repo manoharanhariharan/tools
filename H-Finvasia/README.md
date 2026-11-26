@@ -78,15 +78,21 @@ The executable lands at `src-tauri/target/release/h-finvasia-desktop.exe` and ru
 ### Layout
 
 The workspace opens on a four-card account strip - **Account details** (user, account, login
-state), **Funds available**, **RPNL**, **MTM** - followed by four tabs: **Index**, **Stocks**,
-**Option chain**, **Instruments**. Market watch and Groups/Diagnostics sit behind the **More** menu;
-Positions and the order book live in the bottom dock, so the working area stays uncluttered.
+state), **Funds available**, **RPNL**, **MTM**. The chevron at the right collapses it to a
+single-line band with the feed state, account, cash, RPNL, MTM and position count; the choice is
+remembered. Four tabs follow: **Index**, **Stocks**, **Option chain** and **Instruments**.
+Market watch and Groups/Diagnostics sit behind the **More** menu; Positions and the order book live
+in the bottom dock, so the working area stays uncluttered.
 
-**Stocks** shows only the watched stocks in the active group. Use the search bar above the list
-to find an NSE stock; matches appear in a flyout and can be added directly. The groups sidebar
-creates, deletes and renames lists (double-click a name to edit), and each group has a color chip
-that opens the system color picker. The active group is the live watch list, so switching it
-re-subscribes within the 100-instrument budget; changes are saved locally and cost no broker calls.
+**Stocks** has two layouts. **List** shows the watched stocks in the active group; use the search
+bar above it to find an NSE stock. The groups sidebar creates, deletes and renames lists
+(double-click a name to edit), and each group has a color chip that opens the system color picker.
+**Cards** renders every group as a card in a three-column, endlessly scrolling grid. Cards can be
+dragged to reorder (the order is saved in `watch-groups.json`), collapsed individually, and each
+carries a **+** search that adds stocks, futures, indices or options to that specific group. Adding
+to the active group also updates the live watch list; adding to another group stays local until it
+is activated. The active group is the live watch list, so switching it re-subscribes within the
+100-instrument budget.
 
 **Option chain** uses the usual quad layout: calls on the left, puts on the right, strike price in
 the middle. Each side is mirrored around the strike (trade, OI, d OI, volume, LTP, change, bid qty,
@@ -105,16 +111,19 @@ manual, never on a timer.
 or the option chain. The tabs bar shows the active target. If the instrument is not tradeable the
 app explains instead of opening a ticket.
 
-**Appearance** (More -> Appearance) offers Midnight, Graphite, Ocean, Contrast and Light themes, plus
-six accent presets and a custom accent. The choice is stored on this machine and applied before the
-first paint.
+**Appearance** (More -> Appearance) offers eleven themes - Midnight, Graphite, Ocean, Contrast,
+Light, Nord, Solarized, Tokyo Night, Forest, Plum and Sand - plus six accent presets and a custom
+accent. Selecting a theme or accent applies it live (there is no Apply button); the choice is stored
+on this machine and applied before the next first paint.
 
 ### Using it
 
 1. Double-click `h-finvasia-v<tag>.exe`.
-2. **More -> Demo feed** (or *Diagnostics -> Start demo feed*) replays a bundled capture at
-   ~120 frames/s; the watch list auto-populates from the capture.
-3. Click a row to load the snap quote; **Instruments** searches the master and adds scrips.
+2. The app restores the last watch list and, when a stored session is valid, connects the live feed
+   automatically. The UI has no demo/replay switch; bundled captures remain available to the
+   headless CLI and CI (`FV_AUTOSTART_DEMO=1`).
+3. Click a row to load the snap quote; **Instruments** searches the master and adds scrips. The
+   **Stocks -> Cards** view can also add instruments to any specific group with its **+** button.
    Search is relaxed and multi-term: `nifty 25800`, `25800 nifty`, `NIFTY 26NOV 25800` all find the
    25800-strike NIFTY contracts. Adding an instrument while **live** subscribes it on the open socket
    immediately - no reconnect, no manual refresh.
@@ -272,8 +281,10 @@ scripts/make-icon.ps1      regenerates src-tauri/icons
   unit-tested; the first live confirmation should be checked in the order book.
 - **The bottom dock is collapsed by default.** Positions/order book load only when it is opened;
   there is no polling.
-- **The Stocks search flyout is NSE cash equities only.** Groups are generic watch lists and may
-  hold indices/options added from other tabs.
+- **The Stocks list-view search flyout is NSE cash equities only.** Groups are generic watch lists:
+  the card view search (`+` on a group) deliberately searches the full master so options, futures
+  and indices can be added there. A group's non-active rows have no live quote until it is made
+  active, because only the active group owns the 100-instrument subscription budget.
 - **F1/F2 act on the last hovered row/leg.** The shortcut target is shown in the tabs bar; remapping
   keys is not configurable yet.
 - **Themes and group colours are stored on this machine** (localStorage / `watch-groups.json`).

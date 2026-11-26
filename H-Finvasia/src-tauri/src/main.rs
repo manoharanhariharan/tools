@@ -34,7 +34,7 @@ const SAMPLE_MASTER: &str = include_str!(concat!(
     "/../crates/fv-master/tests/fixtures/instruments.json"
 ));
 
-/// Bundled feed capture used by "Start demo feed".
+/// Bundled feed capture used by `FV_AUTOSTART_DEMO=1` and the headless CLI.
 const SAMPLE_FEED: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../crates/fv-feed/tests/fixtures/sample_feed.jsonl"
@@ -649,6 +649,75 @@ fn container_color(
     groups::set_color(&groups_file(&app), &name, &color)
 }
 
+/// Every group as a card with resolved instrument metadata and any quote that is
+/// already streaming. One call keeps the Stocks-tab card view cheap.
+#[tauri::command]
+fn container_cards(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Vec<fv_bridge::ContainerCardDto> {
+    let path = groups_file(&app);
+    let file = groups::read(&path);
+    let view = groups::view(&path);
+    let market = state.market.lock().unwrap();
+    view.groups
+        .into_iter()
+        .map(|group| {
+            let keys = file
+                .groups
+                .get(&group.name)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            market.container_card(&group.name, group.color, keys)
+        })
+        .collect()
+}
+
+/// Add a stock, option or other instrument to a named group. When that group is
+/// active the live watch list is updated (and re-subscribed) too.
+#[tauri::command]
+fn container_add(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    name: String,
+    key: String,
+) -> Result<groups::ContainersView, String> {
+    let key = key.trim().to_string();
+    SymbolKey::parse(&key).map_err(|e| e.to_string())?;
+    if state.market.lock().unwrap().instrument(&key).is_none() {
+        return Err(format!("instrument {key} is not in the master yet"));
+    }
+    let path = groups_file(&app);
+    let keys = groups::add_key(&path, &name, &key)?;
+    let view = groups::view(&path);
+    if view.active.as_deref() == Some(name.as_str()) {
+        apply_watch(&app, state.inner(), parse_watch_keys(&keys));
+    }
+    Ok(view)
+}
+
+/// Remove one instrument from a named group, mirroring the active watch list.
+#[tauri::command]
+fn container_remove(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    name: String,
+    key: String,
+) -> Result<groups::ContainersView, String> {
+    let path = groups_file(&app);
+    let keys = groups::remove_key(&path, &name, &key)?;
+    let view = groups::view(&path);
+    if view.active.as_deref() == Some(name.as_str()) {
+        apply_watch(&app, state.inner(), parse_watch_keys(&keys));
+    }
+    Ok(view)
+}
+
+#[tauri::command]
+fn container_reorder(app: AppHandle, order: Vec<String>) -> Result<groups::ContainersView, String> {
+    groups::reorder(&groups_file(&app), order)
+}
+
 // ---------------------------------------------------------------------------
 // Orders
 // ---------------------------------------------------------------------------
@@ -1259,6 +1328,10 @@ fn main() {
             container_rename,
             container_delete,
             container_color,
+            container_cards,
+            container_add,
+            container_remove,
+            container_reorder,
             order_defaults_get,
             order_defaults_set,
             order_target,

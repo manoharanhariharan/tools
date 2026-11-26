@@ -1,21 +1,14 @@
 ﻿<script lang="ts">
   import { untrack } from "svelte";
   import Modal from "./Modal.svelte";
-  import {
-    ACCENTS,
-    THEMES,
-    applyTheme,
-    type ThemeId,
-    type ThemeSelection,
-  } from "../theme";
+  import { ACCENTS, THEMES, applyTheme, type ThemeId } from "../theme";
 
   interface Props {
     theme: ThemeId;
     accent: string;
     onclose: () => void;
-    onsaved: (selection: ThemeSelection) => void;
   }
-  let { theme, accent, onclose, onsaved }: Props = $props();
+  let { theme, accent, onclose }: Props = $props();
 
   let selectedTheme = $state<ThemeId>(untrack(() => theme));
   let selectedAccent = $state(untrack(() => accent));
@@ -24,16 +17,15 @@
     selectedAccent = value.toUpperCase();
   }
 
-  function save() {
-    const selection = { theme: selectedTheme, accent: selectedAccent };
-    applyTheme(selection);
-    onsaved(selection);
-  }
+  // No Apply step: every click is persisted and applied to the live DOM at once.
+  $effect(() => {
+    applyTheme({ theme: selectedTheme, accent: selectedAccent });
+  });
 </script>
 
 <Modal
   title="Appearance"
-  subtitle="Pick a theme and an accent. The choice is applied immediately and remembered on this machine."
+  subtitle="Every choice applies instantly and is remembered on this machine."
   onclose={onclose}
   wide
 >
@@ -81,7 +73,7 @@
   </div>
 
   <div class="modal-actions">
-    <button class="ghost" onclick={onclose}>Cancel</button>
-    <button class="primary" onclick={save}>Apply theme</button>
+    <span class="theme-live">Applied live - already saved.</span>
+    <button class="primary" onclick={onclose}>Done</button>
   </div>
 </Modal>

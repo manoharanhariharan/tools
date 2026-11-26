@@ -18,6 +18,10 @@ pub struct GroupFile {
     /// Optional `#RRGGBB` per group, independent of the watch list.
     #[serde(default)]
     pub colors: BTreeMap<String, String>,
+    /// Display order for the group-card view. Unknown/missing names are appended
+    /// in map order so older files keep working without a migration.
+    #[serde(default)]
+    pub order: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -123,16 +127,37 @@ pub fn list(path: &Path) -> Vec<GroupSummary> {
     view(path).groups
 }
 
+/// Stored order first, then any group that has no order entry yet.
+fn ordered_names(file: &GroupFile) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for name in &file.order {
+        if file.groups.contains_key(name) && !names.contains(name) {
+            names.push(name.clone());
+        }
+    }
+    for name in file.groups.keys() {
+        if !names.contains(name) {
+            names.push(name.clone());
+        }
+    }
+    names
+}
+
+fn sync_order(file: &mut GroupFile) {
+    file.order = ordered_names(file);
+}
+
 fn view_from_file(file: &GroupFile) -> ContainersView {
     ContainersView {
         active: file.active.clone(),
-        groups: file
-            .groups
-            .iter()
-            .map(|(name, keys)| GroupSummary {
-                name: name.clone(),
-                count: keys.len(),
-                color: file.colors.get(name).cloned(),
+        groups: ordered_names(file)
+            .into_iter()
+            .filter_map(|name| {
+                file.groups.get(&name).map(|keys| GroupSummary {
+                    count: keys.len(),
+                    color: file.colors.get(&name).cloned(),
+                    name,
+                })
             })
             .collect(),
     }
@@ -187,6 +212,7 @@ pub fn ensure_default(path: &Path, current: Vec<String>) -> Result<ContainersVie
             .entry(name.clone())
             .or_insert_with(|| default_group_color(index));
     }
+    sync_order(&mut file);
     write(path, &file)?;
     Ok(view_from_file(&file))
 }
@@ -202,6 +228,7 @@ pub fn create(path: &Path, name: &str, keys: Vec<String>) -> Result<ContainersVi
     file.groups.insert(name.clone(), keys);
     file.colors.insert(name.clone(), color);
     file.active = Some(name);
+    sync_order(&mut file);
     write(path, &file)?;
     Ok(view_from_file(&file))
 }
@@ -228,8 +255,15 @@ pub fn rename(path: &Path, old: &str, new: &str) -> Result<ContainersView, Strin
         file.colors.insert(new.clone(), color);
     }
     if file.active.as_deref() == Some(old.as_str()) {
-        file.active = Some(new);
+        file.active = Some(new.clone());
     }
+    // Keep the renamed group in its current card position.
+    for slot in &mut file.order {
+        if slot == &old {
+            *slot = new.clone();
+        }
+    }
+    sync_order(&mut file);
     write(path, &file)?;
     Ok(view_from_file(&file))
 }
@@ -299,6 +333,7 @@ pub fn remove(path: &Path, name: &str) -> Result<(ContainersView, Option<String>
     } else {
         None
     };
+    sync_order(&mut file);
     write(path, &file)?;
     Ok((view_from_file(&file), next))
 }
@@ -307,6 +342,7 @@ pub fn save(path: &Path, name: &str, keys: Vec<String>) -> Result<(), String> {
     let name = validate_name(name)?;
     let mut file = read(path);
     file.groups.insert(name, keys);
+    sync_order(&mut file);
     write(path, &file)
 }
 
@@ -316,6 +352,61 @@ pub fn load(path: &Path, name: &str) -> Result<Vec<String>, String> {
         .groups
         .remove(&name)
         .ok_or_else(|| format!("group \"{name}\" does not exist"))
+}
+
+/// Append one instrument to a group, returning its resulting key list.
+pub fn add_key(path: &Path, name: &str, key: &str) -> Result<Vec<String>, String> {
+    let name = validate_name(name)?;
+    let key = key.trim();
+    if key.is_empty() {
+        return Err("instrument key is required".into());
+    }
+    let mut file = read(path);
+    let keys = file
+        .groups
+        .get_mut(&name)
+        .ok_or_else(|| format!("group \"{name}\" does not exist"))?;
+    if !keys.iter().any(|existing| existing == key) {
+        keys.push(key.to_string());
+    }
+    let result = keys.clone();
+    write(path, &file)?;
+    Ok(result)
+}
+
+/// Remove one instrument from a group, returning its resulting key list.
+pub fn remove_key(path: &Path, name: &str, key: &str) -> Result<Vec<String>, String> {
+    let name = validate_name(name)?;
+    let mut file = read(path);
+    let keys = file
+        .groups
+        .get_mut(&name)
+        .ok_or_else(|| format!("group \"{name}\" does not exist"))?;
+    keys.retain(|existing| existing != key);
+    let result = keys.clone();
+    write(path, &file)?;
+    Ok(result)
+}
+
+/// Persist the card order. The caller must send every existing group exactly
+/// once; this prevents a stale UI from dropping a group from the file.
+pub fn reorder(path: &Path, names: Vec<String>) -> Result<ContainersView, String> {
+    let mut file = read(path);
+    let mut seen = std::collections::BTreeSet::new();
+    for name in &names {
+        if !file.groups.contains_key(name) {
+            return Err(format!("group \"{name}\" does not exist"));
+        }
+        if !seen.insert(name.clone()) {
+            return Err(format!("group \"{name}\" appears twice"));
+        }
+    }
+    if seen.len() != file.groups.len() {
+        return Err("the new order must list every group".into());
+    }
+    file.order = names;
+    write(path, &file)?;
+    Ok(view_from_file(&file))
 }
 
 #[cfg(test)]
@@ -425,6 +516,63 @@ mod tests {
         assert_eq!(view.active.as_deref(), Some(DEFAULT_CONTAINER));
         assert_eq!(view.groups.len(), 1);
         assert!(remove(&path, DEFAULT_CONTAINER).is_err(), "last one stays");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn card_order_survives_reload_and_reorder() {
+        let path = temp_path("card-order");
+        ensure_default(&path, vec!["A".into()]).unwrap();
+        create(&path, "Beta", vec!["B".into()]).unwrap();
+        create(&path, "Gamma", vec!["C".into()]).unwrap();
+
+        let names: Vec<String> = view(&path).groups.iter().map(|g| g.name.clone()).collect();
+        assert_eq!(names, vec!["Watchlist", "Beta", "Gamma"]);
+
+        reorder(
+            &path,
+            vec!["Gamma".into(), "Watchlist".into(), "Beta".into()],
+        )
+        .unwrap();
+        let names: Vec<String> = view(&path).groups.iter().map(|g| g.name.clone()).collect();
+        assert_eq!(names, vec!["Gamma", "Watchlist", "Beta"]);
+
+        rename(&path, "Watchlist", "Core").unwrap();
+        let names: Vec<String> = view(&path).groups.iter().map(|g| g.name.clone()).collect();
+        assert_eq!(names, vec!["Gamma", "Core", "Beta"]);
+
+        assert!(reorder(&path, vec!["Gamma".into()]).is_err());
+        assert!(reorder(&path, vec!["Gamma".into(), "Core".into(), "Nope".into()]).is_err());
+        assert!(reorder(
+            &path,
+            vec!["Gamma".into(), "Core".into(), "Beta".into(), "Beta".into()]
+        )
+        .is_err());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn add_and_remove_keys_leave_other_groups_alone() {
+        let path = temp_path("card-keys");
+        ensure_default(&path, vec!["A".into()]).unwrap();
+        create(&path, "Options", vec!["NFO|1".into()]).unwrap();
+
+        assert_eq!(
+            add_key(&path, "Options", "NFO|158614").unwrap(),
+            vec!["NFO|1", "NFO|158614"]
+        );
+        assert_eq!(
+            add_key(&path, "Options", "NFO|158614").unwrap(),
+            vec!["NFO|1", "NFO|158614"],
+            "adding the same key twice is a no-op"
+        );
+        assert_eq!(load(&path, DEFAULT_CONTAINER).unwrap(), vec!["A"]);
+        assert_eq!(
+            remove_key(&path, "Options", "NFO|1").unwrap(),
+            vec!["NFO|158614"]
+        );
+        assert!(add_key(&path, "Missing", "NFO|1").is_err());
+        assert!(add_key(&path, "Options", "  ").is_err());
         let _ = std::fs::remove_file(path);
     }
 

@@ -1,4 +1,15 @@
-export type ThemeId = "midnight" | "graphite" | "ocean" | "contrast" | "light";
+export type ThemeId =
+  | "midnight"
+  | "graphite"
+  | "ocean"
+  | "contrast"
+  | "light"
+  | "nord"
+  | "solarized"
+  | "tokyo"
+  | "forest"
+  | "plum"
+  | "sand";
 
 export interface ThemeSpec {
   id: ThemeId;
@@ -25,6 +36,12 @@ export const THEMES: ThemeSpec[] = [
   { id: "ocean", label: "Ocean", description: "Deep navy with teal highlights", swatch: "#0b1d29" },
   { id: "contrast", label: "Contrast", description: "Black with high-contrast signals", swatch: "#000000" },
   { id: "light", label: "Light", description: "Bright paper theme", swatch: "#eef2f6" },
+  { id: "nord", label: "Nord", description: "Cool arctic blue-grey", swatch: "#3b4252" },
+  { id: "solarized", label: "Solarized", description: "Warm classic teal and sand", swatch: "#073642" },
+  { id: "tokyo", label: "Tokyo Night", description: "Indigo night with neon signals", swatch: "#1a1b26" },
+  { id: "forest", label: "Forest", description: "Deep green, calm contrast", swatch: "#102218" },
+  { id: "plum", label: "Plum", description: "Dark violet with rose accents", swatch: "#241a33" },
+  { id: "sand", label: "Sand", description: "Warm light paper theme", swatch: "#f0e8d8" },
 ];
 
 export const ACCENTS: AccentSpec[] = [

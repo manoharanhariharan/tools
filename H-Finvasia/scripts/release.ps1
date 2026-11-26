@@ -272,8 +272,8 @@ covers every executable in this folder.
 
 Double-click ``$guiArtifact``. It loads the instrument master from the local
 MongoDB (``STOCK.FINVASIA_SYMBOL``) and falls back to a bundled sample when Mongo
-is unavailable. Press **Demo feed** to see live-updating quotes without
-credentials.
+is unavailable. It restores the last watch list and connects live when a valid
+stored session exists.
 
 ## Running the CLI
 

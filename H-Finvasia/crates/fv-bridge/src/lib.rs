@@ -7,8 +7,8 @@ pub mod dto;
 pub mod market;
 
 pub use dto::{
-    ChainRowDto, DeltaDto, IndexRowDto, InstrumentDto, PlanDto, PriceDto, QuoteDto, SourceKind,
-    StatusDto, StockRowDto, Trend,
+    ChainRowDto, ContainerCardDto, ContainerRowDto, DeltaDto, IndexRowDto, InstrumentDto, PlanDto,
+    PriceDto, QuoteDto, SourceKind, StatusDto, StockRowDto, Trend,
 };
 pub use market::{
     build_label, chain_window, MarketData, DEFAULT_CHAIN_LIMIT, DEFAULT_MAX_PER_FRAME,
@@ -250,6 +250,44 @@ mod tests {
         assert_eq!(hits[0].key, "NSE|2885");
         assert!(md.search_stocks("zyduslife", 10).is_empty());
         assert!(md.search_stocks("  ", 10).is_empty());
+    }
+
+    #[test]
+    fn container_cards_keep_options_and_flag_live_members() {
+        let mut md = market();
+        md.set_master(master());
+        md.set_watch(vec![SymbolKey::parse("NSE|2885").unwrap()]);
+        apply(
+            &mut md,
+            br#"{"t":"tk","e":"NSE","tk":"2885","ts":"RELIANCE-EQ","lp":"1287.30","v":"980515"}"#,
+        );
+
+        let card = md.container_card(
+            "Mixed",
+            Some("#12AB34".into()),
+            &["NSE|2885".into(), "NFO|158614".into(), "NSE|999999".into()],
+        );
+
+        assert_eq!(card.name, "Mixed");
+        assert_eq!(card.count, 3, "the unresolved key still counts");
+        assert_eq!(card.rows.len(), 2, "unresolved keys are omitted from rows");
+        assert_eq!(card.rows[0].symbol, "RELIANCE");
+        assert!(card.rows[0].live);
+        assert_eq!(
+            card.rows[0]
+                .quote
+                .as_ref()
+                .unwrap()
+                .ltp
+                .as_ref()
+                .unwrap()
+                .text,
+            "1287.30"
+        );
+        assert_eq!(card.rows[1].symbol, "ZYDUSLIFE23FEB27P1680");
+        assert_eq!(card.rows[1].strike_type, "PE");
+        assert_eq!(card.rows[1].lot_size, 450);
+        assert!(!card.rows[1].live);
     }
 
     #[test]

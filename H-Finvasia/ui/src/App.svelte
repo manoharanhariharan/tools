@@ -19,7 +19,7 @@
   import OrderTicket from "./lib/features/chain/OrderTicket.svelte";
   import OrderDefaultsModal from "./lib/features/chain/OrderDefaultsModal.svelte";
   import ThemePicker from "./lib/components/ThemePicker.svelte";
-  import { loadTheme, type ThemeSelection } from "./lib/theme";
+  import { loadTheme } from "./lib/theme";
   import AccountStrip from "./lib/features/account/AccountStrip.svelte";
   import MarketWatch from "./lib/features/market/MarketWatch.svelte";
   import SnapQuote from "./lib/features/market/SnapQuote.svelte";
@@ -75,7 +75,6 @@
 
   const selectedQuote = $derived(selected ? (quoteMap.get(selected) ?? null) : null);
   const watchedKeys = $derived(rows.map((row) => row.key));
-  const connected = $derived(status?.connected ?? false);
 
   function syncRows() {
     rows = table.rows();
@@ -112,32 +111,6 @@
       console.warn("account summary failed", error);
     } finally {
       summaryLoading = false;
-    }
-  }
-
-  async function startDemo() {
-    activeKey = null;
-    activeLabel = "";
-    busy = true;
-    notice = null;
-    moreOpen = false;
-    try {
-      await api.startReplay(120);
-      await hydrate();
-    } catch (error) {
-      notice = `Could not start the demo feed: ${String(error)}`;
-    } finally {
-      busy = false;
-    }
-  }
-
-  async function stopFeed() {
-    notice = null;
-    moreOpen = false;
-    try {
-      await api.stopFeed();
-    } catch (error) {
-      notice = String(error);
     }
   }
 
@@ -422,9 +395,6 @@
           <button role="menuitem" onclick={() => { showOrderDefaults = true; moreOpen = false; }}>Order defaults</button>
           <button role="menuitem" onclick={() => { showTheme = true; moreOpen = false; }}>Appearance</button>
           <button role="menuitem" onclick={() => go("diagnostics")}>Diagnostics</button>
-          <div class="menu-sep"></div>
-          <button role="menuitem" disabled={busy} onclick={startDemo}>Demo feed</button>
-          <button role="menuitem" disabled={!connected} onclick={stopFeed}>Stop feed</button>
         </div>
       {/if}
     </div>
@@ -472,10 +442,8 @@
         <MarketWatch
           {rows}
           {selected}
-          {busy}
           onselect={(key) => (selected = key)}
           onremove={removeInstrument}
-          onstart={startDemo}
           onchain={openChain}
           onactive={rememberActive}
         />
@@ -490,8 +458,6 @@
         {session}
         {busy}
         {notice}
-        ondemo={startDemo}
-        onstop={stopFeed}
         onlive={startLive}
         onnotice={(message) => (notice = message)}
       />
@@ -513,16 +479,7 @@
   {/if}
 
   {#if showTheme}
-    <ThemePicker
-      {theme}
-      {accent}
-      onclose={() => (showTheme = false)}
-      onsaved={(selection: ThemeSelection) => {
-        theme = selection.theme;
-        accent = selection.accent;
-        showTheme = false;
-      }}
-    />
+    <ThemePicker {theme} {accent} onclose={() => (showTheme = false)} />
   {/if}
 
   {#if showOrderDefaults}

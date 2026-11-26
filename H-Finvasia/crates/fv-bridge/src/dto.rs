@@ -120,6 +120,37 @@ pub struct IndexRowDto {
     pub quote: Option<QuoteDto>,
 }
 
+/// One instrument inside a Stocks-tab group card. Unlike [`StockRowDto`] this
+/// keeps options, futures and indices, so a group can mix every instrument kind.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ContainerRowDto {
+    pub key: String,
+    /// Display symbol (`ACC-EQ` becomes `ACC`; options keep their full symbol).
+    pub symbol: String,
+    pub name: Option<String>,
+    pub exchange: String,
+    pub instrument_type: String,
+    pub underlying: Option<String>,
+    pub expiry: Option<String>,
+    pub strike: String,
+    pub strike_type: String,
+    pub lot_size: i64,
+    pub is_index: bool,
+    /// Subscribed through the active watch list right now.
+    pub live: bool,
+    pub quote: Option<QuoteDto>,
+}
+
+/// A named group rendered as a card. `count` is the stored member count and can
+/// exceed `rows.len()` when the local master has not loaded a key yet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ContainerCardDto {
+    pub name: String,
+    pub color: Option<String>,
+    pub count: usize,
+    pub rows: Vec<ContainerRowDto>,
+}
+
 /// One cash-equity row for the Stocks tab. The full universe comes from the
 /// local master; only watched rows carry a live quote, so browsing is free.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

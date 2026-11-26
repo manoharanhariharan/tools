@@ -1,9 +1,17 @@
 ﻿<script lang="ts">
   import { onMount } from "svelte";
-  import { api, events, type ContainersView, type StockRowDto } from "../../api";
+  import {
+    api,
+    events,
+    type ContainerCardDto,
+    type ContainersView,
+    type StockRowDto,
+  } from "../../api";
   import { formatVolume } from "../../state";
+  import { loadStocksView, saveStocksView, type StocksView } from "../../layoutPrefs";
   import EmptyState from "../../components/EmptyState.svelte";
   import ContextMenu from "../../components/ContextMenu.svelte";
+  import GroupCards from "./GroupCards.svelte";
 
   interface Props {
     watched: string[];
@@ -16,6 +24,8 @@
 
   let rows = $state<StockRowDto[]>([]);
   let containers = $state<ContainersView>({ active: null, groups: [] });
+  let cards = $state<ContainerCardDto[]>([]);
+  let view = $state<StocksView>(loadStocksView());
   let query = $state("");
   let results = $state<StockRowDto[]>([]);
   let searching = $state(false);
@@ -65,15 +75,30 @@
     }
   }
 
+  async function loadCards() {
+    try {
+      cards = await api.containerCards();
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
   async function refresh() {
     if (loading) return;
     loading = true;
     error = null;
     try {
-      await Promise.all([loadRows(), loadContainers()]);
+      await Promise.all([loadRows(), loadContainers(), loadCards()]);
     } finally {
       loading = false;
     }
+  }
+
+  function setView(next: StocksView) {
+    if (view === next) return;
+    view = next;
+    saveStocksView(next);
+    if (next === "cards") void loadCards();
   }
 
   function scheduleSearch() {
@@ -119,9 +144,54 @@
     error = null;
     try {
       await api.containerActivate(name);
-      await Promise.all([loadContainers(), loadRows()]);
+      await Promise.all([loadContainers(), loadRows(), loadCards()]);
     } catch (e) {
       error = String(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function cardAdd(group: string, key: string) {
+    if (busy) return;
+    busy = true;
+    error = null;
+    try {
+      containers = await api.containerAdd(group, key);
+      await Promise.all([loadCards(), loadRows()]);
+    } catch (e) {
+      error = String(e);
+      throw e;
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function cardRemove(group: string, key: string) {
+    if (busy) return;
+    busy = true;
+    error = null;
+    try {
+      containers = await api.containerRemove(group, key);
+      await Promise.all([loadCards(), loadRows()]);
+    } catch (e) {
+      error = String(e);
+      throw e;
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function cardReorder(next: string[]) {
+    if (busy) return;
+    busy = true;
+    error = null;
+    try {
+      containers = await api.containerReorder(next);
+      await loadCards();
+    } catch (e) {
+      error = String(e);
+      throw e;
     } finally {
       busy = false;
     }
@@ -217,6 +287,7 @@
           if (!disposed) {
             void loadRows();
             void loadContainers();
+            void loadCards();
           }
         });
         if (disposed) onWatch();
@@ -250,6 +321,20 @@
       <span class="muted">({activeCount} instruments in {active})</span>
     {/if}
     <span class="spacer"></span>
+    <div class="view-switch" role="group" aria-label="Stocks layout">
+      <button
+        type="button"
+        class:active={view === "list"}
+        aria-pressed={view === "list"}
+        onclick={() => setView("list")}>List</button
+      >
+      <button
+        type="button"
+        class:active={view === "cards"}
+        aria-pressed={view === "cards"}
+        onclick={() => setView("cards")}>Cards</button
+      >
+    </div>
     <button disabled={loading || busy} onclick={refresh}>{loading ? "Loading..." : "Refresh"}</button>
   </header>
 
@@ -263,6 +348,16 @@
     </div>
   {/if}
 
+  {#if view === "cards"}
+    <GroupCards
+      {cards}
+      active={containers.active}
+      onactivate={activate}
+      onadd={cardAdd}
+      onremove={cardRemove}
+      onreorder={cardReorder}
+    />
+  {:else}
   <div class="stocks-body">
     <aside class="containers">
       <div class="containers-head">
@@ -468,6 +563,7 @@
       </p>
     </div>
   </div>
+  {/if}
 
   {#if menu}
     <ContextMenu

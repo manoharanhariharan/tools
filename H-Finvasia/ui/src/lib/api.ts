@@ -172,6 +172,31 @@ export interface ContainersView {
   groups: GroupSummary[];
 }
 
+/** One instrument inside a group card; may be a stock, option, future or index. */
+export interface ContainerRowDto {
+  key: string;
+  symbol: string;
+  name: string | null;
+  exchange: string;
+  instrument_type: string;
+  underlying: string | null;
+  expiry: string | null;
+  strike: string;
+  strike_type: string;
+  lot_size: number;
+  is_index: boolean;
+  live: boolean;
+  quote: QuoteDto | null;
+}
+
+export interface ContainerCardDto {
+  name: string;
+  color: string | null;
+  /** Stored member count, which can exceed `rows.length` before the master loads. */
+  count: number;
+  rows: ContainerRowDto[];
+}
+
 export interface OrderTargetDto {
   key: string;
   trading_symbol: string;
@@ -298,6 +323,13 @@ export const api = {
   containerDelete: (name: string) => invoke<ContainersView>("container_delete", { name }),
   containerColor: (name: string, color: string) =>
     invoke<ContainersView>("container_color", { name, color }),
+  containerCards: () => invoke<ContainerCardDto[]>("container_cards"),
+  containerAdd: (name: string, key: string) =>
+    invoke<ContainersView>("container_add", { name, key }),
+  containerRemove: (name: string, key: string) =>
+    invoke<ContainersView>("container_remove", { name, key }),
+  containerReorder: (order: string[]) =>
+    invoke<ContainersView>("container_reorder", { order }),
   orderTarget: (key: string) => invoke<OrderTargetDto | null>("order_target", { key }),
   orderDefaultsGet: () => invoke<OrderDefaults>("order_defaults_get"),
   orderDefaultsSet: (defaults: OrderDefaults) =>

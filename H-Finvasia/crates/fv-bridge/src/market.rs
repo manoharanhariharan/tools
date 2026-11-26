@@ -1,4 +1,4 @@
-﻿//! UI-facing market state.
+//! UI-facing market state.
 //!
 //! Deliberately has **no Tauri dependency** so the whole thing is unit-testable
 //! without a webview. `src-tauri` is a thin adapter over this type.
@@ -18,8 +18,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::dto::{
-    ChainRowDto, DeltaDto, IndexRowDto, InstrumentDto, PlanDto, PriceDto, QuoteDto, SourceKind,
-    StatusDto, StockRowDto, Trend,
+    ChainRowDto, ContainerCardDto, ContainerRowDto, DeltaDto, IndexRowDto, InstrumentDto, PlanDto,
+    PriceDto, QuoteDto, SourceKind, StatusDto, StockRowDto, Trend,
 };
 
 /// Default watch budget.
@@ -318,6 +318,52 @@ impl MarketData {
             .take(limit)
             .map(|(instrument, _)| self.stock_row(instrument, master))
             .collect()
+    }
+
+    /// Resolve one stored group key into the richer card row shape. Returns
+    /// `None` when the master has not loaded that instrument yet.
+    pub fn container_row(&self, wire: &str) -> Option<ContainerRowDto> {
+        let key = SymbolKey::parse(wire).ok()?;
+        let master = self.master.as_deref()?;
+        let instrument = master.get(&key)?;
+        let symbol = if fv_master::is_cash_equity(instrument) {
+            fv_master::stock_display_symbol(instrument)
+        } else {
+            instrument.trading_symbol.trim().to_string()
+        };
+        Some(ContainerRowDto {
+            key: wire.to_string(),
+            symbol,
+            name: instrument.name.clone(),
+            exchange: key.exchange().to_string(),
+            instrument_type: instrument.instrument_type.clone(),
+            underlying: instrument.underlying.clone(),
+            expiry: instrument.expiry.clone(),
+            strike: instrument.strike.format(2),
+            strike_type: instrument.strike_type.as_str().to_string(),
+            lot_size: instrument.lot_size,
+            is_index: fv_master::is_index(instrument),
+            live: self.watch.active().contains(&key),
+            quote: self.book.get(&key).map(|q| quote_dto(q, Some(master))),
+        })
+    }
+
+    /// Build one group card. `keys` are the stored wire keys in group order.
+    pub fn container_card(
+        &self,
+        name: &str,
+        color: Option<String>,
+        keys: &[String],
+    ) -> ContainerCardDto {
+        ContainerCardDto {
+            name: name.to_string(),
+            color,
+            count: keys.len(),
+            rows: keys
+                .iter()
+                .filter_map(|key| self.container_row(key))
+                .collect(),
+        }
     }
 
     fn stock_row(&self, instrument: &Instrument, master: &MemoryMaster) -> StockRowDto {

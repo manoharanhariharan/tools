@@ -8,12 +8,10 @@
     session: SessionInfo | null;
     busy: boolean;
     notice: string | null;
-    ondemo: () => void;
-    onstop: () => void;
     onlive: () => void;
     onnotice: (message: string | null) => void;
   }
-  let { status, info, session, busy, notice, ondemo, onstop, onlive, onnotice }: Props = $props();
+  let { status, info, session, busy, notice, onlive, onnotice }: Props = $props();
 
   const connected = $derived(status?.connected ?? false);
   const sessionReady = $derived(
@@ -53,15 +51,9 @@
       <Badge label={`${status?.instruments?.toLocaleString() ?? 0} instruments`} />
       <Badge label={`${status?.watched ?? 0} watching`} />
     </div>
-    <div class="row">
-      <button class="primary" disabled={busy} onclick={ondemo}>
-        {busy ? "Starting?" : "Start demo feed (replay)"}
-      </button>
-      <button disabled={busy || !connected} onclick={onstop}>Stop feed</button>
-    </div>
     <p class="hint" style="margin-top: 10px">
-      The demo feed replays a bundled capture at ~120 frames/s so you can see the grid and
-      snap quote update without credentials or market hours.
+      The feed starts with the live session below. There is no bundled replay switch in the UI;
+      demo captures remain available to the headless CLI and CI.
     </p>
   </div>
 

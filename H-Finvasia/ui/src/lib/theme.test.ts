@@ -1,12 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { ACCENTS, isThemeId, lighten, normalizeAccent } from "./theme";
+import { ACCENTS, THEMES, isThemeId, lighten, normalizeAccent } from "./theme";
 
 describe("theme helpers", () => {
   it("accepts only known theme ids", () => {
     expect(isThemeId("midnight")).toBe(true);
     expect(isThemeId("light")).toBe(true);
+    expect(isThemeId("nord")).toBe(true);
+    expect(isThemeId("solarized")).toBe(true);
+    expect(isThemeId("tokyo")).toBe(true);
+    expect(isThemeId("forest")).toBe(true);
+    expect(isThemeId("plum")).toBe(true);
+    expect(isThemeId("sand")).toBe(true);
     expect(isThemeId("neon")).toBe(false);
     expect(isThemeId(null)).toBe(false);
+  });
+
+  it("keeps the theme catalogue unique and complete", () => {
+    const ids = THEMES.map((theme) => theme.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.length).toBeGreaterThanOrEqual(11);
+    for (const theme of THEMES) {
+      expect(theme.label.trim()).not.toBe("");
+      expect(theme.swatch).toMatch(/^#[0-9a-fA-F]{6}$/);
+    }
   });
 
   it("normalizes custom accents and rejects malformed values", () => {

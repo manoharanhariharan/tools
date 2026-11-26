@@ -126,12 +126,17 @@ rather than appearing to do nothing until its first tick.
 
 ### 4.8 Universe and ladder views are local
 
-The **Stocks** tab asks for `MarketData::watched_stock_rows()` (only the active container's NSE EQ
-symbols) and `search_stocks()` for the flyout. Browsing and searching come from the local master, so
-they cost no broker calls. Containers are named watch lists with a persisted `active` pointer;
-`watch_add`/`watch_remove` write the live list back into the active container, keeping the sidebar
-count and the watch list in sync. Switching a container replaces the watch set and re-subscribes
-within the 100-instrument budget.
+The **Stocks** list layout asks for `MarketData::watched_stock_rows()` (only the active container's
+NSE EQ symbols) and `search_stocks()` for the flyout. Browsing and searching come from the local
+master, so they cost no broker calls. The **Cards** layout calls `container_cards`, which resolves
+every stored key through `MarketData::container_row` into a mixed stock/option/future/index row and
+attaches whatever quote is already streaming. `container_add`/`container_remove` edit one named
+group; when that group is active they also reconcile the live watch set. `container_reorder` stores
+the card order in `watch-groups.json` and rejects a list that is missing or duplicating a group.
+
+Containers are named watch lists with a persisted `active` pointer; `watch_add`/`watch_remove` write
+the live list back into the active container, keeping the sidebar count and the watch list in sync.
+Switching a container replaces the watch set and re-subscribes within the 100-instrument budget.
 
 The option chain's `groupStrikes`, `pickAtm`, `windowAround`, `deltaOi`, `fillPercent` and
 `defaultTicketPrice` are pure TypeScript in `ui/src/lib/features/chain/chain.ts` and unit-tested. The
@@ -153,8 +158,10 @@ resolve through the same path. This keeps lot size, exchange, symbol and price h
 for stocks, futures and options, and lets non-live sources disable confirmation in one place.
 
 Appearance is applied before mount (`applyStoredTheme` in `main.ts`) so the first paint matches the
-saved theme. Theme/accent live in localStorage; group colours live in `watch-groups.json`. Neither
-is a broker concern.
+saved theme. The picker also applies and persists each click immediately instead of waiting for an
+Apply action. Theme/accent live in localStorage; group colours and card order live in
+`watch-groups.json`. Neither is a broker concern. The collapsed header band and per-card collapsed
+flags are UI-only localStorage preferences (`layoutPrefs.ts`), not broker or watch state.
 
 ## 5. Threading and lifecycle (src-tauri)
 
@@ -259,7 +266,8 @@ The rest of the expiry stays in the local master and is served as metadata; it i
 2. background: load master  → Mongo FINVASIA_SYMBOL, else bundled sample
               → emit status:changed + master:ready
 3. frontend: hydrate watch list + quotes + status
-4. user starts demo (replay) or live → watch set reconciled → deltas flow
+4. auto-connect adopts a valid stored session, or the user connects live → watch set reconciled →
+   deltas flow. Replay is reserved for the CLI/CI (`FV_AUTOSTART_DEMO=1`), not a UI switch.
 ```
 
 Nothing in step 1 waits on the database, so a slow or absent Mongo degrades instead of hanging the
