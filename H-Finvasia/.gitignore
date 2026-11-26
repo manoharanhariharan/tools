@@ -1,0 +1,22 @@
+# Rust build output
+/target/
+
+# Local environment / secrets
+.env
+.env.*
+*.local
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Captures that may contain live market data or account ids
+/captures/
+*.pcap
+*.saz
+
+# Local logs
+*.log

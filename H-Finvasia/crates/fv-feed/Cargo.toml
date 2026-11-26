@@ -1,0 +1,21 @@
+[package]
+name = "fv-feed"
+description = "Shoonya WebSocket protocol: framing, diff-merge, subscriptions, replay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+fv-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+tokio-tungstenite = { version = "0.30", optional = true, features = ["rustls-tls-webpki-roots"] }
+
+[features]
+default = ["ws"]
+ws = ["dep:tokio-tungstenite"]

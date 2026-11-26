@@ -1,0 +1,23 @@
+[package]
+name = "fv-master"
+description = "Instrument master: Mongo-backed load with a portable in-memory index"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+fv-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+mongodb = { workspace = true, optional = true }
+bson = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[features]
+default = []
+mongo = ["dep:mongodb", "dep:bson", "dep:futures-util", "dep:tokio"]

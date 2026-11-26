@@ -1,0 +1,13 @@
+# Captured-shape fixture for offline replay tests and benchmarks.
+# Fields and frame types mirror https://www.shoonya.com/api-documentation/subscribe-market-feed
+# Line 1 is a comment and is skipped by the replay reader.
+{"t":"ak","uid":"AB1234","s":"Ok"}
+{"t":"tk","e":"NSE","tk":"22","ts":"ACC-EQ","pp":"2","ti":"0.05","ls":"1","lp":"1287.30","pc":"0.45","o":"1280.00","h":"1291.80","l":"1278.50","c":"1275.20","ap":"1286.10","v":"980515","oi":"0","poi":"0","toi":"0","bq1":"26","bp1":"1287.25","sq1":"6325","sp1":"1287.35","ft":"1670231374"}
+{"t":"tk","e":"NSE","tk":"11630","ts":"NTPC-EQ","pp":"2","ti":"0.05","ls":"1","lp":"118.55","pc":"0.12","h":"118.65","l":"118.10","ap":"118.39","v":"162220","bp1":"118.45","sp1":"118.50","bq1":"26","sq1":"6325","ft":"1670231200"}
+{"t":"tf","e":"NSE","tk":"22","lp":"1287.40","pc":"0.46","ap":"1286.12","v":"980900","sp1":"1287.45","bq1":"40","sq1":"6280","ft":"1670231380"}
+{"t":"tf","e":"NSE","tk":"11630","lp":"118.45","ft":"1670231245"}
+{"t":"om","norenordno":"24121500001234","uid":"AB1234","actid":"AB1234","exch":"NSE","tsym":"RELIANCE-EQ","qty":"10","prc":"1272.30","pcode":"C","status":"COMPLETE","reporttype":"Fill","trantype":"B","prctyp":"LMT","ret":"DAY","fillshares":"4","avgprc":"1272.30","fltm":"09:20:41 15-12-2024","flid":"8841","flqty":"4","flprc":"1272.30","exchordid":"250620000000343421","remarks":"my_order_001"}
+{"t":"tf","e":"NSE","tk":"22","lp":"1287.35","v":"981100","ft":"1670231440"}
+{"t":"tf","e":"NSE","tk":"11630","lp":"118.60","v":"166637","ft":"1670231260"}
+{"t":"tk","e":"NFO","tk":"158614","ts":"ZYDUSLIFE23FEB27P1680","pp":"2","ti":"0.05","ls":"450","lp":"12.35","pc":"-1.20","o":"12.90","h":"13.10","l":"12.20","v":"15230","oi":"1875","poi":"1620","toi":"0","bq1":"225","bp1":"12.30","sq1":"450","sp1":"12.40","ft":"1670231300"}
+{"t":"tf","e":"NFO","tk":"158614","lp":"12.40","oi":"1900","ft":"1670231400"}

@@ -1,0 +1,41 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/fv-core",
+    "crates/fv-feed",
+    "crates/fv-master",
+    "crates/fv-store",
+    "crates/fv-engine",
+    "crates/fv-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "proprietary"
+authors = ["Hari"]
+
+[workspace.dependencies]
+fv-core = { path = "crates/fv-core" }
+fv-feed = { path = "crates/fv-feed" }
+fv-master = { path = "crates/fv-master" }
+fv-store = { path = "crates/fv-store" }
+fv-engine = { path = "crates/fv-engine" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+futures-util = "0.3"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+clap = { version = "4", features = ["derive", "env"] }
+mongodb = "3"
+bson = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
