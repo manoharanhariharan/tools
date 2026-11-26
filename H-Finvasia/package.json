@@ -1,0 +1,31 @@
+{
+  "name": "h-finvasia",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "description": "H-Finvasia desktop trading terminal",
+  "scripts": {
+    "dev": "vite --config ui/vite.config.ts",
+    "build:ui": "vite build --config ui/vite.config.ts",
+    "check": "svelte-check --tsconfig ./ui/tsconfig.json",
+    "test": "vitest run --config ui/vitest.config.ts",
+    "test:watch": "vitest --config ui/vitest.config.ts",
+    "verify": "npm run check && npm test && npm run build:ui",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build --no-bundle"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.5"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tauri-apps/cli": "^2.12.6",
+    "jsdom": "^31.0.1",
+    "svelte": "^5.59.1",
+    "svelte-check": "^4.7.8",
+    "typescript": "^5.9.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}

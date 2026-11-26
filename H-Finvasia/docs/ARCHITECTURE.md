@@ -1,8 +1,8 @@
 # Architecture
 
 Companion to [`../fv-features.md`](../fv-features.md) and [`../README.md`](../README.md).
-This document defines the crate boundaries and the invariants that keep the rewrite fast and
-cross-platform.
+This document defines the crate boundaries and the invariants that keep the rewrite fast, portable
+and testable.
 
 ## 1. Principle: separate ingest, state, render
 
@@ -12,167 +12,152 @@ The legacy terminal collapsed all three onto the WPF dispatcher. Three failures 
 2. every exchange message was written to a text log on that same path (98.5 % of log volume);
 3. order state shared a code path with market data, so a tick burst could delay an ack.
 
-The rewrite enforces the separation at the crate level:
+The rewrite enforces the separation at module boundaries:
 
 ```
- ┌───────────────┐   raw frames   ┌──────────────┐   marks    ┌─────────────┐
- │  fv-feed      │───────────────▶│  fv-engine   │───────────▶│  fv-bridge  │
- │  WS + decode  │                │  Coalescer   │  30–60 Hz  │  (Tauri)    │
- └───────┬───────┘                └──────────────┘  deltas    └─────────────┘
-         │ order frames (fast path, own channel)
-         ▼
- ┌───────────────┐
- │ order state   │  ← never blocked by market data
- └───────────────┘
-
- ┌───────────────┐   reads    ┌──────────────┐
- │  fv-master    │───────────▶│  fv-store    │──▶ MongoDB (local cache of record)
- │  instruments  │            │  trackers    │
- └───────────────┘            │  snapshots   │
-                              │  order journal│
-                              └──────────────┘
+ ┌───────────────┐   decoded frames  ┌──────────────┐    marks    ┌─────────────┐
+ │  fv-feed      │──────────────────▶│  fv-engine   │────────────▶│  fv-bridge  │
+ │  WS + decode  │                   │  Coalescer   │  30–60 Hz   │  DTOs       │
+ └───────┬───────┘                   └──────────────┘   deltas    └──────┬──────┘
+         │ order frames (fast path, own channel)                         │
+         ▼                                                               ▼
+ ┌───────────────┐                                              ┌─────────────────┐
+ │ order state   │  ← never blocked by market data              │ src-tauri       │
+ └───────────────┘                                              │ commands+events │
+                                                                └────────┬────────┘
+ ┌───────────────┐   reads    ┌──────────────┐                           │
+ │  fv-master    │───────────▶│  fv-store    │──▶ MongoDB                ▼
+ └───────────────┘            └──────────────┘   (local cache)   ┌─────────────┐
+                                                                 │ ui/ Svelte  │
+                                                                 └─────────────┘
 ```
 
-## 2. Crate responsibilities
+**The webview never parses a tick.** It receives coalesced `QuoteDto` batches only.
 
-| Crate | Owns | May depend on | Must not |
-|---|---|---|---|
-| `fv-core` | `Price` (i64, 6 dp), `SymbolKey`, `Quote`, `CoreError` | serde, thiserror | touch I/O, network, DB |
-| `fv-feed` | frame classification, decoding, `QuoteBook` merge, subscription planning, replay, WS transport | `fv-core` | own UI state, know about Mongo |
-| `fv-master` | `Instrument`, in-memory index/search/option-chain, Mongo loader | `fv-core` | decode market data |
-| `fv-store` | cache of record: trackers, snapshots, order journal | `fv-core` | decode market data, own display models |
-| `fv-engine` | `Coalescer`, `TokenBucket` | `fv-core`, `fv-feed` | perform I/O |
-| `fv-cli` | harness / measurement | all of the above | contain business rules |
-| `fv-bridge` *(planned)* | Tauri commands + batched delta events | `fv-engine` | parse frames |
-| `src-tauri` *(planned)* | window/shell lifecycle, keychain, updater | `fv-bridge` | hold domain state |
+## 2. Layers and responsibilities
 
-"Must not" is deliberate: it is what prevents the dispatcher coupling from reappearing.
+| Layer | Owns | Must not |
+|---|---|---|
+| `fv-core` | `Price` (i64, 6 dp), `SymbolKey`, `Quote`, `CoreError` | touch I/O, network, DB |
+| `fv-feed` | frame classification, decoding, `QuoteBook` merge, subscription planning, replay, WS transport | own UI state, know about Mongo |
+| `fv-master` | `Instrument`, in-memory index/search/option-chain, Mongo loader | decode market data |
+| `fv-store` | cache of record: trackers, snapshots, order journal | decode market data, own display models |
+| `fv-engine` | `Coalescer`, `TokenBucket` | perform I/O |
+| `fv-bridge` | `MarketData` state, DTOs for the UI, delta assembly | depend on Tauri, format pixels |
+| `src-tauri` | Tauri commands/events, task lifecycle, master bootstrap | contain market rules |
+| `ui/` | rendering, formatting, interaction | open sockets, parse frames, hold money as float |
+| `fv-cli` | harness / measurement | contain business rules |
 
-## 3. Invariants (each has a test)
+`fv-bridge` has **no Tauri dependency** on purpose: the entire UI-facing data path is unit-tested
+without a webview or a window server, on every platform.
 
-### 3.1 Money
+## 3. Why `src-tauri` is a separate workspace
+
+The Tauri build embeds `ui/dist` at compile time, so `cargo build` in `src-tauri` requires a built
+frontend. Keeping it out of the root workspace means:
+
+- `cargo test --workspace` stays fast and **never depends on Node**;
+- CI can run the Rust gates on a machine with no `npm`;
+- the desktop build is an explicit, separate step (`scripts/release.ps1` builds UI → desktop).
+
+Cost: two `target/` directories and a separate `cargo fmt`/`clippy` invocation. Accepted.
+
+## 4. Invariants (each has a test)
+
+### 4.1 Money
 `Price` is `i64` scaled by `1e6`. Strict parse for user input, `parse_rounded` for feed floats.
-Formatting rounds half away from zero. **No `f64` arithmetic anywhere in the domain.**
+Formatting rounds half away from zero. **No `f64` arithmetic in the domain, and no `f64` money over
+IPC either** — `PriceDto` carries a display string plus an exact `i64` for sorting.
 
-Why: the legacy `PriceConvertor` did paisa↔rupee float round-trips; 2 dp prices survive, but
-implied volatility (6 dp) and accumulated amounts do not.
-
-### 3.2 Symbol identity
+### 4.2 Symbol identity
 `SymbolKey` is `(exchange, token)` where **token is a string**. `nfo|158614` normalises to
-`NFO|158614`; `BSE|000123` keeps its leading zeros. `new()` rejects empty parts, so an invalid key
-cannot be constructed (that is why `SymbolKey` intentionally has no `Default`).
+`NFO|158614`; `BSE|000123` keeps leading zeros. `SymbolKey` deliberately has no `Default`, so an
+invalid key cannot be constructed.
 
-### 3.3 Diff merging
-The venue sends one full snapshot (`t:"tk"`) per subscription, then only changed fields (`t:"tf"`).
+### 4.3 Diff merging
+`tk` resets the quote (a resubscribe cannot leave a stale high/low); `tf` merges field-wise; a `tf`
+before any `tk` is tolerated; frames with no resolvable symbol are ignored.
 
-- `tk` **resets** the quote: previously-known fields not present in the snapshot are cleared, so a
-  resubscribe cannot leave a stale high/low behind.
-- `tf` merges field-wise; absent means "unchanged", never "zero".
-- A `tf` before any `tk` is tolerated (entry created), because ordering across a reconnect is not
-  guaranteed by the client's view.
-- Frames without a resolvable symbol, and non-quote frames, are `Applied::Ignored`.
+The venue's `c` field is the **reference close**, so it populates both `close` and `prev_close` —
+otherwise change/trend would always be blank. (Found by a test, not by inspection.)
 
-### 3.4 Order-frame isolation
+### 4.4 Order-frame isolation
 `peek_type()` reads `"t"` from the first 96 bytes without allocating (measured 0.01 µs). `om` frames
-are parsed and dispatched as order events **before** any market-data work. A malformed neighbour
-cannot poison the order path (`route_batch` isolates errors per frame).
+are dispatched before any market-data work, and a malformed neighbour cannot poison the path.
+Unknown frame types are validated as JSON and preserved, so corruption is an error while a new
+venue frame type stays observable.
 
-Unknown frame types are **validated as JSON and preserved** as `Frame::Unknown`, so corruption is an
-error while a venue-side addition is observable rather than silently dropped.
+### 4.5 Bounded work per frame
+`Coalescer` emits at most `max_per_frame` quotes per interval and carries the remainder; marks
+collapse per instrument; output order is deterministic. A key marked dirty with no quote yet is
+dropped rather than retried forever.
 
-### 3.5 Bounded work per frame
-`Coalescer` emits at most `max_per_frame` quotes per interval and carries the remainder. Marks
-collapse per instrument, so 1,000 ticks on one scrip produce one delta. Output order is deterministic
-(`BTreeSet`), which makes batches diffable and tests stable.
+### 4.6 Cache of record
+`needs_backfill()` is the single rule preventing re-querying the venue: no row → fetch; same date and
+found → skip; `found = false` retried at most 3 times, then abandoned.
 
-A key marked dirty with no quote yet is dropped from the dirty set rather than retried forever.
+### 4.7 UI state is explicit
+`QuoteTable` is plain TypeScript (no runes) and is tested with vitest. Components copy `rows()` into
+`$state` after each delta. That keeps the update path obvious and avoids a reactive graph that is
+hard to reason about at 60 Hz.
 
-### 3.6 Explicit rate budgets
-`TokenBucket` models the documented venue limits (~10 order requests/s; 1 WS connection per session).
-The app self-limits instead of collecting `Rate_Limited` errors. `wait_time()` exists so callers can
-back off precisely rather than sleeping blindly.
+Watched instruments get a **placeholder row immediately**, so adding an illiquid scrip shows up
+rather than appearing to do nothing until its first tick.
 
-### 3.7 Cache of record
-`needs_backfill()` is the single rule that prevents re-querying the venue:
+## 5. Threading and lifecycle (src-tauri)
 
-| Tracker state | Result |
-|---|---|
-| no row | fetch |
-| same date + found | skip |
-| different date | fetch |
-| found = false, retries < 3 | fetch |
-| found = false, retries ≥ 3 | **give up** (stop hammering for a non-existent symbol) |
+```
+producer task ──frames──▶ mpsc ──▶ consumer task ──deltas──▶ webview (event emit)
+   ▲                                    │
+   │ owns pacing                        └─ owns the state lock, absorbs frames,
+   │                                       flushes every 16 ms, emits status 1 Hz
+commands ── brief lock ──▶ MarketData
+```
 
-Live ticks are **never** sourced from Mongo. Mongo answers: history, master, reference data,
-and "have I already done this?".
+Rules:
 
-## 4. Cross-platform rules
+- the state lock is **never held across an `.await`**;
+- `stop_feed` aborts the producer task and signals the live socket, then resets the source;
+- starting a feed always stops the previous one first (no orphan tasks);
+- the frontend registers every event listener through one `track()` helper and unlistens all of them
+  in `onMount`'s teardown, so navigation does not leak handlers;
+- the instrument-metadata fetch uses a `cancelled` flag so a stale response cannot overwrite a newer
+  selection.
+
+The Mongo driver requires an explicit `shutdown()`; `fv-store` exposes it and the CLI calls it on
+every path. Without it the driver panics when the runtime is dropped.
+
+## 6. Cross-platform rules
 
 | Rule | Reason |
 |---|---|
-| No `cfg(windows)` outside the optional Excel crate | core must compile identically everywhere |
-| `directories` for paths, never string concat of `%APPDATA%` | `~/Library/Application Support`, `$XDG_DATA_HOME` |
+| No `cfg(windows)` outside the optional Excel crate | core compiles identically everywhere |
+| `#[cfg_attr(not(debug_assertions), windows_subsystem = "windows")]` | no stray console in release builds, logs still visible in dev |
+| `directories` for paths | `~/Library/Application Support`, `$XDG_DATA_HOME` |
 | `keyring` for secrets | Credential Manager / Keychain / Secret Service |
 | `rustls` for all TLS | identical validation and cipher behaviour per OS |
-| ship fonts | Linux may lack a UI font; never assume `Segoe UI` |
+| ship fonts / no OS font assumptions | Linux may lack a UI font |
 | UTC at the boundary | never rely on host timezone |
-| explicit little-endian if a binary format is added | 32/64-bit and endian-safe |
-| no `usize` in persisted formats | portability |
+| no `usize` in persisted formats | 32/64-bit portability |
 
-CI matrix: `windows-latest`, `macos-latest`, `ubuntu-latest` ×
-`cargo test --workspace`, `clippy -D warnings`, `fmt --check`.
-All Mongo-dependent behaviour has an in-memory equivalent, so the suite passes with no database.
-
-## 5. Data flow: startup
+## 7. Data flow: startup
 
 ```
-1. Store::from_env()                  → Mongo if reachable, else in-memory (warn, continue)
-2. MongoConfig::from_env()            → uri / db / collection
-3. load_master()                      → 182,901 docs → MemoryMaster (2.7 s measured)
-4. UI subscribes to an initial watch set
-5. WatchSet::reconcile(target)         → minimal subscribe plan
-6. run_forever(...)                    → connect, handshake, subscribe, read loop
-7. Coalescer.flush_due() @ 30–60 Hz    → DeltaBatch → Tauri event
+1. Tauri window opens immediately (no blocking work in setup)
+2. background: load master  → Mongo FINVASIA_SYMBOL, else bundled sample
+              → emit status:changed + master:ready
+3. frontend: hydrate watch list + quotes + status
+4. user starts demo (replay) or live → watch set reconciled → deltas flow
 ```
 
-Shutdown is explicit: `Store::shutdown()` joins the Mongo driver workers. Without it the driver
-panics at runtime teardown (observed and fixed — see `README.md`).
-
-## 6. Data flow: order event
-
-```
-socket → peek_kind == OrderUpdate
-      → parse::<OrderUpdate>()
-      → order channel (dedicated task)
-      → journal (Store::journal_order, idempotent on event_key)
-      → UI event (not coalesced: order state is never delayed)
-```
-
-`event_key = noren_order_no|report_type|status|fill_id` makes reconnect replays idempotent while
-still distinguishing multiple partial fills of one order.
-
-## 7. Mongo collections used
-
-See `fv-features.md` §7.9 for counts, shapes and index findings. Summary:
-
-| Collection | Direction | Purpose |
-|---|---|---|
-| `FINVASIA_SYMBOL` | read | primary master (`token` as string) |
-| `INSTRUMENT` | read (cross-ref) | Kite-shaped master (`instrument_token` numeric) |
-| `SNAPSHOT_INTRADAY` | read/write | intraday OHLC/OI cache |
-| `DATA_STORED_TRACKER` | read/write | backfill ledger |
-| `FV_ORDERS` | write | order event journal (app-owned) |
-| `EXPIRY_LOT_DETAILS`, `HOLIDAY_LIST`, `SCRIP` | read | reference data |
-
-The two master shapes are normalised through one mapping function with type-tolerant field access
-(Int32/Int64/Double/String/DateTime all accepted), because the same logical field has different
-physical types in each collection.
+Nothing in step 1 waits on the database, so a slow or absent Mongo degrades instead of hanging the
+window.
 
 ## 8. What is deliberately absent
 
-- **No CozyMQ client.** Decision record DR-1: the official WS API. This removed a 5,485-field
-  protobuf schema recovery and an access-control question.
-- **No protobuf.** Documented JSON with a cheap discriminator beats an undocumented binary protocol
-  that only one vendor implementation understands.
-- **No UI in Phase 0/1.** Adding a webview now would invite the exact "parse on the UI thread" mistake
-  this architecture exists to prevent.
+- **No CozyMQ client** (decision record DR-1): the official WS API removed a 5,485-field protobuf
+  recovery and an access-control question.
+- **No protobuf**: documented JSON with a cheap discriminator beats an undocumented binary protocol.
+- **No order entry yet**: it needs the REST client and an authorised session. It is shown as
+  explicitly pending rather than faked, because a button that cannot place an order is worse than no
+  button.

@@ -113,7 +113,10 @@ fn merge(q: &mut Quote, t: &Touchline) {
         q.low = t.low;
     }
     if t.close.is_some() {
+        // The venue's `c` is the reference close used for the day's change, so
+        // mirror it into `prev_close`. Without this, change/pct render blank.
         q.close = t.close;
+        q.prev_close = t.close;
     }
     if t.avg_price.is_some() {
         q.avg_price = t.avg_price;
@@ -224,6 +227,16 @@ mod tests {
             book.get(&key("NSE|22")).unwrap().ltp.unwrap().format(2),
             "99.00"
         );
+    }
+
+    #[test]
+    fn reference_close_populates_prev_close_for_change() {
+        let mut book = QuoteBook::new();
+        let f = parse(br#"{"t":"tk","e":"NSE","tk":"1","lp":"101.50","c":"100.00"}"#).unwrap();
+        book.apply(&f, 1);
+        let q = book.get(&key("NSE|1")).unwrap();
+        assert_eq!(q.prev_close.unwrap().format(2), "100.00");
+        assert_eq!(q.change().unwrap().format(2), "1.50");
     }
 
     #[test]

@@ -881,16 +881,41 @@ Phase 0/1 is implemented and verified ([`README.md`](README.md), [`docs/ARCHITEC
 | Crate | Scope | Tests |
 |---|---|---|
 | `fv-core` | `Price` (i64, 6 dp), `SymbolKey`, `Quote` | 17 |
-| `fv-feed` | frame classify/decode, `QuoteBook` diff-merge, subscription batching, replay, WS transport + backoff | 37 |
+| `fv-feed` | frame classify/decode, `QuoteBook` diff-merge, subscription batching, replay, WS transport + backoff | 38 |
 | `fv-master` | `MemoryMaster` index/search/option-chain, Mongo loader (both collection shapes) | 14 |
 | `fv-store` | memory + Mongo backends, tracker freshness rule, snapshot upsert, order journal | 16 |
 | `fv-engine` | `Coalescer` (bounded, deterministic), `TokenBucket` (venue limits) | 12 |
-| `fv-cli` | build-date calendar + CLI contract as a real process (`--version`, `--help`, offline `replay`) | 8 |
-| **Total** | | **104** |
+| `fv-bridge` | `MarketData` state, watch diffing, DTO formatting, trend/placeholder rules | 13 |
+| `fv-cli` | build-date calendar + CLI contract as a real process | 8 |
+| `ui/` | formatting + `QuoteTable` merge/prune/placeholder (vitest) | 14 |
+| **Total** | | **132** |
 
-Gates: `cargo test --workspace` (104 pass), `cargo clippy --workspace --all-targets -- -D warnings`
-(clean), `cargo fmt --check` (clean). Shipped as `h-finvasia.exe` via `scripts/release.ps1` into
-`releases/`.
+Gates: `cargo test --workspace` (118 Rust), `npm test` (14 UI), `cargo clippy --workspace
+--all-targets -- -D warnings`, `cargo fmt --check`, `svelte-check` (0 errors/warnings).
+Shipped via `scripts/release.ps1` into `releases/` as a desktop app plus a CLI.
+
+### Phase 2a — desktop UI (implemented)
+
+`fv-bridge` + `src-tauri` + `ui/` add a Tauri 2 window over the same engine:
+
+| Piece | Behaviour |
+|---|---|
+| Market watch | coalesced deltas, trend colouring, placeholder row immediately on add |
+| Snap quote | merged quote + instrument metadata, read-only (order entry is Phase 2b) |
+| Instruments | debounced master search (Mongo, else bundled sample) and watch add/remove |
+| Diagnostics | backend, frame rate, decode errors, demo/live feed controls |
+| Status bar | source, backend, instrument count, watch budget, frames/s, build |
+
+Threading: one producer → one consumer that owns the state lock → 60 Hz delta events. The lock is
+never held across an `.await`, `stop_feed` aborts the producer, and the frontend releases every
+listener on teardown.
+
+Two defects were caught by the new tests:
+
+1. **`c` was never mapped to `prev_close`**, so change/trend would have rendered blank for every
+   instrument. The venue's `c` is the reference close; it now populates both.
+2. **A watched instrument had no row until its first tick**, so adding an illiquid scrip looked like
+   a no-op. `QuoteTable` now inserts a placeholder row immediately.
 
 Notable defects found and fixed during implementation — each is a class of bug the legacy code had:
 

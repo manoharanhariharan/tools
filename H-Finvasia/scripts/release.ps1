@@ -1,8 +1,12 @@
 # Release task for H-Finvasia.
 #
 # Same shape as h-compare's release task: run the quality gates, commit source,
-# build the release binary, publish the portable executable under releases/ with
-# BUILD.txt + SHA256SUMS.txt + README.md, commit the release artifacts and push.
+# build the release binaries, publish them under releases/ with BUILD.txt +
+# SHA256SUMS.txt + README.md, commit the release artifacts and push.
+#
+# Two artifacts are produced:
+#   h-finvasia-v<tag>.exe      <- desktop app (double-click this)
+#   h-finvasia-cli-v<tag>.exe  <- headless harness
 #
 # Deviation from the sibling tools on purpose: artifacts go to `releases/`
 # (H-Compare and H-Remote use `publish/`). Keep this folder committed.
@@ -26,6 +30,13 @@ $ErrorActionPreference = "Stop"
 $toolName = "h-finvasia"
 $folder = "H-Finvasia"
 
+function Invoke-Step {
+    param([string]$Label, [scriptblock]$Action)
+    Write-Host "==> $Label"
+    & $Action
+    if ($LASTEXITCODE -ne 0) { throw "$Label failed with exit code $LASTEXITCODE." }
+}
+
 function Get-BuildDate {
     param([string]$Exe)
     $versionText = (& $Exe --version).Trim()
@@ -40,12 +51,10 @@ function Get-BuildDate {
 }
 
 function Get-NextVersion {
-    param(
-        [string]$ReleaseDir,
-        [string]$Stamp
-    )
+    param([string]$ReleaseDir, [string]$Stamp)
     $next = 1
     if (Test-Path $ReleaseDir) {
+        # Matches the desktop name only; `h-finvasia-cli-v...` does not collide.
         $pattern = "^$([regex]::Escape($toolName))-v$([regex]::Escape($Stamp))\.(\d+)\.exe$"
         foreach ($file in Get-ChildItem $ReleaseDir -Filter "$toolName-v$Stamp.*.exe") {
             $match = [regex]::Match($file.Name, $pattern)
@@ -67,28 +76,38 @@ try {
     }
     $releases = Join-Path $root "releases"
 
-    # Windows keeps the release binary locked while it is running.
-    Get-Process $toolName -ErrorAction SilentlyContinue | Stop-Process -Force
+    # Windows keeps the binaries locked while they are running.
+    Get-Process "h-finvasia", "h-finvasia-desktop" -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Milliseconds 300
 
     if (-not $SkipTests) {
-        Write-Host "==> cargo fmt --all -- --check"
-        cargo fmt --all -- --check
-        if ($LASTEXITCODE -ne 0) { throw "Formatting check failed." }
-
-        Write-Host "==> cargo clippy --workspace --all-targets"
-        cargo clippy --workspace --all-targets -- -D warnings
-        if ($LASTEXITCODE -ne 0) { throw "Clippy failed." }
-
-        Write-Host "==> cargo test --workspace"
-        cargo test --workspace
-        if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
+        if (-not (Test-Path (Join-Path $root "node_modules"))) {
+            throw "node_modules is missing. Run 'npm install' before releasing."
+        }
+        Invoke-Step "npm run check" { npm run check }
+        Invoke-Step "npm test" { npm test }
+        Invoke-Step "cargo fmt --all -- --check" { cargo fmt --all -- --check }
+        Invoke-Step "cargo clippy --workspace" { cargo clippy --workspace --all-targets -- -D warnings }
+        Invoke-Step "cargo test --workspace" { cargo test --workspace }
     } else {
         Write-Host "==> quality gates skipped (-SkipTests)"
     }
 
-    # Commit source before building, so BUILD.txt names a real, clean commit and
-    # the shipped binary corresponds to committed code.
+    # The desktop build embeds ui/dist at compile time, so this is required even
+    # when tests are skipped.
+    Invoke-Step "npm run build:ui" { npm run build:ui }
+
+    Push-Location (Join-Path $root "src-tauri")
+    try {
+        if (-not $SkipTests) {
+            Invoke-Step "cargo fmt (src-tauri)" { cargo fmt -- --check }
+            Invoke-Step "cargo clippy (src-tauri)" { cargo clippy --all-targets -- -D warnings }
+        }
+    } finally {
+        Pop-Location
+    }
+
+    # Commit source before building, so BUILD.txt names a real, clean commit.
     $untracked = @(
         & git -C $repoRoot ls-files --others --exclude-standard -- $folder |
             Where-Object { $_ -notmatch "^$folder/releases/" }
@@ -119,13 +138,21 @@ try {
         Write-Host "No source changes to commit."
     }
 
-    Write-Host "==> cargo build --release"
-    cargo build --release --workspace
-    if ($LASTEXITCODE -ne 0) { throw "Release build failed." }
+    Invoke-Step "cargo build --release (workspace)" { cargo build --release --workspace }
 
-    $exe = Join-Path $root "target\release\$toolName.exe"
-    if (-not (Test-Path $exe)) { throw "Release binary not found at $exe." }
-    $build = Get-BuildDate $exe
+    Push-Location (Join-Path $root "src-tauri")
+    try {
+        Invoke-Step "cargo build --release (desktop)" { cargo build --release }
+    } finally {
+        Pop-Location
+    }
+
+    $cliExe = Join-Path $root "target\release\$toolName.exe"
+    $guiExe = Join-Path $root "src-tauri\target\release\$toolName-desktop.exe"
+    if (-not (Test-Path $cliExe)) { throw "CLI binary not found at $cliExe." }
+    if (-not (Test-Path $guiExe)) { throw "Desktop binary not found at $guiExe." }
+
+    $build = Get-BuildDate $cliExe
     $stamp = $build.Date.Substring(2).Replace("-", ".")
 
     if ([string]::IsNullOrWhiteSpace($Version)) {
@@ -135,15 +162,20 @@ try {
     }
 
     New-Item -ItemType Directory -Force -Path $releases | Out-Null
-    $artifact = "$toolName-$Version.exe"
-    $artifactPath = Join-Path $releases $artifact
-    Copy-Item $exe $artifactPath -Force
+    $guiArtifact = "$toolName-$Version.exe"
+    $cliArtifact = "$toolName-cli-$Version.exe"
+    $guiPath = Join-Path $releases $guiArtifact
+    $cliPath = Join-Path $releases $cliArtifact
+    Copy-Item $guiExe $guiPath -Force
+    Copy-Item $cliExe $cliPath -Force
 
-    $hash = (Get-FileHash $artifactPath -Algorithm SHA256).Hash.ToLower()
-    $size = (Get-Item $artifactPath).Length
+    $guiHash = (Get-FileHash $guiPath -Algorithm SHA256).Hash.ToLower()
+    $guiSize = (Get-Item $guiPath).Length
+    $cliHash = (Get-FileHash $cliPath -Algorithm SHA256).Hash.ToLower()
+    $cliSize = (Get-Item $cliPath).Length
 
-    # Keep checksums for every published portable executable.
-    Get-ChildItem $releases -Filter "$toolName-v*.exe" |
+    # Keep checksums for every published executable.
+    Get-ChildItem $releases -Filter "*.exe" |
         Sort-Object Name |
         ForEach-Object {
             "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
@@ -156,6 +188,7 @@ try {
     $commit = (& git -C $repoRoot rev-parse --short HEAD).Trim()
     $rustc = (& rustc --version).Trim()
     $cargo = (& cargo --version).Trim()
+    $node = (& node --version).Trim()
     $buildVersion = $Version.TrimStart("v")
     @"
 H-Finvasia release build
@@ -167,45 +200,59 @@ dirty: false
 built: $built
 rustc: $rustc
 cargo: $cargo
+node: $node
 signed: no
 target: $([System.Runtime.InteropServices.RuntimeInformation]::OSDescription.Trim()) / $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)
 
 artifacts:
-$hash $size $artifact
+$guiHash $guiSize $guiArtifact (desktop app)
+$cliHash $cliSize $cliArtifact (headless CLI)
 "@ | Set-Content -Encoding ascii (Join-Path $releases "BUILD.txt")
 
-    $readmeHeader = @"
+    $readme = @"
 # Released builds
 
-Committed, ready-to-run portable executables for H-Finvasia. ``BUILD.txt`` records
-the source commit, toolchain and build time for the current build, and
-``SHA256SUMS.txt`` covers every executable in this folder.
+Committed, ready-to-run builds for H-Finvasia. ``BUILD.txt`` records the source
+commit, toolchain and build time for the current build, and ``SHA256SUMS.txt``
+covers every executable in this folder.
 
 ## Current
 
-| File | Size | SHA-256 |
-| --- | ---: | --- |
-| ``$artifact`` | $size | ``$hash`` |
+| File | Kind | Size | SHA-256 |
+| --- | --- | ---: | --- |
+| ``$guiArtifact`` | **desktop app** (double-click) | $guiSize | ``$guiHash`` |
+| ``$cliArtifact`` | headless CLI | $cliSize | ``$cliHash`` |
 
-## Running
+## Running the desktop app
+
+Double-click ``$guiArtifact``. It loads the instrument master from the local
+MongoDB (``STOCK.FINVASIA_SYMBOL``) and falls back to a bundled sample when Mongo
+is unavailable. Press **Demo feed** to see live-updating quotes without
+credentials.
+
+## Running the CLI
 
 ``````powershell
-.\$artifact doctor
-.\$artifact master stats
+.\$cliArtifact doctor
+.\$cliArtifact master stats
 ``````
 
-Requires a local MongoDB (``FV_MONGO_URI``, default ``mongodb://127.0.0.1:27017``)
-for the ``master`` commands; ``doctor``, ``replay`` and ``bench`` work without it.
+``master`` needs a local MongoDB (``FV_MONGO_URI``, default
+``mongodb://127.0.0.1:27017``); ``doctor``, ``replay`` and ``bench`` do not.
+
+## A note on older files
+
+``h-finvasia-v*.exe`` builds **before** ``$Version`` were CLI-only (the UI did not
+exist yet). From ``$Version`` the unqualified name is the desktop app and the CLI
+is suffixed ``-cli``.
 
 ## Adding a build
 
 ``````powershell
 .\scripts\release.ps1
 ``````
-
-Old executables are intentionally kept until the maintainer removes them.
 "@
-    Set-Content -Encoding ascii (Join-Path $releases "README.md") $readmeHeader
+    Set-Content -Encoding ascii (Join-Path $releases "README.md") $readme
 
     Write-Host "==> commit and push release artifacts"
     & git -C $repoRoot add "$folder/releases"
@@ -224,9 +271,10 @@ Old executables are intentionally kept until the maintainer removes them.
     }
 
     Write-Host ""
-    Write-Host "Published $artifact"
-    Write-Host "SHA256   $hash"
-    Write-Host "Size     $size bytes"
+    Write-Host "Published $guiArtifact   (desktop)"
+    Write-Host "SHA256   $guiHash"
+    Write-Host "Published $cliArtifact   (CLI)"
+    Write-Host "SHA256   $cliHash"
     Write-Host "Build    $($build.Text)"
     Write-Host "Folder   $releases"
 } finally {

@@ -1,5 +1,11 @@
 # Rust build output
 /target/
+/src-tauri/target/
+
+# Node / frontend build output
+/node_modules/
+/ui/node_modules/
+/ui/dist/
 
 # Local environment / secrets
 .env

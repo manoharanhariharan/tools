@@ -560,8 +560,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "fv-bridge"
+version = "0.2.0"
+dependencies = [
+ "fv-core",
+ "fv-engine",
+ "fv-feed",
+ "fv-master",
+ "serde",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "fv-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "fv-core",
@@ -577,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "fv-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "thiserror",
@@ -585,7 +598,7 @@ dependencies = [
 
 [[package]]
 name = "fv-engine"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "fv-core",
  "fv-feed",
@@ -593,7 +606,7 @@ dependencies = [
 
 [[package]]
 name = "fv-feed"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "futures-util",
  "fv-core",
@@ -607,7 +620,7 @@ dependencies = [
 
 [[package]]
 name = "fv-master"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bson",
  "futures-util",
@@ -622,7 +635,7 @@ dependencies = [
 
 [[package]]
 name = "fv-store"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bson",
  "futures-util",

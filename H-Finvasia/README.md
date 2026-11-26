@@ -3,8 +3,8 @@
 Cross-platform rewrite of the Finvasia/Shoonya **NorenTrader (UFT)** dealer terminal, built on the
 in-house stack: **Tauri 2 + Rust workspace + Svelte 5**.
 
-> **Read [`fv-features.md`](fv-features.md) first.** It contains the reverse-engineering findings,
-> the full feature inventory for migration, the bottleneck analysis, the transport decision, and the
+> **Read [`fv-features.md`](fv-features.md) first.** It contains the reverse-engineering findings, the
+> full feature inventory for migration, the bottleneck analysis, the transport decision, and the
 > local-MongoDB data model. This file covers the code that exists today.
 
 ---
@@ -13,173 +13,174 @@ in-house stack: **Tauri 2 + Rust workspace + Svelte 5**.
 
 | Layer | State |
 |---|---|
-| `fv-core` — money, symbol keys, quotes | ✅ implemented + tested |
-| `fv-feed` — WS framing, diff-merge, subscriptions, replay, live transport | ✅ implemented + tested |
-| `fv-master` — Mongo-backed instrument master + in-process index | ✅ implemented + tested |
-| `fv-store` — Mongo cache: trackers, snapshots, order journal | ✅ implemented + tested |
-| `fv-engine` — tick coalescing, order-rate budget | ✅ implemented + tested |
-| `fv-cli` — headless harness, ships as **`h-finvasia`** (`replay`, `bench`, `master`, `doctor`, `feed`) | ✅ working |
-| `fv-bridge` + `src-tauri` + `ui/` | ⬜ not started (Phase 2) |
-| `fv-market` — REST client | ⬜ not started |
+| `fv-core` — money, symbol keys, quotes | ✅ |
+| `fv-feed` — WS framing, diff-merge, subscriptions, replay, live transport | ✅ |
+| `fv-master` — Mongo-backed instrument master + in-process index | ✅ |
+| `fv-store` — Mongo cache: trackers, snapshots, order journal | ✅ |
+| `fv-engine` — tick coalescing, order-rate budget | ✅ |
+| `fv-bridge` — UI-facing market state + DTOs (no Tauri dependency) | ✅ |
+| `src-tauri` — Tauri 2 desktop shell | ✅ |
+| `ui/` — Svelte 5 terminal UI | ✅ (market watch, snap quote, search, diagnostics) |
+| `fv-cli` — headless harness | ✅ |
+| `fv-market` — REST client | ⬜ Phase 2b |
+| Order entry / books / holdings | ⬜ Phase 2b (needs OAuth session) |
 
-This is the **Phase 0/1 foundation**: everything performance-critical and everything that talks to the
-local database. There is deliberately no UI yet — the design goal is that when the UI arrives it
-cannot re-introduce the old terminal's bottlenecks.
+**What works today:** the desktop app launches, loads 182k instruments from your local Mongo (or a
+bundled sample), and shows a live-updating market watch + snap quote fed by a replay capture — no
+credentials required. Search, watch-list editing and diagnostics are wired to the real engine.
 
-Verified on Windows 11 / Rust 1.99 against the live local MongoDB 4.4.2.
+**What does not:** order placement, order/trade/position books, holdings. A button that cannot place
+an order is worse than no button, so those are shown as explicitly pending rather than faked.
+
+---
+
+## Desktop app
+
+### Prerequisites
+
+- Rust 1.85+ (workspace pins `rust-version`)
+- Node 20+ (built against Node 24)
+- MongoDB on `127.0.0.1:27017` (optional — the app degrades to a bundled sample)
+- WebView2 (preinstalled on Windows 10/11; the shipped Finvasia terminal uses it too)
+
+### Run in development
+
+```bash
+cd C:\public-repo\tools\H-Finvasia
+npm install            # once
+npm run tauri:dev      # builds Rust + starts Vite + opens the window
+```
+
+First run compiles the Tauri dependency tree, so expect several minutes. Later runs are fast.
+
+### Build a release app
+
+```bash
+npm install
+npm run build:ui                      # frontend -> ui/dist
+cd src-tauri
+cargo build --release
+```
+
+The executable lands at `src-tauri/target/release/h-finvasia-desktop.exe` and runs standalone.
+
+`scripts/release.ps1` does all of this and publishes to `releases/`.
+
+### Using it
+
+1. Double-click `h-finvasia-v<tag>.exe`.
+2. **Demo feed** in the top bar (or *Diagnostics → Start demo feed*) replays a bundled capture at
+   ~120 frames/s; the watch list auto-populates from the capture.
+3. Click a row to load the snap quote; **Instruments** searches the master and adds scrips.
+4. **Diagnostics** shows backend (`mongo` vs `in-memory`), frame rate, decode errors, and the live
+   connect form.
+
+For live data set `FV_ACCESS_TOKEN` before launching, add scrips to the watch list, then connect from
+Diagnostics.
 
 ---
 
 ## Releases
 
-`scripts/release.ps1` follows the repo standard (same shape as `h-compare`):
-
 ```powershell
 .\scripts\release.ps1 -Message "feat(h-finvasia): ..."
 .\scripts\release.ps1 -SkipTests -NoPush
-.\scripts\release.ps1 -IncludeUntracked     # first release / new files
 ```
 
-It runs the quality gates, commits source, builds `target/release/h-finvasia.exe`, copies it to
-**`releases/`** as `h-finvasia-v<yy.MM.dd>.<n>.exe`, writes `BUILD.txt`, `SHA256SUMS.txt` and
-`README.md`, then commits and pushes.
+Runs frontend + Rust gates, commits source, builds both binaries, publishes to **`releases/`**:
 
-> The output folder is `releases/` by request; the sibling tools use `publish/`. Same contents, same
-> committed-artifact convention.
+| Artifact | What it is |
+|---|---|
+| `h-finvasia-v<tag>.exe` | **desktop app** — double-click |
+| `h-finvasia-cli-v<tag>.exe` | headless CLI |
 
-Published binaries report their build date, which the script reads back to name the artifact:
-
-```powershell
-.\releases\h-finvasia-v26.11.26.1.exe --version
-# h-finvasia 0.1.0 build 2026-11-26
-```
+plus `BUILD.txt`, `SHA256SUMS.txt`, `README.md`. (Sibling tools use `publish/`; `releases/` is a
+deliberate choice for this project.)
 
 ---
 
-## Quick start
+## CLI
 
 ```bash
-cargo test --workspace          # 104 tests, no network, no database required
-cargo run -p fv-cli -- doctor   # platform + feature + data-source self-check
+cargo run -p fv-cli -- doctor
+cargo run -p fv-cli -- master stats
+cargo run -p fv-cli -- master search RELIANCE --limit 10
+cargo run -p fv-cli -- master chain NIFTY --expiry 2026-12-01
+cargo run -p fv-cli -- replay crates/fv-feed/tests/fixtures/sample_feed.jsonl
+cargo run -p fv-cli -- bench  crates/fv-feed/tests/fixtures/sample_feed.jsonl --iters 20000
 ```
 
-### Query the instrument master (needs the local `STOCK` database)
-
-```bash
-cargo run --release -p fv-cli -- master stats
-cargo run --release -p fv-cli -- master search RELIANCE --limit 5
-cargo run --release -p fv-cli -- master chain NIFTY --expiry 2026-12-01
-```
-
-Measured on this machine against `STOCK.FINVASIA_SYMBOL`:
+Measured against `STOCK.FINVASIA_SYMBOL` on this machine:
 
 | Operation | Result |
 |---|---|
 | load 182,901 instruments | **2.69 s** (release) |
 | distinct underlyings | 19,442 |
-| `search RELIANCE` | 5 ranked hits, exact → prefix |
 | `chain NIFTY 2026-12-01` | 550 legs, strike-ordered |
-
-### Replay and benchmark a capture
-
-```bash
-cargo run --release -p fv-cli -- replay crates/fv-feed/tests/fixtures/sample_feed.jsonl
-cargo run --release -p fv-cli -- bench  crates/fv-feed/tests/fixtures/sample_feed.jsonl --iters 20000
-```
-
-Measured throughput (release, x86-64):
-
-| Stage | Rate | Per frame |
-|---|---|---|
-| classify (`t`-field fast path) | 105,235,464 ops/s | 0.01 µs |
-| parse only | 266,451 ops/s | 3.75 µs |
-| parse + merge | 225,849 ops/s | 4.43 µs (46.8 MB/s) |
-
-At 5,000 frames/s the ingest path costs **~22 ms of CPU per second (~2 % of one core)**. The
-order-frame fast path is effectively free, which is what protects order-ack latency during a tick
-burst (see `fv-features.md` §7.6).
-
-### Live feed (needs OAuth credentials)
-
-```bash
-export FV_ACCESS_TOKEN=...         # never pass secrets as CLI args in shell history
-cargo run --release -p fv-cli -- feed \
-  --uid AB1234 --actid AB1234 \
-  --scrips NSE|2885,NFO|158614 \
-  --frames 20
-```
+| parse + merge throughput | 225,849 frames/s (4.43 µs/frame) |
+| order-frame fast path | 0.01 µs/frame |
 
 ---
 
 ## Configuration
 
-Everything is environment-driven so macOS/Linux developers need no code changes.
-
 | Variable | Default | Meaning |
 |---|---|---|
-| `FV_MONGO_URI` | `mongodb://127.0.0.1:27017` | Cache/master database |
+| `FV_MONGO_URI` | `mongodb://127.0.0.1:27017` | Master + cache database |
 | `FV_MONGO_DB` | `STOCK` | Database name |
 | `FV_MONGO_MASTER_COLLECTION` | `FINVASIA_SYMBOL` | Master collection |
 | `FV_ACCESS_TOKEN` | — | OAuth access token for the live feed |
 | `RUST_LOG` | `info` | `tracing` filter |
 
-Collection names for the cache layer (`DATA_STORED_TRACKER`, `SNAPSHOT_INTRADAY`, `FV_ORDERS`) are
-overridable in code via `MongoStore::with_collections`.
-
-**No credentials are ever read from disk.** The transport takes a token from the caller; the Tauri
-shell will source it from the OS keychain (`keyring`).
+**No credentials are read from disk.** The token comes from the environment; the planned keychain
+integration will replace that without changing call sites.
 
 ---
 
-## Cross-platform
-
-The core crates contain **zero** OS-specific code. Build and test on all three:
+## Tests and quality gates
 
 ```bash
-cargo test --workspace          # Windows / macOS / Linux
+cargo test --workspace                       # Rust core (no Node, no Mongo needed)
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
+npm run check && npm test                    # svelte-check + vitest
+npm run build:ui
 ```
 
-Determinism rules enforced by design (and by tests):
-
-- money is `i64` fixed-point at 6 dp (`fv_core::Price`), never `f64` — no paisa↔rupee float drift;
-- symbol identity is `EXCHANGE|TOKEN` with the **token as a string** (leading zeros survive);
-- timestamps are UTC at the boundary; IST is a display concern;
-- search and delta batches have deterministic ordering, so output never depends on hash iteration.
-
-Windows-only features (the Excel XLL/RTD bridge) are planned behind `cfg(windows)` and excluded from
-default builds. TLS is `rustls` everywhere for identical behaviour.
+`src-tauri` is a **separate workspace** so the Rust gates never require a built frontend; it is
+formatted/linted/tested separately (see `docs/ARCHITECTURE.md` §3).
 
 ---
 
 ## Layout
 
 ```
-Cargo.toml                 workspace
+Cargo.toml                 core workspace (crates/*)
 crates/
   fv-core/                 Price, SymbolKey, Quote, errors
   fv-feed/                 frame parsing, QuoteBook merge, subscriptions, replay, WS
-    tests/fixtures/        sample_feed.jsonl (captured-shape frames)
+    tests/fixtures/        sample_feed.jsonl
   fv-master/               Instrument, MemoryMaster index, Mongo loader
   fv-store/                Store (memory | mongo), trackers, snapshots, order journal
   fv-engine/               Coalescer, TokenBucket
+  fv-bridge/               MarketData + UI DTOs (no Tauri)
   fv-cli/                  harness -> binary `h-finvasia`
+src-tauri/                 Tauri 2 desktop shell (separate workspace)
+ui/                        Svelte 5 + Vite
 fv-features.md             reverse engineering + migration plan (source of truth)
-docs/ARCHITECTURE.md       crate responsibilities, data flow, invariants
-releases/                  committed portable executables (release.ps1 output)
-scripts/release.ps1        quality gates -> build -> publish -> commit -> push
+docs/ARCHITECTURE.md       boundaries, invariants, threading, cross-platform rules
+releases/                  committed builds
+scripts/release.ps1        gates -> build -> publish -> commit -> push
+scripts/make-icon.ps1      regenerates src-tauri/icons
 ```
 
 ## Known limitations
 
-- **No live-credential test yet.** `run_session` is exercised by unit tests (routing, backoff,
-  handshake JSON) but not against the venue; that needs a real token.
-- **Depth feed is not modelled.** Only documented frame types are typed; anything else surfaces as
-  `Frame::Unknown` rather than being dropped, so the addition is observable.
-- **Master load is 2.7 s**, not <1 s. The cost is Mongo cursor iteration + BSON→struct mapping;
-  switching to `RawDocumentBuf` zero-copy reads or a cached binary snapshot is the next optimisation.
-- **MongoDB 4.4.2 is EOL.** Driver 3.10 works today; the plan is 7.x. The repository layer avoids
-  version-specific features so both work.
-- **Local Mongo has dead indexes** (e.g. `INSTRUMENT` indexes on `tradingSymbol` while documents use
-  `tradingsymbol`). See `fv-features.md` §7.9 for the verification-and-drop procedure.
+- **Order entry is absent**, not stubbed (Phase 2b).
+- **Live feed is untested end-to-end** — needs OAuth app registration. The transport, routing and
+  backoff logic are unit-tested; the venue handshake is not.
+- **Master load is 2.7 s**, not the <1 s target. Next step: `RawDocumentBuf` zero-copy reads.
+- **MongoDB 4.4.2 is EOL**; driver 3.10 works today, plan is 7.x.
+- **Dead indexes** exist in the local database (`INSTRUMENT` indexes `tradingSymbol`, documents use
+  `tradingsymbol`). See `fv-features.md` §7.9.
+- **Chain publishes `tcp://` in the legacy terminal**; the new client uses `wss://` only.

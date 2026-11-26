@@ -1,0 +1,30 @@
+[package]
+name = "h-finvasia-desktop"
+description = "H-Finvasia desktop shell (Tauri 2)"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.85"
+license = "proprietary"
+default-run = "h-finvasia-desktop"
+
+# Deliberately its own workspace: the Tauri build needs a built frontend
+# (`ui/dist`), and the core `cargo test --workspace` gate must never depend on
+# Node. Path dependencies still share the same crates.
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+fv-bridge = { path = "../crates/fv-bridge" }
+fv-core = { path = "../crates/fv-core" }
+fv-feed = { path = "../crates/fv-feed", features = ["ws"] }
+fv-master = { path = "../crates/fv-master", features = ["mongo"] }
+fv-store = { path = "../crates/fv-store", features = ["mongo"] }
+
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

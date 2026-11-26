@@ -1,0 +1,17 @@
+[package]
+name = "fv-bridge"
+description = "UI-facing market state and DTOs; no Tauri dependency so it stays testable"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+fv-core.workspace = true
+fv-feed.workspace = true
+fv-master.workspace = true
+fv-engine.workspace = true
+
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
