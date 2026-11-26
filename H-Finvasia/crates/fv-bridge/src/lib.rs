@@ -293,6 +293,46 @@ mod tests {
     }
 
     #[test]
+    fn group_members_are_subscribed_even_when_not_in_the_active_watch() {
+        let mut md = market();
+        md.set_master(master());
+        let reliance = SymbolKey::parse("NSE|2885").unwrap();
+        let option = SymbolKey::parse("NFO|158614").unwrap();
+        md.set_watch(vec![reliance.clone()]);
+        let plan = md.set_group_keys(vec![reliance.clone(), option.clone()]);
+        assert!(plan.rejected.is_empty());
+        assert_eq!(md.watch_quotes().len(), 1, "active list stays separate");
+        let keys: Vec<String> = md
+            .subscription_keys()
+            .iter()
+            .map(|key| key.as_wire())
+            .collect();
+        assert_eq!(
+            keys,
+            vec!["NFO|158614", "NSE|2885"],
+            "both watch and group members are subscribed"
+        );
+
+        let card = md.container_card(
+            "Other",
+            None,
+            &["NSE|2885".into(), "NFO|158614".into()],
+            Vec::new(),
+        );
+        assert!(card.rows.iter().all(|row| row.live));
+    }
+
+    #[test]
+    fn chain_underlyings_are_local_and_filterable() {
+        let mut md = market();
+        assert!(md.chain_underlyings("", 20).is_empty(), "no master yet");
+        md.set_master(master());
+        assert_eq!(md.chain_underlyings("zyd", 20), vec!["ZYDUSLIFE"]);
+        assert!(md.chain_underlyings("reliance", 20).is_empty());
+        assert_eq!(md.chain_underlyings("", 20), vec!["ZYDUSLIFE"]);
+    }
+
+    #[test]
     fn container_rows_normalise_a_blank_equity_type() {
         let items = vec![Instrument {
             key: SymbolKey::parse("BSE|500477").unwrap(),

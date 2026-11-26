@@ -1220,12 +1220,13 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
   (Nord, Solarized, Tokyo Night, Forest, Plum, Sand).
 - **Stocks -> Cards** is a second layout: three-column group cards in an endlessly scrolling grid.
   Cards drag to reorder (order persisted in `watch-groups.json`), collapse independently
-  (localStorage), and show mixed instrument kinds with live quotes while the group is active.
+  (localStorage), and show mixed instrument kinds with live quotes. All group members are subscribed
+  (`set_group_keys`), so every card streams even when its group is not the active list.
 - Each card's **+** opens a full-master search (stocks, futures, indices and **options**) and adds
   the chosen key to that group (`container_add`). Removing (`container_remove`) and reordering
   (`container_reorder`) are group-scoped; when the edited group is active the watch list is
-  reconciled and re-subscribed within the existing budget. Inactive groups stay local and show
-  dashes until activated.
+  reconciled too. The union of every group, the active watch and the option chain stays within the
+  100-instrument budget; excess keys are reported.
 - Pure ordering/label helpers live in `ui/src/lib/features/stocks/cards.ts`; preference parsing lives
   in `ui/src/lib/layoutPrefs.ts`. Both are unit-tested. Rust tests cover group add/remove/reorder,
   order persistence across rename and the mixed card row builder.
@@ -1234,15 +1235,16 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
 
 ### Phase 2q - group editing, sorting, margin and extended orders (implemented)
 
-- **Cards** now support inline rename (double-click), an **x** delete action, a **New card** tile that
-  creates an empty group without stealing the active watch list, and both layouts share a **Sort**
-  selector: Name,
+- **Cards** now support inline rename (double-click) that keeps the card in its current slot, an
+  **x** delete action, a **New card** tile that creates an empty group without stealing the active
+  watch list, and both layouts share a **Sort** selector: Name,
   Price (high first), Added and Custom. Custom order is stored per group in `watch-groups.json`;
   dragging rows inside a card while Custom is selected updates it. The list layout applies the same
   custom order to its visible cash-equity rows.
-- **Option-chain right-click** on a CE/PE cell opens a card picker: add to an existing Stocks group
-  or create a new card and add in one step. The picker uses `container_add` and, when needed,
-  `container_create_empty`; active-group edits also reconcile the live watch set.
+- **Option-chain right-click** on a CE/PE cell opens a context menu with a left-hand child submenu
+  listing existing Stocks cards plus an inline new-card input. It uses `container_add` and, when
+  needed, `container_create_empty`; active-group edits also reconcile the live watch set. No modal is
+  involved.
 - The top account strip now formats cash, blocked, turnover, RPNL and MTM with Indian digit grouping
   and derives colour from the parsed value, so `"1,23,456.70"` no longer falls back to a flat colour.
 - **Ticket price is the LTP snapshot** captured when the dialog opened (no ask/bid drift). The ticket

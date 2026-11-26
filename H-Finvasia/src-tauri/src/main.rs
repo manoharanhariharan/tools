@@ -16,6 +16,7 @@ use fv_bridge::{InstrumentDto, MarketData, PlanDto, QuoteDto, SourceKind, Status
 use fv_core::{Price, SymbolKey};
 use fv_feed::Frame;
 use serde::Serialize;
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -162,6 +163,7 @@ fn watch_add(
     forward_plan_to_live(&state, &plan);
     save_watch(&app, state.inner());
     persist_active_container(&app, state.inner());
+    sync_group_subscriptions(&app, state.inner());
     let _ = app.emit("watch:changed", payload);
     Ok(plan)
 }
@@ -184,6 +186,7 @@ fn watch_remove(
     forward_plan_to_live(&state, &plan);
     save_watch(&app, state.inner());
     persist_active_container(&app, state.inner());
+    sync_group_subscriptions(&app, state.inner());
     let _ = app.emit("watch:changed", payload);
     Ok(plan)
 }
@@ -326,6 +329,19 @@ async fn session_info() -> session::SessionInfo {
 // ---------------------------------------------------------------------------
 // Option chain
 // ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn chain_underlyings(
+    state: State<'_, Arc<AppState>>,
+    query: Option<String>,
+    limit: Option<usize>,
+) -> Vec<String> {
+    state
+        .market
+        .lock()
+        .unwrap()
+        .chain_underlyings(query.as_deref().unwrap_or(""), limit.unwrap_or(40))
+}
 
 #[tauri::command]
 fn chain_expiries(state: State<'_, Arc<AppState>>, underlying: String) -> Vec<String> {
@@ -503,7 +519,9 @@ fn group_save(app: AppHandle, state: State<'_, Arc<AppState>>, name: String) -> 
     }
     let path = groups_file(&app);
     groups::save(&path, &name, keys)?;
-    groups::set_active(&path, &name)
+    groups::set_active(&path, &name)?;
+    sync_group_subscriptions(&app, state.inner());
+    Ok(())
 }
 
 #[tauri::command]
@@ -553,6 +571,7 @@ fn group_delete(
             .unwrap_or_default();
         apply_watch(&app, state.inner(), parse_watch_keys(&stored));
     }
+    sync_group_subscriptions(&app, state.inner());
     Ok(())
 }
 
@@ -583,6 +602,38 @@ fn apply_watch(app: &AppHandle, state: &Arc<AppState>, keys: Vec<SymbolKey>) -> 
     plan
 }
 
+/// Every instrument in every group, de-duplicated. This is what the feed
+/// subscribes to in addition to the active watch list, so all cards are live.
+fn group_subscription_keys(app: &AppHandle) -> Vec<SymbolKey> {
+    let file = groups::read(&groups_file(app));
+    let mut keys = BTreeSet::new();
+    for stored in file.groups.values() {
+        for key in stored {
+            if let Ok(parsed) = SymbolKey::parse(key) {
+                keys.insert(parsed);
+            }
+        }
+    }
+    keys.into_iter().collect()
+}
+
+/// Reconcile the group subscription set with the live feed.
+fn sync_group_subscriptions(app: &AppHandle, state: &Arc<AppState>) -> PlanDto {
+    let keys = group_subscription_keys(app);
+    let plan = {
+        let mut market = state.market.lock().unwrap();
+        market.set_group_keys(keys)
+    };
+    forward_plan_to_live(state, &plan);
+    if plan.truncated {
+        tracing::warn!(
+            dropped = plan.rejected.len(),
+            "group subscriptions exceeded the 100-instrument budget"
+        );
+    }
+    plan
+}
+
 #[tauri::command]
 fn containers_list(
     app: AppHandle,
@@ -608,7 +659,9 @@ fn container_create(
     let keys = state.market.lock().unwrap().watched();
     let path = groups_file(&app);
     groups::ensure_default(&path, keys.clone())?;
-    groups::create(&path, &name, keys)
+    let view = groups::create(&path, &name, keys)?;
+    sync_group_subscriptions(&app, state.inner());
+    Ok(view)
 }
 
 /// Create a blank group without changing the active watch list. Used by the
@@ -659,6 +712,7 @@ fn container_delete(
             .unwrap_or_default();
         apply_watch(&app, state.inner(), parse_watch_keys(&stored));
     }
+    sync_group_subscriptions(&app, state.inner());
     Ok(view)
 }
 
@@ -716,6 +770,7 @@ fn container_add(
     if view.active.as_deref() == Some(name.as_str()) {
         apply_watch(&app, state.inner(), parse_watch_keys(&keys));
     }
+    sync_group_subscriptions(&app, state.inner());
     Ok(view)
 }
 
@@ -733,6 +788,7 @@ fn container_remove(
     if view.active.as_deref() == Some(name.as_str()) {
         apply_watch(&app, state.inner(), parse_watch_keys(&keys));
     }
+    sync_group_subscriptions(&app, state.inner());
     Ok(view)
 }
 
@@ -1150,6 +1206,16 @@ async fn begin_live(
     resolved: session::Session,
     keys: Vec<SymbolKey>,
 ) -> Result<Vec<String>, String> {
+    // Include every group card member, not just the active watch list.
+    let keys = {
+        let market = state.market.lock().unwrap();
+        let union = market.subscription_keys();
+        if union.is_empty() {
+            keys
+        } else {
+            union
+        }
+    };
     let cfg = fv_feed::ws::WsConfig::new(&resolved.uid, &resolved.actid, &resolved.token);
     *state.session.lock().unwrap() = Some(resolved.clone());
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<fv_feed::ws::FeedCommand>();
@@ -1530,6 +1596,8 @@ fn main() {
                     {
                         tracing::warn!(error = %err, "could not sync the active container");
                     }
+                    // Every card should stream, not just the active group.
+                    sync_group_subscriptions(&resume_handle, &resume_state);
                     let keys: Vec<SymbolKey> = stored
                         .iter()
                         .filter_map(|key| SymbolKey::parse(key).ok())
@@ -1597,6 +1665,7 @@ fn main() {
             start_replay,
             start_live,
             session_info,
+            chain_underlyings,
             chain_expiries,
             chain_load,
             chain_close,

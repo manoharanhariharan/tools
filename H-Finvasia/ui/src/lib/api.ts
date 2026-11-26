@@ -315,6 +315,8 @@ export const api = {
     invoke<string[]>("start_replay", { path, hz }),
   startLive: () => invoke<string[]>("start_live"),
   sessionInfo: () => invoke<SessionInfo>("session_info"),
+  chainUnderlyings: (query = "", limit = 40) =>
+    invoke<string[]>("chain_underlyings", { query, limit }),
   chainExpiries: (underlying: string) => invoke<string[]>("chain_expiries", { underlying }),
   chainLoad: (underlying: string, expiry: string, strikes: number, atm: string | null) =>
     invoke<ChainRowDto[]>("chain_load", { underlying, expiry, strikes, atm }),

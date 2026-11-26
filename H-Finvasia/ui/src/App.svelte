@@ -26,18 +26,10 @@
   import OptionChain from "./lib/features/chain/OptionChain.svelte";
   import IndexWatch from "./lib/features/indices/IndexWatch.svelte";
   import Stocks from "./lib/features/stocks/Stocks.svelte";
-  import InstrumentSearch from "./lib/features/instruments/InstrumentSearch.svelte";
   import Groups from "./lib/features/groups/Groups.svelte";
   import Diagnostics from "./lib/features/diagnostics/Diagnostics.svelte";
 
-  type Page =
-    | "index"
-    | "stocks"
-    | "chain"
-    | "instruments"
-    | "market"
-    | "groups"
-    | "diagnostics";
+  type Page = "index" | "stocks" | "chain" | "market" | "groups" | "diagnostics";
 
   const table = new QuoteTable();
 
@@ -374,9 +366,6 @@
     <button class="ws-tab" class:active={page === "chain"} onclick={() => go("chain")}>
       Option chain
     </button>
-    <button class="ws-tab" class:active={page === "instruments"} onclick={() => go("instruments")}>
-      Instruments
-    </button>
 
     <span class="spacer"></span>
 
@@ -433,18 +422,13 @@
         ondefaults={() => (showOrderDefaults = true)}
         onactive={rememberActive}
       />
-    {:else if page === "instruments"}
-      <InstrumentSearch
-        watched={watchedKeys}
-        onadd={addInstrument}
-        onchain={openChain}
-        onactive={rememberActive}
-      />
     {:else if page === "market"}
       <div class="ws-split">
         <MarketWatch
           {rows}
           {selected}
+          watched={watchedKeys}
+          onadd={addInstrument}
           onselect={(key) => (selected = key)}
           onremove={removeInstrument}
           onchain={openChain}

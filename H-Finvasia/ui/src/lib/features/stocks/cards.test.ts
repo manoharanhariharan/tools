@@ -4,6 +4,7 @@ import {
   instrumentKind,
   mergeOrder,
   moveRelative,
+  nextCardOrder,
   sortInstrumentRows,
 } from "./cards";
 import type { ContainerRowDto } from "../../api";
@@ -44,6 +45,11 @@ describe("group card order", () => {
   it("is a no-op for unknown or identical names", () => {
     expect(moveRelative(["A", "B"], "A", "A")).toEqual(["A", "B"]);
     expect(moveRelative(["A", "B"], "Z", "A")).toEqual(["A", "B"]);
+  });
+
+  it("keeps a renamed card in the same slot", () => {
+    expect(nextCardOrder(["A", "B", "C"], ["A", "X", "C"])).toEqual(["A", "X", "C"]);
+    expect(nextCardOrder(["A", "B", "C"], ["A", "X", "C"], true)).toEqual(["A", "B", "C"]);
   });
 });
 

@@ -872,6 +872,58 @@ select {
   flex-wrap: wrap;
 }
 
+.chain-underlying-field {
+  position: relative;
+  width: 210px;
+}
+
+.underlying-list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 2px);
+  z-index: 30;
+  max-height: 260px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--panel-3);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+}
+
+.underlying-list button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.underlying-list button:hover,
+.underlying-list button[aria-selected="true"] {
+  background: var(--panel-hover);
+  color: var(--accent-2);
+}
+
+.underlying-empty {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 2px);
+  z-index: 30;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--panel-3);
+  color: var(--dim);
+  font-size: 11.5px;
+}
+
 tr.dim-row { opacity: 0.55; }
 
 
@@ -944,6 +996,18 @@ table.grid tfoot td {
 .acct-line-item strong {
   color: var(--text);
   font-weight: 500;
+}
+
+.acct-line-item strong.up {
+  color: var(--up);
+}
+
+.acct-line-item strong.down {
+  color: var(--down);
+}
+
+.acct-line-item strong.flat {
+  color: var(--text);
 }
 
 .acct-toggle-col {
@@ -1150,6 +1214,69 @@ button.acct-toggle:hover {
 .ctx-menu button:disabled {
   color: var(--dim);
   cursor: not-allowed;
+}
+
+.ctx-item-wrap {
+  position: relative;
+}
+
+.ctx-item-wrap > button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ctx-item-wrap > button > span:first-child {
+  flex: 1;
+}
+
+.ctx-caret {
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.ctx-submenu {
+  position: absolute;
+  right: calc(100% + 6px);
+  top: 0;
+  z-index: 70;
+  min-width: 210px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--panel-3);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ctx-submenu.open-right {
+  right: auto;
+  left: calc(100% + 6px);
+}
+
+.ctx-creator {
+  display: flex;
+  gap: 5px;
+  padding: 6px 4px 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+
+.ctx-creator input {
+  padding: 4px 7px;
+  font-size: 11.5px;
+}
+
+.ctx-creator button {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  font-size: 11px;
 }
 
 /* ---- stocks ---- */
@@ -2353,44 +2480,6 @@ button.group-card.new-card-tile:hover {
   font-size: 10px;
   letter-spacing: -1px;
   flex: 0 0 auto;
-}
-
-/* ---- add-to-group picker ---- */
-
-.group-pick-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 280px;
-  overflow: auto;
-}
-
-.group-pick {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 9px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel-2);
-  cursor: pointer;
-}
-
-.group-pick.active {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-
-.group-pick input {
-  width: auto;
-}
-
-.group-pick-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ---- order ticket margin / hints ---- */

@@ -1,10 +1,9 @@
 ﻿<script lang="ts">
   import { onMount } from "svelte";
-  import { api, events, type ChainRowDto, type QuoteDto } from "../../api";
+  import { api, events, type ChainRowDto, type GroupSummary, type QuoteDto } from "../../api";
   import { formatVolume } from "../../state";
   import Badge from "../../components/Badge.svelte";
   import ContextMenu from "../../components/ContextMenu.svelte";
-  import AddToGroupModal from "../groups/AddToGroupModal.svelte";
   import {
     deltaOi,
     fillPercent,
@@ -30,7 +29,10 @@
     onactive,
   }: Props = $props();
 
-  let underlying = $state("NIFTY");
+  let underlying = $state("");
+  let committedUnderlying = $state("");
+  let underlyings = $state<string[]>([]);
+  let showUnderlyings = $state(false);
   let expiries = $state<string[]>([]);
   let expiry = $state("");
   let strikes = $state(10);
@@ -41,7 +43,7 @@
   let error = $state<string | null>(null);
   let loaded = $state(false);
   let menu = $state<{ x: number; y: number; key: string; label: string } | null>(null);
-  let addTarget = $state<{ key: string; label: string } | null>(null);
+  let groups = $state<GroupSummary[]>([]);
   let notice = $state<string | null>(null);
 
   // The underlying spot is only known when it is on the watch list. Without it
@@ -78,6 +80,14 @@
   });
 
   const liveCount = $derived(rows.filter((row) => row.live).length);
+
+  const suggestions = $derived.by(() => {
+    const needle = underlying.trim().toUpperCase();
+    if (needle === "" || !showUnderlyings) return [];
+    return underlyings
+      .filter((name) => name.includes(needle))
+      .slice(0, 12);
+  });
 
   interface ChainCell {
     text: string;
@@ -148,20 +158,104 @@
     return order.map((key) => column[key]);
   }
 
+  async function loadGroups() {
+    try {
+      groups = (await api.containersList()).groups;
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
   function openAddMenu(event: MouseEvent, leg: ChainRowDto | null | undefined) {
     if (!leg) return;
     event.preventDefault();
     event.stopPropagation();
     menu = { x: event.clientX, y: event.clientY, key: leg.key, label: leg.symbol };
+    void loadGroups();
+  }
+
+  async function addToGroup(group: string, key: string, label: string) {
+    error = null;
+    try {
+      await api.containerAdd(group, key);
+      notice = `Added ${label} to "${group}".`;
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function createCardAndAdd(name: string, key: string, label: string) {
+    error = null;
+    try {
+      await api.containerCreateEmpty(name);
+      await api.containerAdd(name, key);
+      notice = `Created "${name}" and added ${label}.`;
+      await loadGroups();
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  function resetChain() {
+    expiries = [];
+    expiry = "";
+    rows = [];
+    loaded = false;
+    centreE6 = null;
+    spot = null;
+    spotKey = null;
+    quick = "";
+  }
+
+  function onUnderlyingInput(event: Event) {
+    const value = (event.currentTarget as HTMLInputElement).value;
+    underlying = value;
+    showUnderlyings = true;
+    if (value.trim().toUpperCase() !== committedUnderlying) {
+      committedUnderlying = "";
+      resetChain();
+    }
+  }
+
+  async function selectUnderlying(name: string) {
+    underlying = name;
+    committedUnderlying = name;
+    showUnderlyings = false;
+    resetChain();
+    error = null;
+    await loadExpiries();
+  }
+
+  function onUnderlyingKey(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      showUnderlyings = false;
+      return;
+    }
+    if (event.key === "Enter") {
+      const exact = underlyings.find(
+        (name) => name === underlying.trim().toUpperCase(),
+      );
+      const pick = suggestions[0] ?? exact;
+      if (pick) {
+        event.preventDefault();
+        void selectUnderlying(pick);
+      }
+    }
   }
 
   async function loadExpiries() {
+    const name = committedUnderlying.trim();
+    if (name === "") {
+      expiries = [];
+      expiry = "";
+      return;
+    }
     error = null;
     try {
-      const list = await api.chainExpiries(underlying.trim());
+      const list = await api.chainExpiries(name);
       expiries = list;
       if (list.length === 0) {
-        error = `No expiries found for "${underlying}".`;
+        error = `No expiries found for "${name}".`;
         expiry = "";
       } else if (!list.includes(expiry)) {
         expiry = list[0];
@@ -172,7 +266,7 @@
   }
 
   async function refreshSpot() {
-    const wanted = underlying.trim().toUpperCase();
+    const wanted = committedUnderlying.trim().toUpperCase();
     if (!wanted) {
       spot = null;
       spotKey = null;
@@ -200,7 +294,8 @@
   }
 
   async function loadChain() {
-    if (!underlying.trim() || !expiry) return;
+    const name = committedUnderlying.trim();
+    if (!name || !expiry) return;
     loading = true;
     error = null;
     try {
@@ -210,7 +305,7 @@
       await refreshSpot();
       const centre = atm.trim() !== "" ? atm.trim() : (spot?.ltp?.text ?? null);
       const data = await api.chainLoad(
-        underlying.trim(),
+        name,
         expiry,
         Math.max(1, Math.min(20, Math.round(Number(strikes) || 10))),
         centre,
@@ -252,13 +347,24 @@
         if (disposed) onWatch();
         else unlisteners.push(onWatch);
 
-        // Expiries are local. The chain is NOT loaded automatically: subscribing
-        // is an explicit action so the broker is only touched on request.
-        await loadExpiries();
+        const onMaster = await events.onMasterReady(() => {
+          if (disposed) return;
+          void api.chainUnderlyings("", 500).then((list) => {
+            if (!disposed) underlyings = list;
+          });
+        });
+        if (disposed) onMaster();
+        else unlisteners.push(onMaster);
 
-        // Opened from a row context menu: load that underlying straight away.
+        underlyings = await api.chainUnderlyings("", 500).catch(() => []);
+
+        // Direct navigation starts blank: the user types, picks an underlying,
+        // then the expiry/strike controls appear. Opening from a row context
+        // menu is the only path that pre-fills and auto-loads.
         if (pending) {
           underlying = pending.underlying;
+          committedUnderlying = pending.underlying;
+          showUnderlyings = false;
           atm = "";
           quick = "";
           centreE6 = null;
@@ -291,46 +397,71 @@
   </header>
 
   <div class="chain-toolbar">
-    <div class="field" style="width: 150px">
+    <div
+      class="field chain-underlying-field"
+      onfocusout={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          showUnderlyings = false;
+        }
+      }}
+    >
       <label for="chain-underlying">Underlying</label>
       <input
         id="chain-underlying"
-        bind:value={underlying}
-        onkeydown={(e) => {
-          if (e.key === "Enter") void loadExpiries().then(loadChain);
+        value={underlying}
+        placeholder="Type e.g. NIFTY, RELIANCE"
+        autocomplete="off"
+        spellcheck="false"
+        oninput={onUnderlyingInput}
+        onfocus={() => {
+          if (underlying.trim() !== "") showUnderlyings = true;
         }}
+        onkeydown={onUnderlyingKey}
       />
+      {#if showUnderlyings && suggestions.length > 0}
+        <div class="underlying-list" role="listbox" aria-label="Matching underlyings">
+          {#each suggestions as name (name)}
+            <button type="button" role="option" aria-selected={name === committedUnderlying} onclick={() => selectUnderlying(name)}>
+              {name}
+            </button>
+          {/each}
+        </div>
+      {:else if showUnderlyings && underlying.trim() !== ""}
+        <div class="underlying-empty">No derivative underlying matches.</div>
+      {/if}
     </div>
 
-    <div class="field" style="width: 165px">
-      <label for="chain-expiry">Expiry</label>
-      <select id="chain-expiry" bind:value={expiry}>
-        {#each expiries as date (date)}
-          <option value={date}>{date}</option>
-        {/each}
-      </select>
-    </div>
+    {#if committedUnderlying}
+      <div class="field" style="width: 165px">
+        <label for="chain-expiry">Expiry</label>
+        <select id="chain-expiry" bind:value={expiry}>
+          {#each expiries as date (date)}
+            <option value={date}>{date}</option>
+          {/each}
+        </select>
+      </div>
 
-    <div class="field" style="width: 125px">
-      <label for="chain-strikes">Far strikes</label>
-      <input id="chain-strikes" type="number" min="1" max="20" bind:value={strikes} />
-    </div>
+      <div class="field" style="width: 125px">
+        <label for="chain-strikes">Far strikes</label>
+        <input id="chain-strikes" type="number" min="1" max="20" bind:value={strikes} />
+      </div>
 
-    <div class="field" style="width: 130px">
-      <label for="chain-atm">ATM (optional)</label>
-      <input id="chain-atm" bind:value={atm} placeholder="e.g. 25800" />
-    </div>
+      <div class="field" style="width: 130px">
+        <label for="chain-atm">ATM (optional)</label>
+        <input id="chain-atm" bind:value={atm} placeholder="e.g. 25800" />
+      </div>
 
-    <div class="field" style="width: 130px">
-      <label for="chain-quick">Filter strike</label>
-      <input id="chain-quick" bind:value={quick} placeholder="258" />
-    </div>
+      <div class="field" style="width: 130px">
+        <label for="chain-quick">Filter strike</label>
+        <input id="chain-quick" bind:value={quick} placeholder="258" />
+      </div>
 
-    <button onclick={ondefaults}>Defaults</button>
+      <button onclick={ondefaults}>Defaults</button>
 
-    <button class="primary" disabled={loading || !expiry} onclick={loadChain}>
-      {loading ? "Loading..." : "Load and subscribe"}
-    </button>
+      <button class="primary" disabled={loading || !expiry} onclick={loadChain}>
+        {loading ? "Loading..." : "Load and subscribe"}
+      </button>
+    {/if}
   </div>
 
   {#if error}
@@ -488,25 +619,23 @@
       y={menu.y}
       items={[
         {
-          label: `Add ${menu.label} to a Stocks card...`,
-          action: () => {
-            if (menu) addTarget = { key: menu.key, label: menu.label };
-          },
+          label: `Add ${menu.label} to card`,
+          children: groups.map((group) => ({
+            label: `${group.name} (${group.count})`,
+            action: () => {
+              if (menu) void addToGroup(group.name, menu.key, menu.label);
+            },
+          })),
         },
       ]}
-      onclose={() => (menu = null)}
-    />
-  {/if}
-
-  {#if addTarget}
-    <AddToGroupModal
-      instrumentKey={addTarget.key}
-      instrumentLabel={addTarget.label}
-      onclose={() => (addTarget = null)}
-      onadded={(message) => {
-        notice = message;
-        addTarget = null;
+      creator={{
+        label: "Create",
+        placeholder: "New card name",
+        action: (name) => {
+          if (menu) void createCardAndAdd(name, menu.key, menu.label);
+        },
       }}
+      onclose={() => (menu = null)}
     />
   {/if}
 </section>

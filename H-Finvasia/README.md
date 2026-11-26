@@ -30,12 +30,14 @@ bundled sample), and shows a live-updating market watch + snap quote fed by a re
 credentials required. Search, watch-list editing and diagnostics are wired to the real engine.
 
 **Order entry** is wired through a prepared ticket: hover a CE/PE row, press B or S, review the
-ticket, then Confirm. The price starts at the LTP that was running when the ticket opened. Types are
-**LMT**, **MKT (protected marketable limit)**, **SL-L** and **TSL** (server-side trailing SL). The
-ticket shows the broker's pre-trade margin (`GetBasketMargin`) and refreshes it as size/price change.
-Defaults (lots/product/validity/type) are saved locally. Orders are allowed only on the live feed and
-never retried automatically. Positions and the order book live in a resizable bottom dock; right-click
-a live position to square it off with a protected market order.
+ticket, then Confirm. Quantity is focused when the ticket opens, and Enter submits the same as
+Confirm. The price starts at the LTP that was running when the ticket opened. Types are **LMT**,
+**MKT (protected marketable limit)**, **SL-L** and **TSL** (server-side trailing SL). The ticket shows
+an **internal margin estimate** (no broker round-trip): option buys use premium, option sells use
+max(premium, 15% strike notional), futures 15%, and equity 20/50/100% by product. Defaults
+(lots/product/validity/type) are saved locally. Orders are allowed only on the live feed and never
+retried automatically. Positions and the order book live in a resizable bottom dock; right-click a
+live position to square it off with a protected market order.
 
 **Still pending:** holdings, product conversion and algo orders. The test suite never sends a real
 order.
@@ -83,8 +85,8 @@ The executable lands at `src-tauri/target/release/h-finvasia-desktop.exe` and ru
 The workspace opens on a four-card account strip - **Account details** (user, account, login
 state), **Funds available**, **RPNL**, **MTM**. The chevron at the right collapses it to a
 single-line band with the feed state, account, cash, RPNL, MTM and position count; the choice is
-remembered. Four tabs follow: **Index**, **Stocks**, **Option chain** and **Instruments**.
-Market watch and Groups/Diagnostics sit behind the **More** menu; Positions and the order book live
+remembered. Three tabs follow: **Index**, **Stocks** and **Option chain**. Market watch and
+Groups/Diagnostics sit behind the **More** menu; Positions and the order book live
 in the bottom dock, so the working area stays uncluttered.
 
 **Stocks** has two layouts. **List** shows the watched stocks in the active group; use the search
@@ -92,16 +94,20 @@ bar above it to find an NSE stock. The groups sidebar creates, deletes and renam
 (double-click a name to edit), and each group has a color chip that opens the system color picker.
 **Cards** renders every group as a card in a three-column, endlessly scrolling grid. Cards can be
 dragged to reorder (the order is saved in `watch-groups.json`), collapsed individually, renamed
-inline (double-click the name), and deleted with the card's **x** button. Each card carries a **+**
+inline (double-click the name, keeping the same slot), and deleted with the card's **x** button. Each card carries a **+**
 search that adds stocks, futures, indices or options to that specific group. A **New card** tile
 creates an empty group, and **Sort** switches both layouts between name, price, insertion order and
 a **Custom** order (drag rows in a card while Custom is selected). Cards keep their natural content
-height and the grid scrolls vertically instead of squeezing row content. Adding to the active group
-also updates the live watch list; adding to another group stays local until it is activated. The
-active group is the live watch list, so switching it re-subscribes within the 100-instrument budget.
+height and the grid scrolls vertically instead of squeezing row content. Every instrument stored in
+any group is subscribed, so all cards stream live - not just the active one. The active group remains
+the list view's watch list; switching it changes which list is shown without dropping the other
+cards' subscriptions. The combined group/watch/chain set stays within the 100-instrument budget, and
+anything beyond it is reported rather than silently dropped.
 
-**Option chain** uses the usual quad layout: calls on the left, puts on the right, strike price in
-the middle. Each side is mirrored around the strike (trade, OI, d OI, volume, LTP, change, bid qty,
+**Option chain** starts blank when opened directly. Type an underlying and pick it from the local
+suggestions; the expiry, strikes, ATM and filter controls then appear. Opening a chain from a row
+context menu pre-fills and loads it immediately. The quad layout has calls on the left, puts on the
+right and strike price in the middle. Each side is mirrored around the strike (trade, OI, d OI, volume, LTP, change, bid qty,
 bid, ask, ask qty, then the strike). OI and volume cells carry a proportional background fill. Calls
 and puts are tinted by moneyness (ITM / ATM / OTM) around the spot, with the ATM row highlighted.
 The outermost column on each side exposes B/S on row hover; both open the same prepared ticket.
@@ -114,8 +120,8 @@ resize the height, drag the middle divider to resize the columns, and collapse i
 bar. It is collapsed by default so no account REST calls happen until you open it; refreshes are
 manual, never on a timer.
 
-**F1 / F2** buy and sell the last hovered or clicked row (or option leg) from Stocks, Instruments,
-Market watch or the option chain. The tabs bar shows the active target; the card view highlights the
+**F1 / F2** buy and sell the last hovered or clicked row (or option leg) from Stocks, Market watch
+or the option chain. The tabs bar shows the active target; the card view highlights the
 armed row. If the instrument is not tradeable the app explains instead of opening a ticket.
 
 **Appearance** (More -> Appearance) offers eleven themes - Midnight, Graphite, Ocean, Contrast,
@@ -129,21 +135,22 @@ on this machine and applied before the next first paint.
 2. The app restores the last watch list and, when a stored session is valid, connects the live feed
    automatically. The UI has no demo/replay switch; bundled captures remain available to the
    headless CLI and CI (`FV_AUTOSTART_DEMO=1`).
-3. Click a row to load the snap quote; **Instruments** searches the master and adds scrips. The
-   **Stocks -> Cards** view can also add instruments to any specific group with its **+** button.
+3. Click a row to load the snap quote. **Market watch** now carries the full master search box and
+   adds any instrument directly to the watch list. The **Stocks -> Cards** view can also add
+   instruments to any specific group with its **+** button.
    Search is relaxed and multi-term: `nifty 25800`, `25800 nifty`, `NIFTY 26NOV 25800` all find the
    25800-strike NIFTY contracts. Adding an instrument while **live** subscribes it on the open socket
    immediately - no reconnect, no manual refresh.
-4. **Right-click any row** (Index, Stocks, Instruments, Market watch) for actions.
+4. **Right-click any row** (Index, Stocks, Market watch) for actions.
    When the instrument's underlying has derivatives the menu offers **Open option chain
    (UNDERLYING)**; choosing it switches to the Option chain tab, selects that underlying's nearest
    expiry, and loads the chain centred on the watched spot (or the entered ATM).
 5. **Buy / sell** from the chain: hover a CE/PE row and press **B** or **S**, or hover any tradeable
    row and press **F1** (buy) / **F2** (sell). The ticket is prefilled from your saved defaults and
-   the LTP snapshot from when the dialog opened; margin is fetched live. Nothing is sent until
-   **Confirm**. Orders are allowed only while the feed is live; replay/offline tickets open for
-   review with Confirm disabled. Right-click a chain cell to add that CE/PE to an existing Stocks
-   card or a new one.
+   the LTP snapshot from when the dialog opened; margin is estimated internally. Nothing is sent
+   until **Confirm** or Enter. Orders are allowed only while the feed is live; replay/offline tickets
+   open for review with Confirm disabled. Right-click a chain cell: the left-hand child menu lists
+   Stocks cards and has an inline new-card field.
 6. **Positions & order book** live in the bottom dock. Open it from the footer bar; each panel has its
    own Refresh button. After a confirmed order the order book refreshes automatically if it is open.
 7. **Diagnostics** shows backend (`mongo` vs `in-memory`), frame rate, decode errors, and the live
@@ -296,8 +303,8 @@ scripts/make-icon.ps1      regenerates src-tauri/icons
   there is no polling.
 - **The Stocks list-view search flyout is NSE cash equities only.** Groups are generic watch lists:
   the card view search (`+` on a group) deliberately searches the full master so options, futures
-  and indices can be added there. A group's non-active rows have no live quote until it is made
-  active, because only the active group owns the 100-instrument subscription budget.
+  and indices can be added there. All group members are subscribed, so cards stream live even when
+  their group is not active; the combined group/watch/chain union is capped at 100 instruments.
 - **F1/F2 act on the last hovered or clicked row/leg.** The shortcut target is shown in the tabs
   bar; remapping keys is not configurable yet.
 - **Themes and group colours are stored on this machine** (localStorage / `watch-groups.json`).

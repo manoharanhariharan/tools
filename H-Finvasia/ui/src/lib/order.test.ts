@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { OrderTargetDto } from "./api";
-import { buildOrderRequest, defaultOrderPrice, shortcutSide, type TicketFields } from "./order";
+import {
+  buildOrderRequest,
+  defaultOrderPrice,
+  estimateMargin,
+  shortcutSide,
+  type TicketFields,
+} from "./order";
 
 function target(ask: string | null, bid: string | null, ltp: string | null): OrderTargetDto {
   return {
@@ -53,6 +59,51 @@ describe("order shortcuts", () => {
     expect(defaultOrderPrice(target("100.50", "99.50", "100.00"), "B")).toBe("100.00");
     expect(defaultOrderPrice(target("100.50", "99.50", "100.00"), "S")).toBe("100.00");
     expect(defaultOrderPrice(target(null, null, null), "B")).toBe("");
+  });
+});
+
+describe("margin estimate", () => {
+  it("uses premium for option buys and a strike-based floor for sells", () => {
+    const option = target("100.50", "99.50", "100.00");
+    expect(
+      estimateMargin({ target: option, side: "B", product: "I", price: "100", quantity: 65 }),
+    ).toBe("6500.00");
+    expect(
+      estimateMargin({ target: option, side: "S", product: "I", price: "100", quantity: 65 }),
+    ).toBe("252525.00");
+  });
+
+  it("uses product-based rates for equity and futures", () => {
+    const equity = {
+      ...target(null, null, "100"),
+      strike_type: "XX",
+      expiry: null,
+      instrument_type: "EQ",
+    };
+    expect(
+      estimateMargin({ target: equity, side: "B", product: "I", price: "100", quantity: 100 }),
+    ).toBe("2000.00");
+    expect(
+      estimateMargin({ target: equity, side: "B", product: "C", price: "100", quantity: 100 }),
+    ).toBe("10000.00");
+    expect(
+      estimateMargin({ target: equity, side: "B", product: "M", price: "100", quantity: 100 }),
+    ).toBe("5000.00");
+
+    const future = { ...equity, instrument_type: "FUT", expiry: "2026-12-31" };
+    expect(
+      estimateMargin({ target: future, side: "B", product: "M", price: "100", quantity: 100 }),
+    ).toBe("1500.00");
+  });
+
+  it("returns a dash until price and quantity are usable", () => {
+    const option = target(null, null, null);
+    expect(
+      estimateMargin({ target: option, side: "B", product: "I", price: "", quantity: 65 }),
+    ).toBe("-");
+    expect(
+      estimateMargin({ target: option, side: "B", product: "I", price: "100", quantity: 0 }),
+    ).toBe("-");
   });
 });
 

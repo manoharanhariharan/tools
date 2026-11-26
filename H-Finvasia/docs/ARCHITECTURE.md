@@ -140,7 +140,12 @@ layouts; unknown custom keys fall back to insertion order rather than disappeari
 
 Containers are named watch lists with a persisted `active` pointer; `watch_add`/`watch_remove` write
 the live list back into the active container, keeping the sidebar count and the watch list in sync.
-Switching a container replaces the watch set and re-subscribes within the 100-instrument budget.
+The table view uses that active watch list, but the feed subscribes to `MarketData::set_group_keys`
+as well: every instrument in every group is in the desired-key union, so all cards stream live even
+when their group is not active. Group membership is re-read after add/remove/delete and at startup.
+The union (group members + active watch + option chain) is capped at the 100-instrument budget, with
+excess keys reported in the plan rather than silently growing the socket. Switching a container
+changes which list is shown; it does not drop the other cards' subscriptions.
 
 The option chain's `groupStrikes`, `pickAtm`, `windowAround`, `deltaOi`, `fillPercent` and
 `defaultTicketPrice` are pure TypeScript in `ui/src/lib/features/chain/chain.ts` and unit-tested. The
@@ -164,9 +169,10 @@ ticket freezes that LTP snapshot as its default price, so later ticks cannot mov
 the user. `buildOrderRequest` is pure and unit-tested; `margin_required` fetches the broker margin
 on a debounce, never on every keystroke.
 
-Right-clicking an option-chain leg opens `AddToGroupModal`, which either adds the leg to an existing
-Stocks group (`container_add`) or creates a blank card first (`container_create_empty`). The card
-file is the single owner of group membership; active-group edits reconcile the live watch set.
+Right-clicking an option-chain leg opens a context menu whose left child submenu lists existing
+Stocks cards and an inline "new card" creator (no modal). Choosing a card calls `container_add`;
+creating one calls `container_create_empty` then `container_add`. The card file is the single owner
+of group membership; active-group edits reconcile the live watch set.
 
 Appearance is applied before mount (`applyStoredTheme` in `main.ts`) so the first paint matches the
 saved theme. The picker also applies and persists each click immediately instead of waiting for an

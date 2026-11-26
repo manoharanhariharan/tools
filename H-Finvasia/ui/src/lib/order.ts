@@ -49,3 +49,53 @@ export function shortcutSide(key: string): "B" | "S" | null {
   if (key === "F2") return "S";
   return null;
 }
+
+export interface MarginInput {
+  target: Pick<OrderTargetDto, "strike" | "strike_type" | "instrument_type" | "is_index" | "expiry">;
+  side: "B" | "S";
+  product: string;
+  price: string;
+  quantity: number;
+}
+
+/**
+ * Internal pre-trade margin estimate, used instead of a broker round-trip.
+ *
+ * This is deliberately approximate and labelled as such in the ticket:
+ * - option buys: premium (quantity x price)
+ * - option sells: max(premium, 15% of strike notional)
+ * - futures: 15% of notional
+ * - equity: 20% intraday, 50% margin product, 100% delivery
+ */
+export function estimateMargin(input: MarginInput): string {
+  const price = Number(input.price.replace(/[,₹\s]/g, ""));
+  const quantity = Math.max(0, Math.round(input.quantity));
+  if (!Number.isFinite(price) || price <= 0 || quantity <= 0) return "-";
+
+  const type = input.target.instrument_type.trim().toUpperCase();
+  const option =
+    input.target.strike_type === "CE" ||
+    input.target.strike_type === "PE" ||
+    type === "CE" ||
+    type === "PE" ||
+    type === "OPT";
+  const future =
+    type === "FUT" ||
+    (!!input.target.expiry && !option && !input.target.is_index && input.target.strike_type !== "CE" && input.target.strike_type !== "PE");
+
+  const notional = quantity * price;
+  let margin: number;
+  if (option) {
+    const strike = Number(input.target.strike);
+    margin =
+      input.side === "B"
+        ? notional
+        : Math.max(notional, (Number.isFinite(strike) ? strike : price) * quantity * 0.15);
+  } else if (future) {
+    margin = notional * 0.15;
+  } else {
+    const product = input.product.trim().toUpperCase();
+    margin = notional * (product === "I" ? 0.2 : product === "M" ? 0.5 : 1);
+  }
+  return margin.toFixed(2);
+}

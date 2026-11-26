@@ -2,14 +2,13 @@
   import { untrack } from "svelte";
   import {
     api,
-    type MarginDto,
     type OrderDefaults,
     type OrderResult,
     type PlaceOrderRequest,
   } from "../../api";
   import { formatIndianAmount } from "../../format";
   import Modal from "../../components/Modal.svelte";
-  import { buildOrderRequest, type OrderTicketState } from "../../order";
+  import { buildOrderRequest, estimateMargin, type OrderTicketState } from "../../order";
 
   interface Props {
     ticket: OrderTicketState;
@@ -34,9 +33,13 @@
   let busy = $state(false);
   let error = $state<string | null>(null);
 
-  let margin = $state<MarginDto | null>(null);
-  let marginLoading = $state(false);
-  let marginError = $state<string | null>(null);
+  function focusOnMount(node: HTMLInputElement) {
+    queueMicrotask(() => {
+      node.focus();
+      node.select();
+    });
+    return {};
+  }
 
   const lotSize = $derived(ticket.target.lot_size > 0 ? ticket.target.lot_size : 1);
   const qty = $derived(Math.max(1, Math.round(lots)) * lotSize);
@@ -57,6 +60,15 @@
       : `${ticket.target.exchange} - ${
           ticket.target.instrument_type || (ticket.target.is_index ? "INDEX" : "EQ")
         }`,
+  );
+  const marginEstimate = $derived(
+    estimateMargin({
+      target: ticket.target,
+      side: ticket.side,
+      product,
+      price,
+      quantity: qty,
+    }),
   );
 
   function orderRequest(): PlaceOrderRequest {
@@ -107,41 +119,16 @@
     }
   }
 
-  let marginSeq = 0;
-
-  // Margin is a broker call, so debounce edits and never run it offline.
-  $effect(() => {
-    const request = orderRequest();
-    const ready =
-      live &&
-      request.price !== null &&
-      (!needsTrigger || (request.trigger_price ?? "") !== "") &&
-      (!needsTrail || Number(request.trail ?? 0) > 0);
-    if (!ready) {
-      margin = null;
-      marginLoading = false;
-      marginError = null;
-      return;
-    }
-    marginLoading = true;
-    marginError = null;
-    const seq = ++marginSeq;
-    const timer = setTimeout(async () => {
-      try {
-        const value = await api.marginRequired(request);
-        if (seq === marginSeq) margin = value;
-      } catch (e) {
-        if (seq === marginSeq) {
-          margin = null;
-          marginError = String(e);
-        }
-      } finally {
-        if (seq === marginSeq) marginLoading = false;
-      }
-    }, 350);
-    return () => clearTimeout(timer);
-  });
+  function onKeydown(event: KeyboardEvent) {
+    if (event.key !== "Enter") return;
+    const target = event.target as HTMLElement | null;
+    if (target?.tagName === "BUTTON") return;
+    event.preventDefault();
+    void submit();
+  }
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <Modal title={`${sideLabel} ${ticket.target.trading_symbol}`} {subtitle} onclose={onclose} wide>
   {#if !live}
@@ -161,7 +148,14 @@
   <div class="form-grid">
     <div class="field">
       <label for="ticket-lots">Quantity (lots)</label>
-      <input id="ticket-lots" type="number" min="1" max="10000" bind:value={lots} />
+      <input
+        id="ticket-lots"
+        use:focusOnMount
+        type="number"
+        min="1"
+        max="10000"
+        bind:value={lots}
+      />
     </div>
     <div class="field">
       <label for="ticket-qty">Order quantity</label>
@@ -216,21 +210,15 @@
     </div>
   </div>
 
-  {#if live}
-    <div class="ticket-margin">
-      <span class="ticket-margin-label">Margin required</span>
-      {#if marginLoading}
-        <span class="muted">calculating...</span>
-      {:else if margin}
-        <strong class="mono">₹{formatIndianAmount(margin.required)}</strong>
-        {#if margin.after_trade && margin.after_trade !== margin.required}
-          <span class="dim">after trade ₹{formatIndianAmount(margin.after_trade)}</span>
-        {/if}
-      {:else}
-        <span class="dim">{marginError ?? "Margin unavailable"}</span>
-      {/if}
-    </div>
-  {/if}
+  <div class="ticket-margin">
+    <span class="ticket-margin-label">Estimated margin</span>
+    {#if marginEstimate === "-"}
+      <span class="dim">enter a price</span>
+    {:else}
+      <strong class="mono">₹{formatIndianAmount(marginEstimate)}</strong>
+      <span class="dim">internal estimate - confirm with the broker order book</span>
+    {/if}
+  </div>
 
   <p class="hint">
     Lot size {lotSize}. MKT is sent as a protected marketable limit because Shoonya rejects raw

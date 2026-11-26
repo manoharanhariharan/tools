@@ -75,6 +75,9 @@ pub struct MarketData {
     book: QuoteBook,
     coalescer: Coalescer,
     watch: WatchSet,
+    /// Every instrument stored in any Stocks group. Subscribed in addition to
+    /// the active watch list so all group cards stream, not just the active one.
+    groups: BTreeSet<SymbolKey>,
     /// Option-chain subscriptions, tracked separately from the watch list.
     chain: BTreeSet<SymbolKey>,
     chain_limit: usize,
@@ -96,6 +99,7 @@ impl MarketData {
             book: QuoteBook::new(),
             coalescer: Coalescer::new(30, DEFAULT_MAX_PER_FRAME),
             watch: WatchSet::new(DEFAULT_WATCH_LIMIT),
+            groups: BTreeSet::new(),
             chain: BTreeSet::new(),
             chain_limit: DEFAULT_CHAIN_LIMIT,
             master: None,
@@ -250,7 +254,7 @@ impl MarketData {
                 symbol: instrument.trading_symbol.clone(),
                 name: instrument.name.clone(),
                 exchange: instrument.key.exchange().to_string(),
-                live: self.watch.active().contains(&instrument.key),
+                live: self.is_live(&instrument.key),
                 underlying: instrument.underlying.clone(),
                 has_fno: instrument
                     .underlying
@@ -355,9 +359,24 @@ impl MarketData {
             strike_type: instrument.strike_type.as_str().to_string(),
             lot_size: instrument.lot_size,
             is_index: fv_master::is_index(instrument),
-            live: self.watch.active().contains(&key),
+            live: self.is_live(&key),
             quote: self.book.get(&key).map(|q| quote_dto(q, Some(master))),
         })
+    }
+
+    /// Underlyings that have derivatives, filtered by a typed prefix/substring.
+    /// Used by the option-chain picker; it never touches the broker.
+    pub fn chain_underlyings(&self, query: &str, limit: usize) -> Vec<String> {
+        let Some(master) = self.master.as_deref() else {
+            return Vec::new();
+        };
+        let needle = query.trim().to_ascii_uppercase();
+        master
+            .derivative_underlyings()
+            .into_iter()
+            .filter(|name| needle.is_empty() || name.contains(&needle))
+            .take(limit.clamp(1, 500))
+            .collect()
     }
 
     /// Build one group card. `keys` are the stored wire keys in group order.
@@ -386,7 +405,7 @@ impl MarketData {
             symbol: fv_master::stock_display_symbol(instrument),
             name: instrument.name.clone(),
             exchange: instrument.key.exchange().to_string(),
-            live: self.watch.active().contains(&instrument.key),
+            live: self.is_live(&instrument.key),
             underlying: instrument.underlying.clone(),
             has_fno: instrument
                 .underlying
@@ -400,15 +419,54 @@ impl MarketData {
         }
     }
 
-    /// The union of every subscribed instrument: the watch list plus the option
-    /// chain. Both groups are subscribed, but only the watch list is the user's
-    /// portfolio-style list.
+    /// The union of every subscribed instrument: the active watch list, every
+    /// Stocks group member and the option chain. Only the active watch list is
+    /// the user's portfolio-style list (`stocks_watched`); group members exist
+    /// so all cards have live quotes.
     fn desired_keys(&self) -> BTreeSet<SymbolKey> {
         self.watch
             .active()
-            .union(&self.chain)
+            .union(&self.groups)
+            .chain(self.chain.iter())
             .cloned()
             .collect::<BTreeSet<_>>()
+    }
+
+    fn is_live(&self, key: &SymbolKey) -> bool {
+        self.watch.active().contains(key) || self.groups.contains(key) || self.chain.contains(key)
+    }
+
+    /// Sorted unique keys the live feed must subscribe to right now.
+    pub fn subscription_keys(&self) -> Vec<SymbolKey> {
+        self.desired_keys().into_iter().collect()
+    }
+
+    /// Replace the group-card subscription set.
+    ///
+    /// Group members that are also in the active watch or chain are free; the
+    /// remaining slots are taken up to the global 100-instrument budget. Excess
+    /// keys are reported in the plan rather than silently growing the socket.
+    pub fn set_group_keys(&mut self, keys: Vec<SymbolKey>) -> PlanDto {
+        let before = self.desired_keys();
+        let base = self.watch.active().union(&self.chain).count();
+        let available = MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(base);
+
+        let mut accepted: BTreeSet<SymbolKey> = BTreeSet::new();
+        let mut rejected: Vec<SymbolKey> = Vec::new();
+        for key in keys {
+            if self.watch.active().contains(&key)
+                || self.chain.contains(&key)
+                || accepted.len() < available
+            {
+                accepted.insert(key);
+            } else {
+                rejected.push(key);
+            }
+        }
+        self.groups = accepted;
+        // Group growth can push the chain over the budget.
+        rejected.extend(self.clamp_chain());
+        self.reconcile(before, rejected)
     }
 
     /// Diff the union before/after a group change so a key still needed by the
@@ -440,7 +498,8 @@ impl MarketData {
     /// Trim the chain group so the union stays within
     /// [`MAX_TOTAL_SUBSCRIPTIONS`]. Returns the dropped keys.
     fn clamp_chain(&mut self) -> Vec<SymbolKey> {
-        let available = MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(self.watch.len());
+        let base = self.watch.active().union(&self.groups).count();
+        let available = MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(base);
         if self.chain.len() <= available {
             return Vec::new();
         }
@@ -457,9 +516,10 @@ impl MarketData {
     pub fn set_chain(&mut self, keys: Vec<SymbolKey>) -> PlanDto {
         let before = self.desired_keys();
         let target: BTreeSet<SymbolKey> = keys.into_iter().collect();
+        let base = self.watch.active().union(&self.groups).count();
         let available = self
             .chain_limit
-            .min(MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(self.watch.len()));
+            .min(MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(base));
         let accepted: BTreeSet<SymbolKey> = target.iter().take(available).cloned().collect();
         let rejected: Vec<SymbolKey> = target.iter().skip(available).cloned().collect();
         self.chain = accepted;

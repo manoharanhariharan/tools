@@ -13,6 +13,7 @@
     instrumentKind,
     mergeOrder,
     moveRelative,
+    nextCardOrder,
     sortInstrumentRows,
   } from "./cards";
   import {
@@ -81,11 +82,17 @@
       .filter((card): card is ContainerCardDto => card !== undefined);
   });
 
-  // Adopt the backend order once, then keep local drag order for later refreshes.
+  // Follow the backend order whenever the card set/order changes (including a
+  // rename). A local drag order survives refreshes until the drag is dropped.
+  let lastCardSignature = "";
   $effect(() => {
     const names = cards.map((card) => card.name);
-    const next = mergeOrder(order, names);
-    if (next.join("\u0000") !== order.join("\u0000")) order = next;
+    const dragging = untrack(() => dragName) !== null;
+    if (dragging) return;
+    const signature = names.join("\u0000");
+    if (signature === lastCardSignature) return;
+    lastCardSignature = signature;
+    order = nextCardOrder(order, names, false);
   });
 
   // Refresh the live-key index and drop quote overrides for instruments that
@@ -353,6 +360,7 @@
       card.rows.map((row) => row.key),
       card.custom_order,
     )}
+    {@const hasLive = card.rows.some((row) => row.live || quoteFor(row) !== null)}
     <article
       class="group-card"
       class:active={card.name === active}
@@ -404,7 +412,7 @@
           </button>
         {/if}
         <span class="group-card-count" title="Instruments in this group">{card.count}</span>
-        {#if card.name === active}<span class="group-card-live">live</span>{/if}
+        {#if hasLive}<span class="group-card-live">live</span>{/if}
         <span class="spacer"></span>
         <button
           class="icon"

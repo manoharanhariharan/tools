@@ -1,6 +1,18 @@
 import type { ContainerRowDto } from "../../api";
 import type { SortMode } from "../../layoutPrefs";
 
+/**
+ * Adopt the backend card order unless a drag is in progress. Using the
+ * backend order directly is what keeps an inline rename in the same slot.
+ */
+export function nextCardOrder(
+  current: readonly string[],
+  names: readonly string[],
+  dragging = false,
+): string[] {
+  return dragging ? [...current] : [...names];
+}
+
 /** Keep the saved order, append groups the file did not know about yet. */
 export function mergeOrder(order: readonly string[], names: readonly string[]): string[] {
   const present = new Set(names);
