@@ -199,8 +199,9 @@ cd tools/h-compare
 It runs `cargo fmt --check`, `cargo test`, `cargo clippy -D warnings`, builds the
 release binary, computes the next `vYY.MM.DD.N` version, updates `publish/`,
 commits `h-compare`, and pushes to the current git branch. Use
-`-Version v...`, `-Message "..."`, `-SkipTests`, or `-NoPush` to override parts
-of the flow.
+`-Version v...`, `-Message "..."`, `-SkipTests`, `-IncludeUntracked`, or `-NoPush`
+to override parts of the flow. Untracked files must be staged explicitly unless
+`-IncludeUntracked` is passed.
 
 Run during development:
 

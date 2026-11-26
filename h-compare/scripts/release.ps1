@@ -13,6 +13,7 @@ param(
     [string]$Version = "",
     [string]$Message = "",
     [switch]$SkipTests,
+    [switch]$IncludeUntracked,
     [switch]$NoPush
 )
 
@@ -79,8 +80,20 @@ try {
 
     # Commit the source before building, so the binary's embedded commit hash
     # names a real commit and BUILD.txt is not marked dirty for a normal release.
+    $untracked = @(
+        & git -C $repoRoot ls-files --others --exclude-standard -- h-compare |
+            Where-Object { $_ -notmatch '^h-compare/publish/' }
+    )
+    if ($untracked.Count -gt 0 -and -not $IncludeUntracked) {
+        throw "Untracked h-compare files would be skipped or accidentally committed: $($untracked -join ', '). Stage them with 'git add' first, remove them, or pass -IncludeUntracked."
+    }
+
     Write-Host "==> commit source changes (publish artifacts excluded)"
-    & git -C $repoRoot add h-compare
+    if ($IncludeUntracked) {
+        & git -C $repoRoot add h-compare
+    } else {
+        & git -C $repoRoot add -u h-compare
+    }
     if ($LASTEXITCODE -ne 0) { throw "git add failed." }
     & git -C $repoRoot reset --quiet -- h-compare/publish
     if ($LASTEXITCODE -ne 0) { throw "git reset for publish failed." }
