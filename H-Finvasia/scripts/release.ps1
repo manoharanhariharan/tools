@@ -1,4 +1,4 @@
-# Release task for H-Finvasia.
+﻿# Release task for H-Finvasia.
 #
 # Same shape as h-compare's release task: run the quality gates, commit source,
 # build the release binaries, publish them under releases/ with BUILD.txt +
@@ -67,6 +67,9 @@ function Test-DesktopUsesEmbeddedFrontend {
     }
 
     try {
+        # Never let the smoke test reach the broker: auto-connect would open a
+        # live socket and subscribe instruments.
+        $env:FV_NO_AUTOCONNECT = "1"
         $proc = Start-Process -FilePath $Exe -PassThru
         Start-Sleep -Seconds 8
         $hit = $listener.Pending()
@@ -75,6 +78,7 @@ function Test-DesktopUsesEmbeddedFrontend {
         else { Write-Host "    ok: no dev-server connection" }
         return (-not $hit)
     } finally {
+        Remove-Item Env:\FV_NO_AUTOCONNECT -ErrorAction SilentlyContinue
         $listener.Stop()
     }
 }
@@ -172,7 +176,7 @@ try {
     # Build the desktop app through the Tauri CLI: it enables the
     # `custom-protocol` feature so the frontend is embedded. A plain
     # `cargo build --release` silently marks the build as dev and the window
-    # tries devUrl (localhost:5173) instead — see the assertion below.
+    # tries devUrl (localhost:5173) instead â€” see the assertion below.
     Invoke-Step "npm run tauri:build (desktop)" { npm run tauri:build }
 
     $cliExe = Join-Path $root "target\release\$toolName.exe"

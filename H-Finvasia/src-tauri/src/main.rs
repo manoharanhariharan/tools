@@ -786,8 +786,14 @@ fn main() {
                 .unwrap_or(false);
 
             // Resume the previous watch list and, if a session is already valid,
-            // connect without any manual step.
-            if !demo_mode {
+            // connect without any manual step. `FV_NO_AUTOCONNECT=1` disables
+            // this entirely (release smoke tests, CI) so those runs never touch
+            // the broker.
+            let auto_connect = std::env::var("FV_NO_AUTOCONNECT")
+                .map(|value| value != "1")
+                .unwrap_or(true);
+
+            if !demo_mode && auto_connect {
                 let resume_state = setup_state.clone();
                 let resume_handle = handle.clone();
                 tauri::async_runtime::spawn(async move {
