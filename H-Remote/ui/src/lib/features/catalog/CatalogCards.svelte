@@ -1,12 +1,19 @@
 <script lang="ts">
   import type { CatalogFolder, Folder, Server } from "../../ipc/contracts";
   import { catalog } from "../../state/catalog.svelte";
-  import Icon from "../../components/Icon.svelte";
+  import ContextMenu, { type MenuItem } from "../../components/ContextMenu.svelte";
   import ServerCard from "./ServerCard.svelte";
   import TriStateCheckbox from "../../components/TriStateCheckbox.svelte";
   import { toCssColor } from "../../theme/apply";
   import FolderColorButton from "./FolderColorButton.svelte";
   import FolderColorPicker from "./FolderColorPicker.svelte";
+  import FolderGlyph from "./FolderGlyph.svelte";
+  import {
+    deleteFolder,
+    duplicateFolder,
+    promptNewSubfolder,
+    promptRenameFolder,
+  } from "./folderActions";
   import Self from "./CatalogCards.svelte";
 
   interface Props {
@@ -15,6 +22,7 @@
   }
   let { folders, servers }: Props = $props();
   let picker = $state<{ x: number; y: number; folder: CatalogFolder } | null>(null);
+  let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
 
   function flatten(folder: CatalogFolder): Server[] {
     return [...folder.servers, ...folder.folders.flatMap(flatten)];
@@ -31,6 +39,29 @@
     event.stopPropagation();
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     picker = { x: rect.left, y: rect.bottom + 4, folder };
+  }
+
+  function folderMenu(event: MouseEvent, folder: CatalogFolder): void {
+    event.preventDefault();
+    event.stopPropagation();
+    menu = {
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        {
+          label: "New sub-folder",
+          action: () => void promptNewSubfolder(folder.path),
+        },
+        { label: "Rename", action: () => void promptRenameFolder(folder) },
+        { label: "Duplicate", action: () => void duplicateFolder(folder) },
+        {
+          label: "Folder colour…",
+          action: () => (picker = { x: event.clientX, y: event.clientY, folder }),
+        },
+        { separator: true },
+        { label: "Delete", danger: true, action: () => void deleteFolder(folder) },
+      ],
+    };
   }
 
   async function pickColor(colorHex: string): Promise<void> {
@@ -56,6 +87,9 @@
     class="folder"
     class:colored={Boolean(colour)}
     style:--folder-color={colour || undefined}
+    role="group"
+    aria-label={`Folder ${folder.path.join(" / ")}`}
+    oncontextmenu={(event) => folderMenu(event, folder)}
   >
     <header>
       <TriStateCheckbox
@@ -82,7 +116,7 @@
           style={colour ? `color: ${colour}` : undefined}
           aria-hidden="true"
         >
-          <Icon name="folder" size={13} />
+          <FolderGlyph size={13} />
         </span>
         {folder.name}
         <span class="count">{all.length}</span>
@@ -112,6 +146,10 @@
     onpick={(colorHex) => void pickColor(colorHex)}
     onclose={() => (picker = null)}
   />
+{/if}
+
+{#if menu}
+  <ContextMenu x={menu.x} y={menu.y} items={menu.items} onclose={() => (menu = null)} />
 {/if}
 
 <style>
@@ -156,6 +194,10 @@
     font-weight: 600;
     font-size: var(--hr-font-size-small);
     padding: 2px;
+  }
+
+  .folder.colored .folder-toggle {
+    color: color-mix(in srgb, var(--folder-color) 45%, var(--hr-background-text));
   }
 
   .chevron {

@@ -14,8 +14,14 @@
   import ImportExportDialog from "./ImportExportDialog.svelte";
   import ServerEditor from "./ServerEditor.svelte";
   import CatalogSidePanel from "./CatalogSidePanel.svelte";
+  import {
+    LIST_COLUMN_LABELS,
+    listTemplate,
+    visibleColumns,
+  } from "./columns";
 
   let importOpen = $state(false);
+  let dragColumn = $state<string | null>(null);
   let resizing = $state<{
     column: string;
     startX: number;
@@ -25,7 +31,7 @@
   const showNotes = $derived(app.config?.general.showNoteInList ?? true);
   const columns = $derived(catalog.columnWidths);
   const template = $derived(
-    `46px ${columns.protocol}px minmax(${columns.name}px, 1.2fr) ${columns.ip}px ${showNotes ? `${columns.note}px ` : ""}minmax(${columns.target}px, 1fr) 62px`,
+    listTemplate(catalog.columnOrder, columns, showNotes),
   );
   const totalServers = $derived(catalog.snapshot?.servers.length ?? 0);
 
@@ -53,6 +59,7 @@
 
   function startResize(event: PointerEvent, column: string): void {
     event.preventDefault();
+    event.stopPropagation();
     resizing = {
       column,
       startX: event.clientX,
@@ -73,6 +80,25 @@
     const width = catalog.columnWidths[column] ?? 140;
     resizing = null;
     await catalog.setColumnWidth(column, width);
+  }
+
+  function startColumnDrag(event: DragEvent, key: string): void {
+    dragColumn = key;
+    event.dataTransfer?.setData("text/plain", `column:${key}`);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+    }
+  }
+
+  function dropColumn(event: DragEvent, target: string): void {
+    event.preventDefault();
+    const from =
+      dragColumn ??
+      (event.dataTransfer?.getData("text/plain") ?? "").replace(/^column:/, "");
+    dragColumn = null;
+    if (from && from !== target) {
+      void catalog.moveColumn(from, target);
+    }
   }
 </script>
 
@@ -145,24 +171,44 @@
                 onchange={() => catalog.toggleSelectAll()}
               />
             </div>
-            {#each [
-              ["protocol", "Protocol"],
-              ["name", "Name"],
-              ["ip", "IP"],
-              ...(showNotes ? [["note", "Note"]] : []),
-              ["target", "Target"],
-            ] as [key, label] (key)}
-              <div class="cell head" class:with-resizer={key !== "target"}>
-                {label}
+            {#each visibleColumns(catalog.columnOrder, showNotes) as key (key)}
+              <div
+                class="cell head"
+                class:with-resizer={key !== "target"}
+                class:drag-over={dragColumn !== null && dragColumn !== key}
+                data-testid={`column-head-${key}`}
+                role="columnheader"
+                tabindex="-1"
+                ondragover={(event) => {
+                  if (dragColumn) {
+                    event.preventDefault();
+                  }
+                }}
+                ondrop={(event) => dropColumn(event, key)}
+              >
+                <span class="column-grip">
+                  <span
+                    role="button"
+                    tabindex="-1"
+                    draggable="true"
+                    title="Drag to reorder column"
+                    aria-label={`Reorder ${LIST_COLUMN_LABELS[key]}`}
+                    ondragstart={(event) => startColumnDrag(event, key)}
+                    ondragend={() => (dragColumn = null)}
+                  >
+                    <Icon name="grip" size={10} />
+                  </span>
+                </span>
+                <span class="head-label">{LIST_COLUMN_LABELS[key]}</span>
                 {#if key !== "target"}
                   <span
                     class="resizer"
                     role="separator"
-                    aria-label={`Resize ${label}`}
+                    aria-label={`Resize ${LIST_COLUMN_LABELS[key]}`}
                     onpointerdown={(event) => startResize(event, key)}
                     onpointermove={moveResize}
                     onpointerup={() => void endResize()}
-                    onpointercancel={() => (resizing = null)}
+                    onpointercancel={() => void endResize()}
                   ></span>
                 {/if}
               </div>
@@ -285,6 +331,42 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: grab;
+  }
+
+  .drag-over {
+    background: color-mix(in srgb, var(--hr-accent-mid) 16%, transparent);
+    outline: 1px dashed var(--hr-accent-mid);
+    outline-offset: -2px;
+  }
+
+  .column-grip {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    color: color-mix(in srgb, var(--hr-background-text) 30%, transparent);
+  }
+
+  .column-grip > span {
+    display: inline-grid;
+    place-items: center;
+    cursor: grab;
+  }
+
+  .column-grip > span:hover {
+    color: var(--hr-accent-light);
+  }
+
+  .head-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .center {

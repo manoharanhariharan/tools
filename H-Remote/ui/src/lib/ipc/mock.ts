@@ -389,6 +389,7 @@ function defaultListView(): ListViewLocality {
     },
     customOrder: [],
     columnWidths: {},
+    columnOrder: [],
   };
 }
 

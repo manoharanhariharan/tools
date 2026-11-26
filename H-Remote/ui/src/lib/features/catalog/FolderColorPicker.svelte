@@ -13,17 +13,25 @@
 
   const PRESETS = [
     "#FF4FA3D1",
-    "#FF3EA66B",
-    "#FFE0A23C",
-    "#FFD9534F",
+    "#FF2F7DD1",
+    "#FF5C6BC0",
     "#FFB785F0",
+    "#FFE07AB0",
+    "#FFE05A6A",
+    "#FFD9534F",
+    "#FFE0A23C",
+    "#FFE8C547",
+    "#FF9ACD32",
+    "#FF3EA66B",
+    "#FF2FA57A",
     "#FF5CC9C4",
     "#FF8A9BA8",
-    "#FFE07AB0",
+    "#FF6B7A8F",
+    "#FFB07D5A",
   ];
 
-  const width = 214;
-  const height = 132;
+  const width = 230;
+  const height = 252;
   const left = $derived(`${Math.max(8, Math.min(x, window.innerWidth - width - 8))}px`);
   const top = $derived(`${Math.max(8, Math.min(y, window.innerHeight - height - 8))}px`);
 
@@ -43,6 +51,15 @@
   });
 
   const current = $derived(value ? toCssColor(value) : "");
+
+  function pickCustom(event: Event): void {
+    const hex = (event.currentTarget as HTMLInputElement).value
+      .replace("#", "")
+      .toUpperCase();
+    if (/^[0-9A-F]{6}$/.test(hex)) {
+      onpick(`#FF${hex}`);
+    }
+  }
 </script>
 
 <div
@@ -67,6 +84,16 @@
       ></button>
     {/each}
   </div>
+  <label class="custom">
+    <span>Custom colour</span>
+    <input
+      type="color"
+      value={current || "#4FA3D1"}
+      aria-label="Custom folder colour"
+      onchange={pickCustom}
+    />
+    <code>{value || "none"}</code>
+  </label>
   <div class="actions">
     <button type="button" class="reset" onclick={() => onpick("")}>No colour</button>
     <button type="button" class="close" onclick={onclose}>Close</button>
@@ -77,7 +104,7 @@
   .picker {
     position: fixed;
     z-index: 970;
-    width: 214px;
+    width: 230px;
     padding: 8px;
     border-radius: var(--hr-radius);
     border: 1px solid var(--hr-border-strong);
@@ -105,6 +132,35 @@
   .swatch.selected {
     outline: 2px solid var(--hr-accent-light);
     outline-offset: 1px;
+  }
+
+  .custom {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--hr-border);
+    font-size: var(--hr-font-size-small);
+  }
+
+  .custom span {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .custom input {
+    width: 34px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid var(--hr-border-strong);
+    border-radius: var(--hr-radius-small);
+    background: transparent;
+  }
+
+  .custom code {
+    font-size: 9px;
+    color: color-mix(in srgb, var(--hr-background-text) 58%, transparent);
   }
 
   .actions {

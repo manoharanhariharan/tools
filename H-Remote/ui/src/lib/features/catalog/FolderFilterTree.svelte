@@ -1,10 +1,17 @@
 <script lang="ts">
   import type { CatalogFolder } from "../../ipc/contracts";
   import { catalog } from "../../state/catalog.svelte";
-  import Icon from "../../components/Icon.svelte";
+  import ContextMenu, { type MenuItem } from "../../components/ContextMenu.svelte";
   import { toCssColor } from "../../theme/apply";
   import FolderColorButton from "./FolderColorButton.svelte";
   import FolderColorPicker from "./FolderColorPicker.svelte";
+  import FolderGlyph from "./FolderGlyph.svelte";
+  import {
+    deleteFolder,
+    duplicateFolder,
+    promptNewSubfolder,
+    promptRenameFolder,
+  } from "./folderActions";
   import Self from "./FolderFilterTree.svelte";
 
   interface Props {
@@ -13,6 +20,7 @@
   let { folders }: Props = $props();
   let dropTarget = $state<string | null>(null);
   let picker = $state<{ x: number; y: number; folder: CatalogFolder } | null>(null);
+  let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
 
   function folderEntity(folder: CatalogFolder) {
     return catalog.snapshot?.folders.find(
@@ -71,6 +79,29 @@
     picker = { x: event.clientX, y: event.clientY, folder };
   }
 
+  function folderMenu(event: MouseEvent, folder: CatalogFolder): void {
+    event.preventDefault();
+    event.stopPropagation();
+    menu = {
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        {
+          label: "New sub-folder",
+          action: () => void promptNewSubfolder(folder.path),
+        },
+        { label: "Rename", action: () => void promptRenameFolder(folder) },
+        { label: "Duplicate", action: () => void duplicateFolder(folder) },
+        {
+          label: "Folder colour…",
+          action: () => openPickerAtPointer(event, folder),
+        },
+        { separator: true },
+        { label: "Delete", danger: true, action: () => void deleteFolder(folder) },
+      ],
+    };
+  }
+
   async function pickColor(colorHex: string): Promise<void> {
     const entity = picker ? folderEntity(picker.folder) : undefined;
     picker = null;
@@ -102,7 +133,10 @@
       class="folder-row"
       class:active={active(folder.path)}
       class:drop={dropTarget === folder.path.join("/")}
-      role="listitem"
+      role="treeitem"
+      aria-expanded="true"
+      aria-selected={active(folder.path)}
+      tabindex="0"
       draggable="true"
       ondragstart={(event) => dragStart(event, folder)}
       ondragover={(event) => {
@@ -112,7 +146,16 @@
       }}
       ondragleave={() => (dropTarget = null)}
       ondrop={(event) => void dropOn(event, folder)}
-      oncontextmenu={(event) => openPickerAtPointer(event, folder)}
+      oncontextmenu={(event) => folderMenu(event, folder)}
+      onkeydown={(event) => {
+        if (event.target !== event.currentTarget) {
+          return;
+        }
+        if (event.key === "F2") {
+          event.preventDefault();
+          void promptRenameFolder(folder);
+        }
+      }}
     >
       <button
         type="button"
@@ -128,7 +171,7 @@
           class="folder-glyph"
           style={colour ? `color: ${colour}` : undefined}
         >
-          <Icon name="folder" size={13} />
+          <FolderGlyph size={13} />
         </span>
         <span class="name">{folder.name}</span>
         <span class="count">{count(folder)}</span>
@@ -155,6 +198,10 @@
     onpick={(colorHex) => void pickColor(colorHex)}
     onclose={() => (picker = null)}
   />
+{/if}
+
+{#if menu}
+  <ContextMenu x={menu.x} y={menu.y} items={menu.items} onclose={() => (menu = null)} />
 {/if}
 
 <style>
@@ -222,6 +269,15 @@
 
   .folder-row.active .folder {
     color: var(--hr-accent-light);
+  }
+
+  .folder-group.colored > .folder-row .name {
+    color: color-mix(in srgb, var(--folder-color) 45%, var(--hr-background-text));
+    font-weight: 600;
+  }
+
+  .folder-group.colored > .folder-row .count {
+    color: color-mix(in srgb, var(--folder-color) 30%, var(--hr-background-text));
   }
 
   .folder-glyph {

@@ -180,17 +180,17 @@ dialog. The app only opens the download URL; it never installs silently.
 | `.locality.json` | `ui.serverView`, `ui.serverSort`, column widths, main window placement (`x/y/width/height/maximized/monitorName/scaleFactor/layoutSignature`), `preferLastDisplay`, session fullscreen monitors, last tab tokens, tab layout/grid mode/tab-button flags, shared session-window placement, launcher window placement |
 | `.tags.json` | `pinned[]`, `order[]` (normalised lowercase, no `#`) |
 | `.connection_records.json` | `records{id: {lastConnectedAt, connectCount}}`, newest-first `quickConnect[]` (max 200) |
-| `.list_view.json` | sort, group expansion, custom server order, column widths |
+| `.list_view.json` | sort, group expansion, custom server order, column widths and left-to-right column order |
 | `.tree_view.json` | expanded folder ids, node order |
 
-## 5a. SQLite schema (v3)
+## 5a. SQLite schema (v4)
 
 | Table | Columns | Purpose |
 |---|---|---|
 | `Servers` | `Id` (ULID PK), `Protocol`, `ClassVersion`, `Json`, `UpdatedAt` | protocol-typed servers |
 | `Credentials` | `Id` (ULID PK), `Name` (unique, case-insensitive), `Hash`, `Json`, `UpdatedAt` | reusable credentials |
 | `Configs` | `Key` PK, `Value`, `UpdatedAt` | source config + encryption sentinel |
-| `Folders` | `Id` (ULID PK), `Path` (unique JSON array), `UpdatedAt` | folder hierarchy |
+| `Folders` | `Id` (ULID PK), `Path` (unique JSON array), `ColorHex`, `UpdatedAt` | folder hierarchy with an optional per-folder tint |
 | `TableMeta` | `TableName` PK, `UpdatedAt`, `RowCount` | cache invalidation stamps |
 | `_hremote_meta` | `key` PK, `value`, `updated_at` | schema version ledger |
 
@@ -200,7 +200,7 @@ Secrets inside `Servers.Json` / `Credentials.Json` are replaced with
 `encryption_key` and disables catalog storage without modifying data.
 
 Schema versions newer than the build are rejected. Phase 0 (v1) and Phase 1 (v2)
-databases migrate to v3 automatically on first open. Folder paths are ordered
+databases migrate to v4 automatically on first open. Folder paths are ordered
 JSON arrays; renaming/moving a folder rewrites every descendant folder and server
 path in the same transaction.
 

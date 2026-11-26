@@ -44,16 +44,20 @@ Current shared primitives: `Button`, `Icon`, `Toggle`, `TextField`,
 
 ```
 features/catalog/
-  CatalogPage.svelte        shell: compact header, toolbar, side panel, views, editor
+  CatalogPage.svelte        shell: compact header, toolbar, side panel, views,
+                            editor; list headers resize by dragging the divider
+                            and reorder by dragging the grip (order/width persist)
   CatalogToolbar.svelte     search, view switch, sort, notes, bulk actions
   CatalogSidePanel.svelte    Folders / Tags switch; folder tree confines the catalog;
                              drop a connection on a folder to file it, or on
                              “All connections” to keep it independent
   FolderFilterTree.svelte    recursive folder filter with indented guide lines,
-                             drag/drop move target, connection counts and a
-                             per-folder colour picker
+                             drag/drop move target, connection counts, context
+                             menu (rename/new/duplicate/delete/colour)
   FolderColorButton.svelte   palette button + colour chip shown on every folder
-  FolderColorPicker.svelte   fixed preset palette with “No colour”
+  FolderColorPicker.svelte   16-colour preset palette, custom colour picker and
+                             “No colour”
+  FolderGlyph.svelte         solid folder icon filled with the folder colour
   TagPanel.svelte           counts, filtering, pin/rename/delete/order/shortcuts
   CatalogList.svelte        list rows + nested folder groups, coloured headers
                             and ladder guide lines (recursive)

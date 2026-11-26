@@ -126,6 +126,33 @@ test.describe("H-Remote shell", () => {
     ).toHaveCSS("background-color", "rgb(62, 166, 107)");
   });
 
+  test("reorders and persists list columns", async ({ page }) => {
+    await resetProfile(page);
+    await completeWizard(page);
+    const protocol = page.getByTestId("column-head-protocol");
+    const ip = page.getByTestId("column-head-ip");
+    await expect(protocol).toBeVisible();
+    await ip.locator('[aria-label="Reorder IP"]').dragTo(protocol);
+    const headers = page.locator(".header .cell.head");
+    await expect(headers.nth(0)).toContainText("IP");
+    await expect(headers.nth(1)).toContainText("Protocol");
+
+    await page.reload();
+    await expect(page.locator(".header .cell.head").nth(0)).toContainText("IP");
+    await expect(page.locator(".header .cell.head").nth(1)).toContainText("Protocol");
+  });
+
+  test("renames a folder from its context menu", async ({ page }) => {
+    await resetProfile(page);
+    await completeWizard(page);
+    const row = page.locator(".folder-row", { has: page.getByTestId("folder-filter-Lab") });
+    await row.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
+    await page.getByLabel("Folder name").fill("Laboratory");
+    await page.getByRole("button", { name: "Rename", exact: true }).click();
+    await expect(page.getByTestId("folder-filter-Laboratory")).toBeVisible();
+  });
+
   test("offers visible move controls in custom order", async ({ page }) => {
     await resetProfile(page);
     await completeWizard(page);

@@ -11,6 +11,7 @@
   import { toCssColor } from "../../theme/apply";
   import FolderColorButton from "./FolderColorButton.svelte";
   import FolderColorPicker from "./FolderColorPicker.svelte";
+  import FolderGlyph from "./FolderGlyph.svelte";
   import Self from "./CatalogTree.svelte";
 
   interface Props {
@@ -189,6 +190,15 @@
         ondragleave={() => (dropTarget = null)}
         ondrop={(event) => void dropOn(event, folder.path)}
         oncontextmenu={(event) => folderMenu(event, folder)}
+        onkeydown={(event) => {
+          if (event.target !== event.currentTarget) {
+            return;
+          }
+          if (event.key === "F2") {
+            event.preventDefault();
+            void promptRename(folder);
+          }
+        }}
       >
         <TriStateCheckbox
           checked={all.length > 0 && selected.length === all.length}
@@ -215,7 +225,7 @@
           style={colour ? `color: ${colour}` : undefined}
           aria-hidden="true"
         >
-          <Icon name="folder" size={13} />
+          <FolderGlyph size={13} />
         </span>
         <span class="folder-name">{folder.name}</span>
         <FolderColorButton
@@ -386,6 +396,14 @@
   .folder-name {
     font-weight: 600;
     font-size: var(--hr-font-size-small);
+  }
+
+  .folder-group.colored > .folder-row .folder-name {
+    color: color-mix(in srgb, var(--folder-color) 45%, var(--hr-background-text));
+  }
+
+  .folder-group.colored > .folder-row .count {
+    color: color-mix(in srgb, var(--folder-color) 30%, var(--hr-background-text));
   }
 
   .count {

@@ -810,6 +810,8 @@ export interface ListViewLocality {
   groupExpanded: Record<string, boolean>;
   customOrder: string[];
   columnWidths: Record<string, number>;
+  /** Left-to-right order of list columns (`protocol`, `name`, `ip`, `note`, `target`). */
+  columnOrder: string[];
 }
 
 export interface TreeViewLocality {

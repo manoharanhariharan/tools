@@ -225,6 +225,21 @@ describe("catalog store", () => {
     expect(catalog.listView?.columnWidths.name).toBe(320);
   });
 
+  it("persists a custom column order across reloads", async () => {
+    await catalog.setColumnOrder(["ip", "protocol", "name", "target"]);
+    expect(catalog.columnOrder).toEqual([
+      "ip",
+      "protocol",
+      "name",
+      "target",
+      "note",
+    ]);
+    await catalog.setColumnWidth("ip", 222);
+    await catalog.load();
+    expect(catalog.columnOrder[0]).toBe("ip");
+    expect(catalog.columnWidths.ip).toBe(222);
+  });
+
   it("reorders folders within their siblings only", async () => {
     const folder = catalog.rootFolders()[1];
     await catalog.moveFolderOrder(folder.path, -1);

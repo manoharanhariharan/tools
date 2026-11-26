@@ -247,6 +247,8 @@ pub struct ListViewLocality {
     /// Server ids in user-defined order (P2-18).
     pub custom_order: Vec<String>,
     pub column_widths: BTreeMap<String, u32>,
+    /// Left-to-right order of list columns.
+    pub column_order: Vec<String>,
 }
 
 impl Default for ListViewLocality {
@@ -257,6 +259,7 @@ impl Default for ListViewLocality {
             group_expanded: BTreeMap::new(),
             custom_order: Vec::new(),
             column_widths: BTreeMap::new(),
+            column_order: Vec::new(),
         }
     }
 }
@@ -323,6 +326,21 @@ mod tests {
         assert_eq!(tags.pinned, vec!["prod"]);
         assert_eq!(tags.order, vec!["zeta", "alpha"]);
         assert_eq!(tags.schema_version, LOCALITY_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn list_view_column_order_round_trips_and_defaults_for_legacy_files() {
+        let view = ListViewLocality {
+            column_order: vec!["ip".into(), "name".into(), "protocol".into()],
+            ..ListViewLocality::default()
+        };
+        let decoded: ListViewLocality =
+            serde_json::from_str(&serde_json::to_string(&view).unwrap()).unwrap();
+        assert_eq!(decoded.column_order, view.column_order);
+
+        let legacy: ListViewLocality =
+            serde_json::from_str(r##"{"schemaVersion":1,"sort":"insertion"}"##).unwrap();
+        assert!(legacy.column_order.is_empty());
     }
 
     #[test]

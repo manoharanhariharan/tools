@@ -13,6 +13,12 @@ import type {
 import { commands } from "../ipc/client";
 import { effectiveMatchers } from "./matchers";
 import { app } from "./app.svelte";
+import {
+  DEFAULT_COLUMN_WIDTHS,
+  moveColumnBefore,
+  normalizeColumnOrder,
+  type ListColumnKey,
+} from "../features/catalog/columns";
 
 export type CatalogViewMode = "list" | "card" | "tree";
 export type EditorMode = "add" | "edit" | "duplicate" | "bulk";
@@ -25,13 +31,7 @@ export interface CatalogEditor {
   original: Server | null;
 }
 
-const DEFAULT_COLUMNS: Record<string, number> = {
-  protocol: 118,
-  name: 240,
-  ip: 170,
-  note: 260,
-  target: 230,
-};
+const DEFAULT_COLUMNS: Record<string, number> = { ...DEFAULT_COLUMN_WIDTHS };
 
 class CatalogStore {
   snapshot = $state<CatalogSnapshot | null>(null);
@@ -55,6 +55,7 @@ class CatalogStore {
   /** When set, the catalog is confined to this folder subtree. */
   folderFilter = $state<string[] | null>(null);
   columnWidths = $state<Record<string, number>>({ ...DEFAULT_COLUMNS });
+  columnOrder = $state<ListColumnKey[]>(normalizeColumnOrder(undefined));
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
   private refreshQueued = false;
   private disposed = false;
@@ -78,6 +79,7 @@ class CatalogStore {
       this.sort = listView.sort;
       this.viewMode = locality.ui.serverView;
       this.columnWidths = { ...DEFAULT_COLUMNS, ...listView.columnWidths };
+      this.columnOrder = normalizeColumnOrder(listView.columnOrder);
       this.expanded.clear();
       for (const path of treeView.expanded) {
         this.expanded.add(path);
@@ -183,6 +185,25 @@ class CatalogStore {
         await app.reportError(reason);
       }
     }
+  }
+
+  async setColumnOrder(order: readonly string[]): Promise<void> {
+    this.columnOrder = normalizeColumnOrder(order);
+    if (this.listView) {
+      this.listView = {
+        ...this.listView,
+        columnOrder: [...this.columnOrder],
+      };
+      try {
+        await commands.updateListView(this.listView);
+      } catch (reason) {
+        await app.reportError(reason);
+      }
+    }
+  }
+
+  async moveColumn(from: string, before: string): Promise<void> {
+    await this.setColumnOrder(moveColumnBefore(this.columnOrder, from, before));
   }
 
   async toggleNotes(): Promise<void> {

@@ -10,6 +10,7 @@
   import Icon from "../../components/Icon.svelte";
   import ServerIcon from "../../components/ServerIcon.svelte";
   import TriStateCheckbox from "../../components/TriStateCheckbox.svelte";
+  import { listTemplate } from "./columns";
 
   interface Props {
     server: Server;
@@ -52,7 +53,10 @@
     catalog.snapshot?.connectionRecords.records[server.id]?.lastConnectedAt,
   );
   const template = $derived(
-    `46px ${columns.protocol}px minmax(${columns.name}px, 1.2fr) ${columns.ip}px ${showNote ? `${columns.note}px ` : ""}minmax(${columns.target}px, 1fr) 62px`,
+    listTemplate(catalog.columnOrder, columns, showNote),
+  );
+  const orderIndex = $derived(
+    new Map(catalog.columnOrder.map((key, index) => [key, index + 1])),
   );
 
   function startAddressEdit(event: MouseEvent) {
@@ -278,7 +282,7 @@
   }}
   oncontextmenu={openMenu}
 >
-  <div class="cell select">
+  <div class="cell select" style:order="0">
     <span class="drag-grip" title="Drag connection" aria-hidden="true">
       <Icon name="grip" size={12} />
     </span>
@@ -288,10 +292,10 @@
       onchange={() => catalog.toggleSelected(server.id)}
     />
   </div>
-  <div class="cell protocol">
+  <div class="cell protocol" style:order={orderIndex.get("protocol") ?? 1}>
     <span class="badge">{server.protocol}</span>
   </div>
-  <div class="cell name">
+  <div class="cell name" style:order={orderIndex.get("name") ?? 2}>
     {#if catalog.sort === "custom" && !readOnly}
       <span class="reorder" aria-label={`Reorder ${server.displayName}`}>
         <button
@@ -388,7 +392,7 @@
       </span>
     {/if}
   </div>
-  <div class="cell ip">
+  <div class="cell ip" style:order={orderIndex.get("ip") ?? 3}>
     {#if editingAddress}
       <input
         bind:this={addressInput}
@@ -414,14 +418,14 @@
     {/if}
   </div>
   {#if showNote}
-    <div class="cell note" title={server.note}>
+    <div class="cell note" style:order={orderIndex.get("note") ?? 4} title={server.note}>
       <span>{server.note}</span>
     </div>
   {/if}
-  <div class="cell target">
+  <div class="cell target" style:order={orderIndex.get("target") ?? 5}>
     <HighlightedText text={server.subTitle} ranges={hit?.subtitleRanges ?? []} />
   </div>
-  <div class="cell source">
+  <div class="cell source" style:order="99">
     <span class="source-dot" class:readonly={catalog.isReadOnly(server)} title={catalog.isReadOnly(server) ? "Read-only data source" : "Local catalog"}>
       {catalog.sourceLabel(server.sourceId)}
     </span>
