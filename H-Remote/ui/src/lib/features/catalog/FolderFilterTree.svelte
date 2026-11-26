@@ -3,14 +3,14 @@
   import { catalog } from "../../state/catalog.svelte";
   import Icon from "../../components/Icon.svelte";
   import { toCssColor } from "../../theme/apply";
+  import FolderColorButton from "./FolderColorButton.svelte";
   import FolderColorPicker from "./FolderColorPicker.svelte";
   import Self from "./FolderFilterTree.svelte";
 
   interface Props {
     folders: CatalogFolder[];
-    depth?: number;
   }
-  let { folders, depth = 0 }: Props = $props();
+  let { folders }: Props = $props();
   let dropTarget = $state<string | null>(null);
   let picker = $state<{ x: number; y: number; folder: CatalogFolder } | null>(null);
 
@@ -65,6 +65,12 @@
     picker = { x: rect.left, y: rect.bottom + 4, folder };
   }
 
+  function openPickerAtPointer(event: MouseEvent, folder: CatalogFolder): void {
+    event.preventDefault();
+    event.stopPropagation();
+    picker = { x: event.clientX, y: event.clientY, folder };
+  }
+
   async function pickColor(colorHex: string): Promise<void> {
     const entity = picker ? folderEntity(picker.folder) : undefined;
     picker = null;
@@ -86,59 +92,59 @@
 </script>
 
 {#each folders as folder (folder.path.join("/"))}
+  {@const colour = folder.colorHex ? toCssColor(folder.colorHex) : ""}
   <div
-    class="folder-row"
-    class:active={active(folder.path)}
-    class:drop={dropTarget === folder.path.join("/")}
-    class:colored={Boolean(folder.colorHex)}
-    style:padding-left="{6 + depth * 14}px"
-    role="listitem"
-    draggable="true"
-    ondragstart={(event) => dragStart(event, folder)}
-    ondragover={(event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      dropTarget = folder.path.join("/");
-    }}
-    ondragleave={() => (dropTarget = null)}
-    ondrop={(event) => void dropOn(event, folder)}
+    class="folder-group"
+    class:colored={Boolean(colour)}
+    style:--folder-color={colour || undefined}
   >
-    <button
-      type="button"
-      class="folder"
-      data-testid={`folder-filter-${folder.path.join("-")}`}
-      title={`${folder.path.join(" / ")} — drop a connection here`}
-      onclick={() =>
-        active(folder.path)
-          ? catalog.clearFolderFilter()
-          : catalog.setFolderFilter(folder.path)}
+    <div
+      class="folder-row"
+      class:active={active(folder.path)}
+      class:drop={dropTarget === folder.path.join("/")}
+      role="listitem"
+      draggable="true"
+      ondragstart={(event) => dragStart(event, folder)}
+      ondragover={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        dropTarget = folder.path.join("/");
+      }}
+      ondragleave={() => (dropTarget = null)}
+      ondrop={(event) => void dropOn(event, folder)}
+      oncontextmenu={(event) => openPickerAtPointer(event, folder)}
     >
-      <span
-        class="folder-glyph"
-        style={folder.colorHex ? `color: ${toCssColor(folder.colorHex)}` : undefined}
+      <button
+        type="button"
+        class="folder"
+        data-testid={`folder-filter-${folder.path.join("-")}`}
+        title={`${folder.path.join(" / ")} — drop a connection here`}
+        onclick={() =>
+          active(folder.path)
+            ? catalog.clearFolderFilter()
+            : catalog.setFolderFilter(folder.path)}
       >
-        <Icon name="folder" size={13} />
-      </span>
-      <span class="name">{folder.name}</span>
-      <span class="count">{count(folder)}</span>
-    </button>
-    <button
-      type="button"
-      class="color-dot"
-      aria-label={`Colour for ${folder.name}`}
-      title="Folder colour"
-      onclick={(event) => openPicker(event, folder)}
-    >
-      <span
-        class="dot"
-        class:empty={!folder.colorHex}
-        style={folder.colorHex ? `background: ${toCssColor(folder.colorHex)}` : undefined}
-      ></span>
-    </button>
+        <span
+          class="folder-glyph"
+          style={colour ? `color: ${colour}` : undefined}
+        >
+          <Icon name="folder" size={13} />
+        </span>
+        <span class="name">{folder.name}</span>
+        <span class="count">{count(folder)}</span>
+      </button>
+      <FolderColorButton
+        colorHex={folder.colorHex}
+        folderName={folder.name}
+        onclick={(event) => openPicker(event, folder)}
+      />
+    </div>
+    {#if folder.folders.length > 0}
+      <div class="folder-children">
+        <Self folders={folder.folders} />
+      </div>
+    {/if}
   </div>
-  {#if folder.folders.length > 0}
-    <Self folders={folder.folders} depth={depth + 1} />
-  {/if}
 {/each}
 
 {#if picker}
@@ -152,12 +158,35 @@
 {/if}
 
 <style>
+  .folder-group {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .folder-children {
+    margin-left: 9px;
+    padding-left: 3px;
+    border-left: 1px solid var(--hr-border);
+  }
+
+  .folder-group.colored > .folder-children {
+    border-left-color: color-mix(in srgb, var(--folder-color) 55%, var(--hr-border));
+  }
+
   .folder-row {
     display: flex;
     align-items: center;
     gap: 2px;
     width: 100%;
+    min-width: 0;
     border-radius: var(--hr-radius-small);
+    border-left: 2px solid transparent;
+  }
+
+  .folder-group.colored > .folder-row {
+    border-left-color: var(--folder-color);
+    background: color-mix(in srgb, var(--folder-color) 7%, transparent);
   }
 
   .folder-row:hover {
@@ -202,7 +231,8 @@
   }
 
   .name {
-    flex: 1;    min-width: 0;
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -211,40 +241,5 @@
   .count {
     font-size: 9px;
     color: color-mix(in srgb, var(--hr-background-text) 48%, transparent);
-  }
-
-  .color-dot {
-    display: grid;
-    place-items: center;
-    flex: none;
-    width: 20px;
-    height: 22px;
-    border: 0;
-    border-radius: var(--hr-radius-small);
-    background: transparent;
-    cursor: pointer;
-    opacity: 0.55;
-  }
-
-  .folder-row:hover .color-dot,
-  .folder-row.active .color-dot,
-  .folder-row.colored .color-dot {
-    opacity: 1;
-  }
-
-  .color-dot:hover {
-    background: color-mix(in srgb, var(--hr-accent-mid) 16%, transparent);
-  }
-
-  .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    border: 1px solid var(--hr-border-strong);
-  }
-
-  .dot.empty {
-    background: transparent;
-    border-style: dashed;
   }
 </style>

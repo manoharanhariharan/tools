@@ -4,6 +4,7 @@
   import { sessions } from "../../state/sessions.svelte";
   import Button from "../../components/Button.svelte";
   import { containRect, surfaceCoordinates, x11Buttons, x11Keycode } from "./vnc";
+  import { physicalPixels } from "./scale";
   import FileBrowser from "./FileBrowser.svelte";
 
   interface Props {
@@ -91,8 +92,13 @@
           return;
         }
         if (connected) {
-          sessions.recordFitSize(session.id, rect.width, rect.height);
-          void sessions.resize(session.id, rect.width, rect.height);
+          const physical = physicalPixels(
+            rect.width,
+            rect.height,
+            window.devicePixelRatio || 1,
+          );
+          sessions.recordFitSize(session.id, physical.width, physical.height);
+          void sessions.resize(session.id, physical.width, physical.height);
         } else {
           sessions.reconnectIfLost(session.id);
         }

@@ -49,12 +49,17 @@ features/catalog/
   CatalogSidePanel.svelte    Folders / Tags switch; folder tree confines the catalog;
                              drop a connection on a folder to file it, or on
                              “All connections” to keep it independent
-  FolderFilterTree.svelte    recursive folder filter, drag/drop move target and
-                             connection counts
+  FolderFilterTree.svelte    recursive folder filter with indented guide lines,
+                             drag/drop move target, connection counts and a
+                             per-folder colour picker
+  FolderColorButton.svelte   palette button + colour chip shown on every folder
+  FolderColorPicker.svelte   fixed preset palette with “No colour”
   TagPanel.svelte           counts, filtering, pin/rename/delete/order/shortcuts
-  CatalogList.svelte        list rows + nested folder groups (recursive)
-  CatalogCards.svelte       card grid + nested folder groups (recursive)
-  CatalogTree.svelte        tree view with drag & drop and folder menus
+  CatalogList.svelte        list rows + nested folder groups, coloured headers
+                            and ladder guide lines (recursive)
+  CatalogCards.svelte       card grid + nested coloured folder groups (recursive)
+  CatalogTree.svelte        tree view with drag & drop, folder menus, coloured
+                            headers and ladder guide lines
   ServerRow.svelte          list row: drag grip + whole-row drag, inline address
                             edit (Enter saves without connecting), F2 inline rename,
                             custom-order up/down controls, note, context menu

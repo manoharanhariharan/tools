@@ -1,8 +1,12 @@
 <script lang="ts">
-  import type { CatalogFolder, Server } from "../../ipc/contracts";
+  import type { CatalogFolder, Folder, Server } from "../../ipc/contracts";
   import { catalog } from "../../state/catalog.svelte";
+  import Icon from "../../components/Icon.svelte";
   import ServerRow from "./ServerRow.svelte";
   import TriStateCheckbox from "../../components/TriStateCheckbox.svelte";
+  import { toCssColor } from "../../theme/apply";
+  import FolderColorButton from "./FolderColorButton.svelte";
+  import FolderColorPicker from "./FolderColorPicker.svelte";
   import Self from "./CatalogList.svelte";
 
   interface Props {
@@ -10,9 +14,9 @@
     servers: Server[];
     columns: Record<string, number>;
     showNote: boolean;
-    depth?: number;
   }
-  let { folders, servers, columns, showNote, depth = 0 }: Props = $props();
+  let { folders, servers, columns, showNote }: Props = $props();
+  let picker = $state<{ x: number; y: number; folder: CatalogFolder } | null>(null);
 
   function flatten(folder: CatalogFolder): Server[] {
     return [
@@ -30,6 +34,12 @@
     };
   }
 
+  function folderEntity(folder: CatalogFolder): Folder | undefined {
+    return catalog.snapshot?.folders.find(
+      (candidate) => candidate.path.join("/") === folder.path.join("/"),
+    );
+  }
+
   function toggleFolderSelection(folder: CatalogFolder) {
     const all = flatten(folder);
     const state = folderState(folder);
@@ -39,45 +49,86 @@
       for (const server of all) catalog.selected.add(server.id);
     }
   }
+
+  function openPicker(event: MouseEvent, folder: CatalogFolder): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    picker = { x: rect.left, y: rect.bottom + 4, folder };
+  }
+
+  function openPickerAtPointer(event: MouseEvent, folder: CatalogFolder): void {
+    event.preventDefault();
+    event.stopPropagation();
+    picker = { x: event.clientX, y: event.clientY, folder };
+  }
+
+  async function pickColor(colorHex: string): Promise<void> {
+    const entity = picker ? folderEntity(picker.folder) : undefined;
+    picker = null;
+    if (entity) {
+      await catalog.setFolderColor(entity, colorHex);
+    }
+  }
 </script>
 
 {#each folders as folder (folder.path.join("/"))}
   {@const state = folderState(folder)}
-  <div class="folder-row" style:padding-left="{10 + depth * 18}px" role="row">
-    <TriStateCheckbox
-      checked={state.all}
-      indeterminate={state.some}
-      label={`Select folder ${folder.path.join(" / ")}`}
-      onchange={() => toggleFolderSelection(folder)}
-    />
-    <button
-      type="button"
-      class="folder-toggle"
-      aria-expanded={catalog.isExpanded(folder.path)}
-      onclick={() => catalog.toggleFolder(folder.path)}
+  {@const colour = folder.colorHex ? toCssColor(folder.colorHex) : ""}
+  <div
+    class="folder-group"
+    class:colored={Boolean(colour)}
+    style:--folder-color={colour || undefined}
+  >
+    <div
+      class="folder-row"
+      role="row"
+      tabindex="0"
+      oncontextmenu={(event) => openPickerAtPointer(event, folder)}
     >
-      <span class="chevron" class:open={catalog.isExpanded(folder.path)}>›</span>
-      <span class="folder-name">{folder.name}</span>
-      <span class="count">{flatten(folder).length}</span>
-    </button>
+      <TriStateCheckbox
+        checked={state.all}
+        indeterminate={state.some}
+        label={`Select folder ${folder.path.join(" / ")}`}
+        onchange={() => toggleFolderSelection(folder)}
+      />
+      <button
+        type="button"
+        class="folder-toggle"
+        aria-expanded={catalog.isExpanded(folder.path)}
+        onclick={() => catalog.toggleFolder(folder.path)}
+      >
+        <span class="chevron" class:open={catalog.isExpanded(folder.path)}>›</span>
+        <span
+          class="folder-icon"
+          style={colour ? `color: ${colour}` : undefined}
+          aria-hidden="true"
+        >
+          <Icon name="folder" size={13} />
+        </span>
+        <span class="folder-name">{folder.name}</span>
+        <span class="count">{flatten(folder).length}</span>
+      </button>
+      <FolderColorButton
+        colorHex={folder.colorHex}
+        folderName={folder.name}
+        onclick={(event) => openPicker(event, folder)}
+      />
+    </div>
+    {#if catalog.isExpanded(folder.path)}
+      <div class="folder-children">
+        {#each folder.servers as server (server.id)}
+          <ServerRow {server} hit={catalog.hitFor(server.id)} {columns} {showNote} />
+        {/each}
+        <Self folders={folder.folders} servers={[]} {columns} {showNote} />
+      </div>
+    {/if}
   </div>
-  {#if catalog.isExpanded(folder.path)}
-    {#each folder.servers as server (server.id)}
-      <ServerRow {server} hit={catalog.hitFor(server.id)} {columns} {showNote} />
-    {/each}
-    <Self
-      folders={folder.folders}
-      servers={[]}
-      {columns}
-      {showNote}
-      depth={depth + 1}
-    />
-  {/if}
 {/each}
 
 {#if catalog.hasMultipleSources() && catalog.sourceFilter === "all"}
   {#each catalog.groupServers(servers) as group (group.id)}
-    <div class="source-row" style:padding-left="{10 + depth * 18}px" role="row">
+    <div class="source-row" role="row">
       <span class="source-name">{group.label}</span>
       <span class="source-count">{group.servers.length}</span>
       {#if group.readOnly}<span class="source-ro">read-only</span>{/if}
@@ -92,7 +143,31 @@
   {/each}
 {/if}
 
+{#if picker}
+  <FolderColorPicker
+    x={picker.x}
+    y={picker.y}
+    value={picker.folder.colorHex}
+    onpick={(colorHex) => void pickColor(colorHex)}
+    onclose={() => (picker = null)}
+  />
+{/if}
+
 <style>
+  .folder-group {
+    min-width: 0;
+  }
+
+  .folder-children {
+    margin-left: 18px;
+    padding-left: 3px;
+    border-left: 1px solid var(--hr-border);
+  }
+
+  .folder-group.colored > .folder-children {
+    border-left-color: color-mix(in srgb, var(--folder-color) 55%, var(--hr-border));
+  }
+
   .folder-row {
     display: flex;
     align-items: center;
@@ -100,9 +175,23 @@
     min-height: 34px;
     padding: 3px 10px;
     border-bottom: 1px solid var(--hr-border);
+    border-left: 3px solid transparent;
     background: color-mix(in srgb, var(--hr-primary-dark) 32%, transparent);
     content-visibility: auto;
     contain-intrinsic-size: auto 34px;
+  }
+
+  .folder-group.colored > .folder-row {
+    border-left-color: var(--folder-color);
+    background: color-mix(
+      in srgb,
+      var(--folder-color) 9%,
+      color-mix(in srgb, var(--hr-primary-dark) 32%, transparent)
+    );
+  }
+
+  .folder-row:hover {
+    background: color-mix(in srgb, var(--hr-accent-mid) 8%, transparent);
   }
 
   .folder-toggle {
@@ -127,6 +216,13 @@
 
   .chevron.open {
     transform: rotate(90deg);
+  }
+
+  .folder-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    color: var(--hr-accent-light);
   }
 
   .source-row {

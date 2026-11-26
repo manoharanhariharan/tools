@@ -100,17 +100,29 @@ test.describe("H-Remote shell", () => {
     await resetProfile(page);
     await completeWizard(page);
     const row = page.locator(".folder-row", { has: page.getByTestId("folder-filter-Lab") });
-    const dot = row.locator(".dot");
-    await page.getByRole("button", { name: "Colour for Lab" }).click();
+    await expect(page.locator(".folder-list .folder-children").first()).toBeVisible();
+    await row.getByRole("button", { name: "Change colour for Lab" }).click();
     const picker = page.getByRole("dialog", { name: "Folder colour" });
     await expect(picker).toBeVisible();
     await picker.getByRole("button", { name: "Use colour #FF3EA66B" }).click();
     await expect(picker).toHaveCount(0);
-    await expect(dot).toHaveCSS("background-color", "rgb(62, 166, 107)");
+
+    // The list view shows the same folder tint plus a ladder guide under it.
+    await page.getByRole("button", { name: "list view" }).click();
+    const labFolder = page.locator(".scroll .folder-group", { hasText: "Lab" }).first();
+    await expect(labFolder).toHaveClass(/colored/);
+    await expect(labFolder.locator(".folder-row")).toHaveCSS(
+      "border-left-color",
+      "rgb(62, 166, 107)",
+    );
+    await expect(labFolder.getByRole("button", { name: "Change colour for Lab" })).toBeVisible();
+    await expect(
+      page.locator(".scroll .folder-group", { hasText: "Prod" }).locator(".folder-children").first(),
+    ).toBeVisible();
 
     await page.reload();
     await expect(
-      page.locator(".folder-row", { has: page.getByTestId("folder-filter-Lab") }).locator(".dot"),
+      page.locator(".folder-row", { has: page.getByTestId("folder-filter-Lab") }).locator(".chip"),
     ).toHaveCSS("background-color", "rgb(62, 166, 107)");
   });
 

@@ -993,9 +993,12 @@ class SessionsStore {
   private viewport(): [number, number] {
     // The workspace bar plus the content padding/border leave roughly this much
     // room; overshooting used to force an avoidable resize right after connect.
-    const width = Math.max(640, (window.innerWidth || 1280) - 16);
-    const height = Math.max(480, (window.innerHeight || 720) - 64);
-    return [Math.round(width), Math.round(height)];
+    // RDP dimensions are physical pixels, so CSS measurements are scaled by the
+    // device pixel ratio to keep high-DPI windows at their native resolution.
+    const ratio = window.devicePixelRatio || 1;
+    const width = Math.max(640, Math.round(((window.innerWidth || 1280) - 16) * ratio));
+    const height = Math.max(480, Math.round(((window.innerHeight || 720) - 64) * ratio));
+    return [width, height];
   }
 }
 

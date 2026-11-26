@@ -96,11 +96,15 @@ context-menu entry:
   `Connected`, so the UI no longer re-renders on every frame.
 - Window resizes trigger a debounced auto-resize when the session is connected
   and no fixed display override is active. If a session dropped unexpectedly, a
-  resize also retries the connection (up to two attempts).
+  resize also retries the connection (up to two attempts). CSS measurements are
+  converted to physical device pixels with `devicePixelRatio`, so high-DPI and
+  full-screen windows request their native pixel size instead of a smaller
+  CSS-pixel desktop.
 - Sessions that end with `networkLoss`/`noInfo` auto-reconnect after 1.5 s (two
   attempts, with a notice); explicit Disconnect/Close never auto-reconnects.
-- The workspace bar includes a **Minimize** button (works in full-screen mode too)
-  next to Grid/Display.
+- F11 / the full-screen action uses native window full screen. The session
+  surface loses its padding, border and grid gaps, the header hides, and moving
+  the pointer to the top 10 px reveals the header again.
 
 ## Audio
 

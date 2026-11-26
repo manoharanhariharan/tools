@@ -98,7 +98,7 @@
       {#if folders.length === 0}
         <p class="empty">No folders yet. Create one to group and confine connections.</p>
       {/if}
-      <p class="hint">Drag a connection onto a folder to file it, or onto “All connections” to keep it independent.</p>
+      <p class="hint">Drag a connection onto a folder to file it, or onto “All connections” to keep it independent. Use the palette button (or right-click) to colour a folder.</p>
     </div>
   {:else}
     <TagPanel embedded />

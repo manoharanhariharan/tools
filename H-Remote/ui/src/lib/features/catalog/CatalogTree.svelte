@@ -9,15 +9,15 @@
   import TriStateCheckbox from "../../components/TriStateCheckbox.svelte";
   import { i18n } from "../../i18n/index.svelte";
   import { toCssColor } from "../../theme/apply";
+  import FolderColorButton from "./FolderColorButton.svelte";
   import FolderColorPicker from "./FolderColorPicker.svelte";
   import Self from "./CatalogTree.svelte";
 
   interface Props {
     folders: CatalogFolder[];
     servers: Server[];
-    depth?: number;
   }
-  let { folders, servers, depth = 0 }: Props = $props();
+  let { folders, servers }: Props = $props();
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   let dropTarget = $state<string | null>(null);
   let colorPicker = $state<{ x: number; y: number; folder: CatalogFolder } | null>(null);
@@ -56,7 +56,8 @@
     }
   }
 
-  function folderMenu(event: MouseEvent, folder: CatalogFolder) {    event.preventDefault();
+  function folderMenu(event: MouseEvent, folder: CatalogFolder) {
+    event.preventDefault();
     event.stopPropagation();
     const entity = folderEntity(folder);
     const items: MenuItem[] = [
@@ -168,72 +169,74 @@
   {#each folders as folder (folder.path.join("/"))}
     {@const all = flatten(folder)}
     {@const selected = all.filter((server) => catalog.selected.has(server.id))}
+    {@const colour = folder.colorHex ? toCssColor(folder.colorHex) : ""}
     <div
-      class="folder-row"
-      class:drop={dropTarget === folder.path.join("/")}
-      style:padding-left="{12 + depth * 18}px"
-      role="treeitem"
-      aria-expanded={catalog.isExpanded(folder.path)}
-      aria-selected={selected.length > 0}
-      tabindex="0"
-      draggable="true"
-      ondragstart={(event) =>
-        dragStart(event, `folder:${folderEntity(folder)?.id ?? ""}`)}
-      ondragover={(event) => allowDrop(event, folder.path.join("/"))}
-      ondragleave={() => (dropTarget = null)}
-      ondrop={(event) => void dropOn(event, folder.path)}
-      oncontextmenu={(event) => folderMenu(event, folder)}
+      class="folder-group"
+      class:colored={Boolean(colour)}
+      style:--folder-color={colour || undefined}
     >
-      <TriStateCheckbox
-        checked={all.length > 0 && selected.length === all.length}
-        indeterminate={selected.length > 0 && selected.length < all.length}
-        label={`Select folder ${folder.path.join(" / ")}`}
-        onchange={() => {
-          if (selected.length === all.length) {
-            for (const server of all) catalog.selected.delete(server.id);
-          } else {
-            for (const server of all) catalog.selected.add(server.id);
-          }
-        }}
-      />
-      <button
-        type="button"
-        class="toggle"
-        onclick={() => catalog.toggleFolder(folder.path)}
-        aria-label={catalog.isExpanded(folder.path) ? "Collapse" : "Expand"}
+      <div
+        class="folder-row"
+        class:drop={dropTarget === folder.path.join("/")}
+        role="treeitem"
+        aria-expanded={catalog.isExpanded(folder.path)}
+        aria-selected={selected.length > 0}
+        tabindex="0"
+        draggable="true"
+        ondragstart={(event) =>
+          dragStart(event, `folder:${folderEntity(folder)?.id ?? ""}`)}
+        ondragover={(event) => allowDrop(event, folder.path.join("/"))}
+        ondragleave={() => (dropTarget = null)}
+        ondrop={(event) => void dropOn(event, folder.path)}
+        oncontextmenu={(event) => folderMenu(event, folder)}
       >
-        <span class="chevron" class:open={catalog.isExpanded(folder.path)}>›</span>
-      </button>
-      <span
-        class="folder-icon"
-        style={folder.colorHex ? `color: ${toCssColor(folder.colorHex)}` : undefined}
-        aria-hidden="true">▣</span>
-      <span class="folder-name">{folder.name}</span>
-      <button
-        type="button"
-        class="color-dot"
-        aria-label={`Colour for ${folder.name}`}
-        title="Folder colour"
-        onclick={(event) => openColorPicker(event, folder)}
-      >
+        <TriStateCheckbox
+          checked={all.length > 0 && selected.length === all.length}
+          indeterminate={selected.length > 0 && selected.length < all.length}
+          label={`Select folder ${folder.path.join(" / ")}`}
+          onchange={() => {
+            if (selected.length === all.length) {
+              for (const server of all) catalog.selected.delete(server.id);
+            } else {
+              for (const server of all) catalog.selected.add(server.id);
+            }
+          }}
+        />
+        <button
+          type="button"
+          class="toggle"
+          onclick={() => catalog.toggleFolder(folder.path)}
+          aria-label={catalog.isExpanded(folder.path) ? "Collapse" : "Expand"}
+        >
+          <span class="chevron" class:open={catalog.isExpanded(folder.path)}>›</span>
+        </button>
         <span
-          class="dot"
-          class:empty={!folder.colorHex}
-          style={folder.colorHex ? `background: ${toCssColor(folder.colorHex)}` : undefined}
-        ></span>
-      </button>
-      <span class="count">{all.length}</span>
-    </div>
+          class="folder-icon"
+          style={colour ? `color: ${colour}` : undefined}
+          aria-hidden="true"
+        >
+          <Icon name="folder" size={13} />
+        </span>
+        <span class="folder-name">{folder.name}</span>
+        <FolderColorButton
+          colorHex={folder.colorHex}
+          folderName={folder.name}
+          onclick={(event) => openColorPicker(event, folder)}
+        />
+        <span class="count">{all.length}</span>
+      </div>
 
-    {#if catalog.isExpanded(folder.path)}
-      <Self folders={folder.folders} servers={folder.servers} depth={depth + 1} />
-    {/if}
+      {#if catalog.isExpanded(folder.path)}
+        <div class="folder-children">
+          <Self folders={folder.folders} servers={folder.servers} />
+        </div>
+      {/if}
+    </div>
   {/each}
 
   {#each servers as server (server.id)}
     <div
       class="server-row"
-      style:padding-left="{34 + depth * 18}px"
       draggable="true"
       role="treeitem"
       aria-selected={catalog.selected.has(server.id) ? "true" : "false"}
@@ -301,6 +304,20 @@
     padding: 2px 0;
   }
 
+  .folder-group {
+    min-width: 0;
+  }
+
+  .folder-children {
+    margin-left: 18px;
+    padding-left: 3px;
+    border-left: 1px solid var(--hr-border);
+  }
+
+  .folder-group.colored > .folder-children {
+    border-left-color: color-mix(in srgb, var(--folder-color) 55%, var(--hr-border));
+  }
+
   .folder-row,
   .server-row {
     display: flex;
@@ -312,7 +329,17 @@
   }
 
   .folder-row {
+    border-left: 3px solid transparent;
     background: color-mix(in srgb, var(--hr-primary-dark) 34%, transparent);
+  }
+
+  .folder-group.colored > .folder-row {
+    border-left-color: var(--folder-color);
+    background: color-mix(
+      in srgb,
+      var(--folder-color) 10%,
+      color-mix(in srgb, var(--hr-primary-dark) 34%, transparent)
+    );
   }
 
   .folder-row:hover,
@@ -321,6 +348,7 @@
   }
 
   .server-row {
+    padding-left: 34px;
     cursor: grab;
   }
 
@@ -349,47 +377,15 @@
   }
 
   .folder-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
     color: var(--hr-accent-light);
-    font-size: 12px;
   }
 
   .folder-name {
     font-weight: 600;
     font-size: var(--hr-font-size-small);
-  }
-
-  .color-dot {
-    display: grid;
-    place-items: center;
-    flex: none;
-    width: 20px;
-    height: 20px;
-    border: 0;
-    border-radius: var(--hr-radius-small);
-    background: transparent;
-    cursor: pointer;
-    opacity: 0.55;
-  }
-
-  .folder-row:hover .color-dot,
-  .color-dot:focus-visible {
-    opacity: 1;
-  }
-
-  .color-dot:hover {
-    background: color-mix(in srgb, var(--hr-accent-mid) 16%, transparent);
-  }
-
-  .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    border: 1px solid var(--hr-border-strong);
-  }
-
-  .dot.empty {
-    background: transparent;
-    border-style: dashed;
   }
 
   .count {
