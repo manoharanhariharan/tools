@@ -122,7 +122,13 @@ Rules:
 - the frontend registers every event listener through one `track()` helper and unlistens all of them
   in `onMount`'s teardown, so navigation does not leak handlers;
 - the instrument-metadata fetch uses a `cancelled` flag so a stale response cannot overwrite a newer
-  selection.
+  selection;
+- replay pacing measures **actual elapsed time** and replenishes a frame budget instead of sleeping
+  per frame. Windows' timer granularity is ~15.6 ms, so a per-frame `sleep(1/hz)` silently caps a
+  120 Hz capture at ~64 Hz — measured at 65/s before the fix, 120/s after. This matters because a
+  real capture may run at thousands of frames/s;
+- `FV_AUTOSTART_DEMO=1` starts the bundled replay after the window mounts, which is how the full
+  producer → consumer → delta pipeline is smoke-tested without a click.
 
 The Mongo driver requires an explicit `shutdown()`; `fv-store` exposes it and the CLI calls it on
 every path. Without it the driver panics when the runtime is dropped.

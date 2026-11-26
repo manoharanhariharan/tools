@@ -917,6 +917,17 @@ Two defects were caught by the new tests:
 2. **A watched instrument had no row until its first tick**, so adding an illiquid scrip looked like
    a no-op. `QuoteTable` now inserts a placeholder row immediately.
 
+One defect was caught by measuring the running app rather than by a test:
+
+3. **Replay pacing was capped at ~64 Hz on Windows.** A per-frame `sleep(1/hz)` interacts badly with
+   the ~15.6 ms timer granularity: a 120 Hz demo measured 65/s. Pacing now measures real elapsed time
+   and replenishes a frame budget, which holds 120/s (verified 119–122/s) and will replay a
+   high-rate real capture at its true speed.
+
+End-to-end verification of the shipped app (`FV_AUTOSTART_DEMO=1`, debug log): window opens,
+182,901 instruments load from Mongo, 3 capture symbols enter the watch, frame counter climbs
+~120/s with 0 decode errors.
+
 Notable defects found and fixed during implementation — each is a class of bug the legacy code had:
 
 1. **Malformed JSON silently became an "unknown frame".** Now validated with `IgnoredAny`, so

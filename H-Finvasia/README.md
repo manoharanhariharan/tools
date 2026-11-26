@@ -130,6 +130,7 @@ Measured against `STOCK.FINVASIA_SYMBOL` on this machine:
 | `FV_MONGO_DB` | `STOCK` | Database name |
 | `FV_MONGO_MASTER_COLLECTION` | `FINVASIA_SYMBOL` | Master collection |
 | `FV_ACCESS_TOKEN` | — | OAuth access token for the live feed |
+| `FV_AUTOSTART_DEMO` | — | `1` starts the bundled replay at launch (kiosk / CI smoke test) |
 | `RUST_LOG` | `info` | `tracing` filter |
 
 **No credentials are read from disk.** The token comes from the environment; the planned keychain

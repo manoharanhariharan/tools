@@ -171,7 +171,7 @@ fn stop_feed_impl(state: &Arc<AppState>) {
     market.clear_error();
 }
 
-/// Start the bundled (or a provided) JSONL capture, paced to look live.
+/// Start the bundled capture (no `path` = the demo feed), or a provided JSONL capture.
 #[tauri::command]
 async fn start_replay(
     app: AppHandle,
@@ -179,14 +179,42 @@ async fn start_replay(
     path: Option<String>,
     hz: Option<u64>,
 ) -> Result<Vec<String>, String> {
-    stop_feed_impl(state.inner());
+    match path.as_deref().filter(|p| !p.trim().is_empty()) {
+        Some(file) => start_capture(app, state.inner().clone(), file, hz.unwrap_or(120)).await,
+        None => start_demo(app, state.inner().clone()).await,
+    }
+}
 
-    let replay = match path.as_deref().filter(|p| !p.trim().is_empty()) {
-        Some(p) => {
-            fv_feed::Replay::from_path(p).map_err(|e| format!("cannot read capture: {e}"))?
-        }
-        None => fv_feed::Replay::from_jsonl_str(SAMPLE_FEED),
-    };
+/// Used by the command and by `FV_AUTOSTART_DEMO=1` (kiosk/demo/CI smoke test).
+async fn start_demo(app: AppHandle, state: Arc<AppState>) -> Result<Vec<String>, String> {
+    begin_feed(
+        app,
+        state,
+        fv_feed::Replay::from_jsonl_str(SAMPLE_FEED),
+        120,
+    )
+    .await
+}
+
+async fn start_capture(
+    app: AppHandle,
+    state: Arc<AppState>,
+    path: &str,
+    hz: u64,
+) -> Result<Vec<String>, String> {
+    let replay =
+        fv_feed::Replay::from_path(path).map_err(|e| format!("cannot read capture: {e}"))?;
+    begin_feed(app, state, replay, hz).await
+}
+
+async fn begin_feed(
+    app: AppHandle,
+    state: Arc<AppState>,
+    replay: fv_feed::Replay,
+    hz: u64,
+) -> Result<Vec<String>, String> {
+    stop_feed_impl(&state);
+
     if replay.is_empty() {
         return Err("capture contains no frames".into());
     }
@@ -206,7 +234,7 @@ async fn start_replay(
 
     let payload = {
         let mut market = state.market.lock().unwrap();
-        market.set_watch(keys.clone());
+        market.set_watch(keys);
         market.set_source(SourceKind::Replay);
         market.clear_error();
         WatchChanged {
@@ -216,12 +244,13 @@ async fn start_replay(
     };
 
     let frames: Vec<Vec<u8>> = replay.frames().to_vec();
-    let handle = spawn_replay(state.inner().clone(), frames, hz.unwrap_or(120));
-
+    let handle = spawn_replay(state.clone(), frames, hz);
     *state.producer.lock().unwrap() = Some(handle);
+
     let watched = payload.keys.clone();
     let _ = app.emit("watch:changed", payload);
     let _ = app.emit("feed:changed", "replay");
+    tracing::info!(keys = watched.len(), hz, "replay feed started");
 
     Ok(watched)
 }
@@ -303,25 +332,49 @@ async fn start_live(
 // Background tasks
 // ---------------------------------------------------------------------------
 
+/// Pace a capture at (approximately) `hz` frames/second.
+///
+/// A per-frame `sleep(1/hz)` is wrong on Windows: the timer granularity is
+/// ~15.6 ms, so anything faster than ~64 Hz silently runs at 64 Hz. That would
+/// replay a real high-rate capture far too slowly. Instead, sleep once per tick,
+/// measure the *actual* elapsed time, and replenish a frame budget from it, so
+/// the average rate self-corrects regardless of timer resolution.
 fn spawn_replay(state: Arc<AppState>, frames: Vec<Vec<u8>>, hz: u64) -> JoinHandle<()> {
-    let hz = hz.clamp(1, 1_000);
+    let hz = hz.clamp(1, 50_000);
     tauri::async_runtime::spawn(async move {
-        let period = Duration::from_micros(1_000_000 / hz);
+        const TICK: Duration = Duration::from_millis(5);
+        let mut budget = 0.0f64;
         let mut index = 0usize;
+        let mut last = Instant::now();
+
         loop {
-            let raw = &frames[index % frames.len()];
-            match fv_feed::parse(raw) {
-                Ok(frame) => {
-                    if state.tx.send(frame).is_err() {
-                        return; // consumer gone: shut down
+            tokio::time::sleep(TICK).await;
+            let now = Instant::now();
+            let elapsed = now.saturating_duration_since(last).as_secs_f64();
+            last = now;
+
+            budget += elapsed * hz as f64;
+            // Cap catch-up after a stall so we never emit a huge burst.
+            budget = budget.min(hz as f64);
+
+            // Bounded so a pathological hz cannot spin this loop.
+            let mut sent = 0u32;
+            while budget >= 1.0 && sent < hz as u32 {
+                let raw = &frames[index % frames.len()];
+                match fv_feed::parse(raw) {
+                    Ok(frame) => {
+                        if state.tx.send(frame).is_err() {
+                            return; // consumer gone: shut down
+                        }
+                    }
+                    Err(err) => {
+                        state.market.lock().unwrap().record_error(err.to_string());
                     }
                 }
-                Err(err) => {
-                    state.market.lock().unwrap().record_error(err.to_string());
-                }
+                index = index.wrapping_add(1);
+                budget -= 1.0;
+                sent += 1;
             }
-            index = index.wrapping_add(1);
-            tokio::time::sleep(period).await;
         }
     })
 }
@@ -359,6 +412,12 @@ async fn consume(state: Arc<AppState>, mut rx: UnboundedReceiver<Frame>, app: Ap
                     let _ = app.emit("quotes:delta", delta);
                 }
                 if let Some(status) = status {
+                    tracing::debug!(
+                        frames = status.frames_total,
+                        rate = status.frames_per_sec,
+                        watched = status.watched,
+                        "status"
+                    );
                     let _ = app.emit("status:changed", status);
                 }
             }
@@ -433,7 +492,26 @@ fn main() {
                 .expect("consumer channel already taken");
 
             tauri::async_runtime::spawn(consume(setup_state.clone(), rx, handle.clone()));
+
+            let autostart_handle = handle.clone();
             tauri::async_runtime::spawn(load_master(setup_state.clone(), handle));
+
+            // Kiosk/demo/CI switch: start the bundled replay without a click.
+            if std::env::var("FV_AUTOSTART_DEMO")
+                .map(|v| v == "1")
+                .unwrap_or(false)
+            {
+                let autostart_state = setup_state.clone();
+                tauri::async_runtime::spawn(async move {
+                    // Let the webview mount its listeners. The frontend also
+                    // hydrates from watch_list, so a missed event is harmless.
+                    tokio::time::sleep(Duration::from_millis(1_500)).await;
+                    if let Err(err) = start_demo(autostart_handle, autostart_state).await {
+                        tracing::warn!(error = %err, "autostart demo failed");
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
