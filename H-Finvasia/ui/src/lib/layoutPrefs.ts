@@ -12,9 +12,11 @@ export interface StorageLike {
 }
 
 export type StocksView = "list" | "cards";
+export type SortMode = "name" | "price" | "added" | "custom";
 
 export const HEADER_KEY = "fv.headerCollapsed";
 export const STOCKS_VIEW_KEY = "fv.stocksView";
+export const STOCKS_SORT_KEY = "fv.stocksSort";
 export const COLLAPSED_GROUPS_KEY = "fv.groupCards.collapsed";
 
 function defaultStorage(): StorageLike | null {
@@ -63,6 +65,20 @@ export function saveStocksView(
   storage: StorageLike | null = defaultStorage(),
 ): void {
   writeText(storage, STOCKS_VIEW_KEY, view);
+}
+
+const SORT_MODES: readonly SortMode[] = ["name", "price", "added", "custom"];
+
+export function loadSortMode(storage: StorageLike | null = defaultStorage()): SortMode {
+  const raw = readText(storage, STOCKS_SORT_KEY);
+  return SORT_MODES.includes(raw as SortMode) ? (raw as SortMode) : "name";
+}
+
+export function saveSortMode(
+  mode: SortMode,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  writeText(storage, STOCKS_SORT_KEY, mode);
 }
 
 /** Collapsed state per group name. Unknown values are ignored, not coerced. */

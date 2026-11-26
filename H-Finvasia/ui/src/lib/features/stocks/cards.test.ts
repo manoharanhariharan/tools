@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { instrumentDetail, instrumentKind, mergeOrder, moveRelative } from "./cards";
+import {
+  instrumentDetail,
+  instrumentKind,
+  mergeOrder,
+  moveRelative,
+  sortInstrumentRows,
+} from "./cards";
 import type { ContainerRowDto } from "../../api";
 
 function row(overrides: Partial<ContainerRowDto> = {}): ContainerRowDto {
@@ -38,6 +44,42 @@ describe("group card order", () => {
   it("is a no-op for unknown or identical names", () => {
     expect(moveRelative(["A", "B"], "A", "A")).toEqual(["A", "B"]);
     expect(moveRelative(["A", "B"], "Z", "A")).toEqual(["A", "B"]);
+  });
+});
+
+describe("instrument sorting", () => {
+  const rows = [
+    { ...row({ key: "A", symbol: "ZETA" }), quote: { ltp: { e6: 300 } } },
+    { ...row({ key: "B", symbol: "ALPHA" }), quote: { ltp: { e6: 100 } } },
+    { ...row({ key: "C", symbol: "MID" }), quote: null },
+    { ...row({ key: "D", symbol: "BETA" }), quote: { ltp: { e6: 200 } } },
+  ];
+
+  it("sorts by name", () => {
+    expect(sortInstrumentRows(rows, "name").map((item) => item.key)).toEqual([
+      "B",
+      "D",
+      "C",
+      "A",
+    ]);
+  });
+
+  it("sorts by price descending with missing quotes last", () => {
+    expect(sortInstrumentRows(rows, "price").map((item) => item.key)).toEqual([
+      "A",
+      "D",
+      "B",
+      "C",
+    ]);
+  });
+
+  it("follows added order and custom order, appending unknown keys", () => {
+    expect(sortInstrumentRows(rows, "added", ["D", "C", "B", "A"]).map((item) => item.key)).toEqual(
+      ["D", "C", "B", "A"],
+    );
+    expect(
+      sortInstrumentRows(rows, "custom", ["D", "C", "B", "A"], ["B", "A"]).map((item) => item.key),
+    ).toEqual(["B", "A", "D", "C"]);
   });
 });
 

@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   COLLAPSED_GROUPS_KEY,
   HEADER_KEY,
+  STOCKS_SORT_KEY,
   STOCKS_VIEW_KEY,
   loadCollapsedGroups,
   loadHeaderCollapsed,
+  loadSortMode,
   loadStocksView,
   saveCollapsedGroups,
   saveHeaderCollapsed,
+  saveSortMode,
   saveStocksView,
   type StorageLike,
 } from "./layoutPrefs";
@@ -33,25 +36,30 @@ const throwing: StorageLike = {
 };
 
 describe("layoutPrefs", () => {
-  it("defaults to an expanded header and the list view", () => {
+  it("defaults to an expanded header, list view and name sort", () => {
     expect(loadHeaderCollapsed(storage())).toBe(false);
     expect(loadStocksView(storage())).toBe("list");
+    expect(loadSortMode(storage())).toBe("name");
     expect(loadCollapsedGroups(storage())).toEqual({});
   });
 
-  it("round-trips the header and view choice", () => {
+  it("round-trips the header, view and sort choice", () => {
     const store = storage();
     saveHeaderCollapsed(true, store);
     saveStocksView("cards", store);
+    saveSortMode("custom", store);
     expect(store.data[HEADER_KEY]).toBe("1");
     expect(store.data[STOCKS_VIEW_KEY]).toBe("cards");
+    expect(store.data[STOCKS_SORT_KEY]).toBe("custom");
     expect(loadHeaderCollapsed(store)).toBe(true);
     expect(loadStocksView(store)).toBe("cards");
+    expect(loadSortMode(store)).toBe("custom");
   });
 
   it("treats malformed values as defaults", () => {
     expect(loadHeaderCollapsed(storage({ [HEADER_KEY]: "yes" }))).toBe(false);
     expect(loadStocksView(storage({ [STOCKS_VIEW_KEY]: "grid" }))).toBe("list");
+    expect(loadSortMode(storage({ [STOCKS_SORT_KEY]: "volume" }))).toBe("name");
   });
 
   it("keeps only boolean per-group flags", () => {

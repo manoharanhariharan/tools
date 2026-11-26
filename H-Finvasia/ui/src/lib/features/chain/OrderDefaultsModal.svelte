@@ -62,6 +62,9 @@
       <label for="default-price-type">Price type</label>
       <select id="default-price-type" bind:value={priceType}>
         <option value="LMT">LMT - Limit</option>
+        <option value="MKT">MKT - Market (protected)</option>
+        <option value="SL-L">SL-L - Stop loss limit</option>
+        <option value="TSL">TSL - Trailing stop</option>
       </select>
     </div>
     <div class="field">

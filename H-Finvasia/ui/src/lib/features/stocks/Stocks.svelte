@@ -8,10 +8,18 @@
     type StockRowDto,
   } from "../../api";
   import { formatVolume } from "../../state";
-  import { loadStocksView, saveStocksView, type StocksView } from "../../layoutPrefs";
+  import {
+    loadSortMode,
+    loadStocksView,
+    saveSortMode,
+    saveStocksView,
+    type SortMode,
+    type StocksView,
+  } from "../../layoutPrefs";
   import EmptyState from "../../components/EmptyState.svelte";
   import ContextMenu from "../../components/ContextMenu.svelte";
   import GroupCards from "./GroupCards.svelte";
+  import { sortInstrumentRows } from "./cards";
 
   interface Props {
     watched: string[];
@@ -26,6 +34,7 @@
   let containers = $state<ContainersView>({ active: null, groups: [] });
   let cards = $state<ContainerCardDto[]>([]);
   let view = $state<StocksView>(loadStocksView());
+  let sortMode = $state<SortMode>(loadSortMode());
   let query = $state("");
   let results = $state<StockRowDto[]>([]);
   let searching = $state(false);
@@ -50,6 +59,15 @@
     containers.groups.find((group) => group.name === containers.active)?.count ?? rows.length,
   );
   const cardTotal = $derived(cards.reduce((total, card) => total + card.count, 0));
+  const activeCard = $derived(cards.find((card) => card.name === containers.active) ?? null);
+  const listRows = $derived(
+    sortInstrumentRows(
+      rows,
+      sortMode,
+      activeCard?.rows.map((row) => row.key) ?? rows.map((row) => row.key),
+      activeCard?.custom_order ?? [],
+    ),
+  );
 
   function focusOnMount(node: HTMLInputElement) {
     queueMicrotask(() => node.focus());
@@ -100,6 +118,11 @@
     view = next;
     saveStocksView(next);
     if (next === "cards") void loadCards();
+  }
+
+  function setSort(next: SortMode) {
+    sortMode = next;
+    saveSortMode(next);
   }
 
   function scheduleSearch() {
@@ -189,6 +212,53 @@
     error = null;
     try {
       containers = await api.containerReorder(next);
+      await loadCards();
+    } catch (e) {
+      error = String(e);
+      throw e;
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function cardRename(oldName: string, newName: string) {
+    if (busy) return;
+    busy = true;
+    error = null;
+    try {
+      containers = await api.containerRename(oldName, newName);
+      await Promise.all([loadCards(), loadRows()]);
+      notice = `Renamed "${oldName}" to "${newName}".`;
+    } catch (e) {
+      error = String(e);
+      throw e;
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function cardCreate(name: string) {
+    if (busy) return;
+    busy = true;
+    error = null;
+    try {
+      containers = await api.containerCreateEmpty(name);
+      await Promise.all([loadCards(), loadContainers()]);
+      notice = `Created "${name}". Use its + button to add instruments.`;
+    } catch (e) {
+      error = String(e);
+      throw e;
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function cardReorderKeys(group: string, keys: string[]) {
+    if (busy) return;
+    busy = true;
+    error = null;
+    try {
+      containers = await api.containerReorderKeys(group, keys);
       await loadCards();
     } catch (e) {
       error = String(e);
@@ -327,6 +397,19 @@
       {/if}
     {/if}
     <span class="spacer"></span>
+    <label class="sort-picker">
+      <span>Sort</span>
+      <select
+        aria-label="Sort instruments"
+        value={sortMode}
+        onchange={(event) => setSort(event.currentTarget.value as SortMode)}
+      >
+        <option value="name">Name (A-Z)</option>
+        <option value="price">Price (high first)</option>
+        <option value="added">Added</option>
+        <option value="custom">Custom</option>
+      </select>
+    </label>
     <div class="view-switch" role="group" aria-label="Stocks layout">
       <button
         type="button"
@@ -357,11 +440,15 @@
   {#if view === "cards"}
     <GroupCards
       {cards}
+      {sortMode}
       active={containers.active}
       onactivate={activate}
       onadd={cardAdd}
       onremove={cardRemove}
       onreorder={cardReorder}
+      onrename={cardRename}
+      oncreate={cardCreate}
+      onreorderkeys={cardReorderKeys}
     />
   {:else}
   <div class="stocks-body">
@@ -523,7 +610,7 @@
         </div>
 
         <div class="stock-scroll" role="rowgroup">
-          {#each rows as row (row.key)}
+          {#each listRows as row (row.key)}
             <div
               class="stock-row watched"
               role="row"

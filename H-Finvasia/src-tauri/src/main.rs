@@ -13,7 +13,7 @@
 //! * commands take the same lock briefly and never await while holding it.
 
 use fv_bridge::{InstrumentDto, MarketData, PlanDto, QuoteDto, SourceKind, StatusDto};
-use fv_core::SymbolKey;
+use fv_core::{Price, SymbolKey};
 use fv_feed::Frame;
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -49,6 +49,21 @@ pub struct AppState {
     /// Cached broker session, so read-only screens do not re-validate every call.
     session: Mutex<Option<session::Session>>,
     rest: account::RestClient,
+    /// Trailing stop-loss orders watched by the background modifier.
+    trailing: Mutex<Vec<TrailingStop>>,
+}
+
+#[derive(Debug, Clone)]
+struct TrailingStop {
+    order_no: String,
+    key: String,
+    exchange: String,
+    trading_symbol: String,
+    side: String,
+    qty: i64,
+    trail: Price,
+    trigger: Price,
+    limit: Price,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -596,6 +611,13 @@ fn container_create(
     groups::create(&path, &name, keys)
 }
 
+/// Create a blank group without changing the active watch list. Used by the
+/// Stocks card view's "New card" action.
+#[tauri::command]
+fn container_create_empty(app: AppHandle, name: String) -> Result<groups::ContainersView, String> {
+    groups::create_empty(&groups_file(&app), &name)
+}
+
 #[tauri::command]
 fn container_activate(
     app: AppHandle,
@@ -668,7 +690,8 @@ fn container_cards(
                 .get(&group.name)
                 .map(Vec::as_slice)
                 .unwrap_or(&[]);
-            market.container_card(&group.name, group.color, keys)
+            let custom = file.custom.get(&group.name).cloned().unwrap_or_default();
+            market.container_card(&group.name, group.color, keys, custom)
         })
         .collect()
 }
@@ -716,6 +739,18 @@ fn container_remove(
 #[tauri::command]
 fn container_reorder(app: AppHandle, order: Vec<String>) -> Result<groups::ContainersView, String> {
     groups::reorder(&groups_file(&app), order)
+}
+
+/// Persist the manual ("Custom" sort) instrument order for one group.
+#[tauri::command]
+fn container_reorder_keys(
+    app: AppHandle,
+    name: String,
+    keys: Vec<String>,
+) -> Result<groups::ContainersView, String> {
+    let path = groups_file(&app);
+    groups::set_custom_order(&path, &name, keys)?;
+    Ok(groups::view(&path))
 }
 
 // ---------------------------------------------------------------------------
@@ -770,6 +805,36 @@ fn order_target(state: State<'_, Arc<AppState>>, key: String) -> Option<OrderTar
         tradeable,
         quote: market.snapshot(&parsed.as_wire()),
     })
+}
+
+/// Pre-trade margin for the ticket using Shoonya's `GetBasketMargin`.
+#[tauri::command]
+async fn margin_required(
+    state: State<'_, Arc<AppState>>,
+    request: orders::PlaceOrderRequest,
+) -> Result<orders::MarginDto, String> {
+    if offline_mode() {
+        return Err("margin is unavailable in offline/probe mode".into());
+    }
+    let shared = state.inner().clone();
+    let session = ensure_session(&shared).await?;
+    let (instrument, exchange) = {
+        let market = shared.market.lock().unwrap();
+        let instrument = market
+            .instrument(&request.key)
+            .ok_or_else(|| format!("instrument {} is not in the master", request.key))?;
+        let key = SymbolKey::parse(&request.key).map_err(|e| e.to_string())?;
+        (instrument, key.exchange().to_string())
+    };
+    let payload = orders::build_margin_payload(
+        &request,
+        &session.uid,
+        &session.actid,
+        &exchange,
+        &instrument.trading_symbol,
+        instrument.lot_size,
+    )?;
+    orders::margin(&shared.rest, &session.token, &payload).await
 }
 
 #[tauri::command]
@@ -829,8 +894,118 @@ async fn place_order(
         key = %request.key,
         side = %request.side,
         lots = request.lots,
+        price_type = %request.price_type,
         "order submitted"
     );
+
+    if request.price_type.trim().eq_ignore_ascii_case("TSL") {
+        let parse = |raw: Option<&str>, label: &str| -> Result<Price, String> {
+            let text = raw
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| format!("{label} is required"))?;
+            Price::parse_rounded(text).map_err(|_| format!("{label} is not valid"))
+        };
+        let trail = parse(request.trail.as_deref(), "trail amount")?;
+        let trigger = parse(request.trigger_price.as_deref(), "trigger price")?;
+        let limit = parse(request.price.as_deref(), "limit price")?;
+        let qty = request
+            .lots
+            .checked_mul(instrument.lot_size)
+            .filter(|qty| *qty > 0)
+            .ok_or_else(|| "quantity is out of range".to_string())?;
+        shared.trailing.lock().unwrap().push(TrailingStop {
+            order_no: result.order_no.clone(),
+            key: request.key.clone(),
+            exchange: exchange.clone(),
+            trading_symbol: instrument.trading_symbol.clone(),
+            side: request.side.trim().to_ascii_uppercase(),
+            qty,
+            trail,
+            trigger,
+            limit,
+        });
+        tracing::info!(
+            order_no = %result.order_no,
+            trail = %trail.format(2),
+            trigger = %trigger.format(2),
+            "trailing stop registered"
+        );
+    }
+
+    let _ = app.emit("orders:changed", &result.order_no);
+    Ok(result)
+}
+
+/// Close an open position with a marketable protected limit order.
+#[tauri::command]
+async fn square_off(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    request: orders::SquareOffRequest,
+) -> Result<orders::OrderResult, String> {
+    if offline_mode() {
+        return Err("live orders are disabled in offline/probe mode".into());
+    }
+    let shared = state.inner().clone();
+    let source = shared.market.lock().unwrap().status(Instant::now()).source;
+    if source != SourceKind::Live {
+        return Err("square-off is allowed only on the live feed".into());
+    }
+    let session = shared
+        .session
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "no active session; connect to the venue first".to_string())?;
+    let (instrument, exchange, ltp) = {
+        let market = shared.market.lock().unwrap();
+        let instrument = market
+            .instrument(&request.key)
+            .ok_or_else(|| format!("instrument {} is not in the master", request.key))?;
+        let key = SymbolKey::parse(&request.key).map_err(|e| e.to_string())?;
+        let ltp = market
+            .snapshot(&request.key)
+            .and_then(|quote| quote.ltp)
+            .map(|price| price.text)
+            .ok_or_else(|| "no live quote for this position yet".to_string())?;
+        (instrument, key.exchange().to_string(), ltp)
+    };
+    let product = match request.product.trim().to_ascii_uppercase().as_str() {
+        "I" | "MIS" => "I",
+        "C" | "CNC" => "C",
+        "M" | "NRML" => "M",
+        other => return Err(format!("unsupported product '{other}'")),
+    };
+    let side = request.side.trim().to_ascii_uppercase();
+    if !matches!(side.as_str(), "B" | "S") {
+        return Err("side must be B or S".into());
+    }
+    let ticket = orders::PlaceOrderRequest {
+        key: request.key.clone(),
+        side,
+        lots: 1,
+        product: product.to_string(),
+        price_type: "MKT".into(),
+        price: Some(ltp),
+        trigger_price: None,
+        trail: None,
+        validity: "DAY".into(),
+    };
+    let payload = orders::build_payload_for_qty(
+        &ticket,
+        &session.uid,
+        &session.actid,
+        &exchange,
+        &instrument.trading_symbol,
+        request.quantity.abs(),
+    )?;
+    let result = orders::submit(&shared.rest, &session.token, &payload).await?;
+    shared
+        .trailing
+        .lock()
+        .unwrap()
+        .retain(|stop| stop.key != request.key);
     let _ = app.emit("orders:changed", &result.order_no);
     Ok(result)
 }
@@ -1144,6 +1319,113 @@ async fn consume(state: Arc<AppState>, mut rx: UnboundedReceiver<Frame>, app: Ap
     }
 }
 
+/// Server-side trailing stop-loss monitor.
+///
+/// The initial order is an SL-L; every two seconds the trigger is moved in the
+/// favourable direction and the broker order is modified. Only the trigger move
+/// is automated: a failed modify drops the monitor instead of retrying blindly,
+/// so a filled/cancelled order is never modified by mistake.
+async fn trailing_monitor(state: Arc<AppState>) {
+    let mut ticker = tokio::time::interval(Duration::from_secs(2));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let min_move = Price::parse("0.05").unwrap_or(Price::ZERO);
+
+    loop {
+        ticker.tick().await;
+        let stops = { state.trailing.lock().unwrap().clone() };
+        if stops.is_empty() {
+            continue;
+        }
+        let source = state.market.lock().unwrap().status(Instant::now()).source;
+        if source != SourceKind::Live {
+            continue;
+        }
+        let session = match state.session.lock().unwrap().clone() {
+            Some(session) => session,
+            None => continue,
+        };
+
+        let mut updates: Vec<(String, Price, Price)> = Vec::new();
+        let mut drop: Vec<String> = Vec::new();
+
+        for stop in stops {
+            let ltp = {
+                let market = state.market.lock().unwrap();
+                market
+                    .snapshot(&stop.key)
+                    .and_then(|quote| quote.ltp)
+                    .map(|price| Price::from_scaled(price.e6))
+            };
+            let Some(ltp) = ltp else { continue };
+
+            let candidate = if stop.side == "S" {
+                ltp.checked_add(stop.trail)
+            } else {
+                ltp.checked_sub(stop.trail)
+            };
+            let Some(candidate) = candidate else { continue };
+
+            let improved = if stop.side == "S" {
+                candidate
+                    .checked_sub(stop.trigger)
+                    .map(|move_by| move_by.scaled() >= min_move.scaled())
+                    .unwrap_or(false)
+            } else {
+                stop.trigger
+                    .checked_sub(candidate)
+                    .map(|move_by| move_by.scaled() >= min_move.scaled())
+                    .unwrap_or(false)
+            };
+            if !improved {
+                continue;
+            }
+
+            let offset = stop.trigger.checked_sub(stop.limit).unwrap_or(Price::ZERO);
+            let new_limit = if stop.side == "S" {
+                candidate.checked_sub(offset)
+            } else {
+                candidate.checked_add(offset)
+            };
+            let Some(new_limit) = new_limit else { continue };
+
+            let payload = orders::build_modify_payload(
+                &stop.order_no,
+                &session.uid,
+                &stop.exchange,
+                &stop.trading_symbol,
+                stop.qty,
+                new_limit,
+                candidate,
+            );
+            match orders::modify(&state.rest, &session.token, &payload).await {
+                Ok(()) => {
+                    tracing::info!(
+                        order_no = %stop.order_no,
+                        trigger = %candidate.format(2),
+                        "trailing stop moved"
+                    );
+                    updates.push((stop.order_no.clone(), candidate, new_limit));
+                }
+                Err(err) => {
+                    tracing::warn!(order_no = %stop.order_no, error = %err, "trailing stop modify failed");
+                    drop.push(stop.order_no.clone());
+                }
+            }
+        }
+
+        if !updates.is_empty() || !drop.is_empty() {
+            let mut list = state.trailing.lock().unwrap();
+            for (order_no, trigger, limit) in updates {
+                if let Some(stop) = list.iter_mut().find(|stop| stop.order_no == order_no) {
+                    stop.trigger = trigger;
+                    stop.limit = limit;
+                }
+            }
+            list.retain(|stop| !drop.contains(&stop.order_no));
+        }
+    }
+}
+
 /// Load the instrument master in the background: Mongo first, bundled sample as
 /// the degraded fallback. The window is usable immediately either way.
 async fn load_master(state: Arc<AppState>, app: AppHandle) {
@@ -1197,6 +1479,7 @@ fn main() {
         feed_cmd: Mutex::new(None),
         session: Mutex::new(None),
         rest: account::RestClient::new().expect("rest client"),
+        trailing: Mutex::new(Vec::new()),
     });
 
     let rx_slot = Arc::new(Mutex::new(Some(rx)));
@@ -1213,6 +1496,7 @@ fn main() {
                 .expect("consumer channel already taken");
 
             tauri::async_runtime::spawn(consume(setup_state.clone(), rx, handle.clone()));
+            tauri::async_runtime::spawn(trailing_monitor(setup_state.clone()));
 
             let demo_handle = handle.clone();
             tauri::async_runtime::spawn(load_master(setup_state.clone(), handle.clone()));
@@ -1324,6 +1608,7 @@ fn main() {
             group_delete,
             containers_list,
             container_create,
+            container_create_empty,
             container_activate,
             container_rename,
             container_delete,
@@ -1332,10 +1617,13 @@ fn main() {
             container_add,
             container_remove,
             container_reorder,
+            container_reorder_keys,
             order_defaults_get,
             order_defaults_set,
             order_target,
+            margin_required,
             place_order,
+            square_off,
             indices_list,
             stocks_list,
             stocks_watched,

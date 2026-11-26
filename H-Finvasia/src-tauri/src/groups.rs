@@ -22,6 +22,9 @@ pub struct GroupFile {
     /// in map order so older files keep working without a migration.
     #[serde(default)]
     pub order: Vec<String>,
+    /// Optional manual instrument order per group ("Custom" sort).
+    #[serde(default)]
+    pub custom: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -233,6 +236,24 @@ pub fn create(path: &Path, name: &str, keys: Vec<String>) -> Result<ContainersVi
     Ok(view_from_file(&file))
 }
 
+/// Create an empty container without changing the active watch owner.
+///
+/// The Stocks card view uses this so a new card starts blank instead of
+/// copying (and later clearing) the live watch list.
+pub fn create_empty(path: &Path, name: &str) -> Result<ContainersView, String> {
+    let name = validate_name(name)?;
+    let mut file = read(path);
+    if file.groups.contains_key(&name) {
+        return Err(format!("group \"{name}\" already exists"));
+    }
+    let color = default_group_color(file.groups.len());
+    file.groups.insert(name.clone(), Vec::new());
+    file.colors.insert(name.clone(), color);
+    sync_order(&mut file);
+    write(path, &file)?;
+    Ok(view_from_file(&file))
+}
+
 /// Rename a container. The active pointer and color follow the rename.
 pub fn rename(path: &Path, old: &str, new: &str) -> Result<ContainersView, String> {
     let old = validate_name(old)?;
@@ -250,9 +271,13 @@ pub fn rename(path: &Path, old: &str, new: &str) -> Result<ContainersView, Strin
         return Err(format!("group \"{new}\" already exists"));
     }
     let color = file.colors.remove(&old);
+    let custom = file.custom.remove(&old);
     file.groups.insert(new.clone(), keys);
     if let Some(color) = color {
         file.colors.insert(new.clone(), color);
+    }
+    if let Some(custom) = custom {
+        file.custom.insert(new.clone(), custom);
     }
     if file.active.as_deref() == Some(old.as_str()) {
         file.active = Some(new.clone());
@@ -321,6 +346,7 @@ pub fn remove(path: &Path, name: &str) -> Result<(ContainersView, Option<String>
     let was_active = file.active.as_deref() == Some(name.as_str());
     file.groups.remove(&name);
     file.colors.remove(&name);
+    file.custom.remove(&name);
     let next = if was_active {
         let next = file
             .groups
@@ -341,6 +367,14 @@ pub fn remove(path: &Path, name: &str) -> Result<(ContainersView, Option<String>
 pub fn save(path: &Path, name: &str, keys: Vec<String>) -> Result<(), String> {
     let name = validate_name(name)?;
     let mut file = read(path);
+    if let Some(custom) = file.custom.get_mut(&name) {
+        custom.retain(|key| keys.contains(key));
+        for key in &keys {
+            if !custom.contains(key) {
+                custom.push(key.clone());
+            }
+        }
+    }
     file.groups.insert(name, keys);
     sync_order(&mut file);
     write(path, &file)
@@ -366,10 +400,18 @@ pub fn add_key(path: &Path, name: &str, key: &str) -> Result<Vec<String>, String
         .groups
         .get_mut(&name)
         .ok_or_else(|| format!("group \"{name}\" does not exist"))?;
-    if !keys.iter().any(|existing| existing == key) {
+    let added = !keys.iter().any(|existing| existing == key);
+    if added {
         keys.push(key.to_string());
     }
     let result = keys.clone();
+    if added {
+        if let Some(custom) = file.custom.get_mut(&name) {
+            if !custom.iter().any(|existing| existing == key) {
+                custom.push(key.to_string());
+            }
+        }
+    }
     write(path, &file)?;
     Ok(result)
 }
@@ -384,8 +426,39 @@ pub fn remove_key(path: &Path, name: &str, key: &str) -> Result<Vec<String>, Str
         .ok_or_else(|| format!("group \"{name}\" does not exist"))?;
     keys.retain(|existing| existing != key);
     let result = keys.clone();
+    if let Some(custom) = file.custom.get_mut(&name) {
+        custom.retain(|existing| existing != key);
+    }
     write(path, &file)?;
     Ok(result)
+}
+
+/// Save a manual ("Custom" sort) instrument order for one group.
+///
+/// Unknown keys are ignored and any group member not listed is appended in
+/// insertion order, so a stale UI can never hide an instrument.
+pub fn set_custom_order(path: &Path, name: &str, keys: Vec<String>) -> Result<(), String> {
+    let name = validate_name(name)?;
+    let mut file = read(path);
+    let members = file
+        .groups
+        .get(&name)
+        .cloned()
+        .ok_or_else(|| format!("group \"{name}\" does not exist"))?;
+    let members_set: std::collections::BTreeSet<&String> = members.iter().collect();
+    let mut ordered: Vec<String> = Vec::new();
+    for key in keys {
+        if members_set.contains(&key) && !ordered.contains(&key) {
+            ordered.push(key);
+        }
+    }
+    for key in members {
+        if !ordered.contains(&key) {
+            ordered.push(key);
+        }
+    }
+    file.custom.insert(name, ordered);
+    write(path, &file)
 }
 
 /// Persist the card order. The caller must send every existing group exactly
@@ -573,6 +646,64 @@ mod tests {
         );
         assert!(add_key(&path, "Missing", "NFO|1").is_err());
         assert!(add_key(&path, "Options", "  ").is_err());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn empty_groups_do_not_steal_the_active_watch() {
+        let path = temp_path("empty-card");
+        ensure_default(&path, vec!["A".into()]).unwrap();
+        let view = create_empty(&path, "New card").unwrap();
+        assert_eq!(view.active.as_deref(), Some(DEFAULT_CONTAINER));
+        assert_eq!(load(&path, "New card").unwrap(), Vec::<String>::new());
+        assert!(create_empty(&path, "New card").is_err());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn custom_order_tracks_add_remove_rename_and_missing_keys() {
+        let path = temp_path("custom-order");
+        ensure_default(&path, vec!["A".into(), "B".into()]).unwrap();
+        add_key(&path, DEFAULT_CONTAINER, "C").unwrap();
+        set_custom_order(
+            &path,
+            DEFAULT_CONTAINER,
+            vec!["C".into(), "A".into(), "Nope".into()],
+        )
+        .unwrap();
+        assert_eq!(
+            read(&path).custom.get(DEFAULT_CONTAINER).unwrap(),
+            &vec!["C".to_string(), "A".to_string(), "B".to_string()],
+            "unknown keys are ignored and missing members are appended"
+        );
+
+        add_key(&path, DEFAULT_CONTAINER, "D").unwrap();
+        assert_eq!(
+            read(&path).custom.get(DEFAULT_CONTAINER).unwrap(),
+            &vec![
+                "C".to_string(),
+                "A".to_string(),
+                "B".to_string(),
+                "D".to_string()
+            ]
+        );
+
+        remove_key(&path, DEFAULT_CONTAINER, "A").unwrap();
+        assert_eq!(
+            read(&path).custom.get(DEFAULT_CONTAINER).unwrap(),
+            &vec!["C".to_string(), "B".to_string(), "D".to_string()]
+        );
+
+        rename(&path, DEFAULT_CONTAINER, "Renamed").unwrap();
+        assert!(!read(&path).custom.contains_key(DEFAULT_CONTAINER));
+        assert_eq!(
+            read(&path).custom.get("Renamed").unwrap(),
+            &vec!["C".to_string(), "B".to_string(), "D".to_string()]
+        );
+
+        create_empty(&path, "Other").unwrap();
+        remove(&path, "Renamed").unwrap();
+        assert!(!read(&path).custom.contains_key("Renamed"));
         let _ = std::fs::remove_file(path);
     }
 

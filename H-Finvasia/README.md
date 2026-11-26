@@ -23,19 +23,22 @@ in-house stack: **Tauri 2 + Rust workspace + Svelte 5**.
 | `ui/` — Svelte 5 terminal UI | ✅ (market watch, snap quote, search, diagnostics) |
 | `fv-cli` — headless harness | ✅ |
 | `fv-market` — REST client | ⬜ Phase 2b |
-| Order entry / books / holdings | order entry (LMT, confirm ticket) + positions/order book in the bottom dock; holdings pending |
+| Order entry / books / holdings | order entry (LMT/MKT-protected/SL-L/TSL, confirm ticket + margin) + positions/order book with square-off; holdings pending |
 
 **What works today:** the desktop app launches, loads 182k instruments from your local Mongo (or a
 bundled sample), and shows a live-updating market watch + snap quote fed by a replay capture - no
 credentials required. Search, watch-list editing and diagnostics are wired to the real engine.
 
 **Order entry** is wired through a prepared ticket: hover a CE/PE row, press B or S, review the
-ticket, then Confirm. Defaults (lots/product/validity) are saved locally. Orders are LMT only
-(Shoonya rejects MKT), allowed only on the live feed, and never retried automatically. Positions
-and the order book live in a resizable bottom dock.
+ticket, then Confirm. The price starts at the LTP that was running when the ticket opened. Types are
+**LMT**, **MKT (protected marketable limit)**, **SL-L** and **TSL** (server-side trailing SL). The
+ticket shows the broker's pre-trade margin (`GetBasketMargin`) and refreshes it as size/price change.
+Defaults (lots/product/validity/type) are saved locally. Orders are allowed only on the live feed and
+never retried automatically. Positions and the order book live in a resizable bottom dock; right-click
+a live position to square it off with a protected market order.
 
-**Still pending:** holdings, order modify/cancel, product conversion and algo orders. The test
-suite never sends a real order.
+**Still pending:** holdings, product conversion and algo orders. The test suite never sends a real
+order.
 
 ---
 
@@ -88,11 +91,13 @@ in the bottom dock, so the working area stays uncluttered.
 bar above it to find an NSE stock. The groups sidebar creates, deletes and renames lists
 (double-click a name to edit), and each group has a color chip that opens the system color picker.
 **Cards** renders every group as a card in a three-column, endlessly scrolling grid. Cards can be
-dragged to reorder (the order is saved in `watch-groups.json`), collapsed individually, and each
-carries a **+** search that adds stocks, futures, indices or options to that specific group. Adding
-to the active group also updates the live watch list; adding to another group stays local until it
-is activated. The active group is the live watch list, so switching it re-subscribes within the
-100-instrument budget.
+dragged to reorder (the order is saved in `watch-groups.json`), collapsed individually, renamed
+inline (double-click the name), and each carries a **+** search that adds stocks, futures, indices or
+options to that specific group. A **New card** tile creates an empty group, and **Sort** switches
+both layouts between name, price, insertion order and a **Custom** order (drag rows in a card while
+Custom is selected). Adding to the active group also updates the live watch list; adding to another
+group stays local until it is activated. The active group is the live watch list, so switching it
+re-subscribes within the 100-instrument budget.
 
 **Option chain** uses the usual quad layout: calls on the left, puts on the right, strike price in
 the middle. Each side is mirrored around the strike (trade, OI, d OI, volume, LTP, change, bid qty,
@@ -133,8 +138,10 @@ on this machine and applied before the next first paint.
    expiry, and loads the chain centred on the watched spot (or the entered ATM).
 5. **Buy / sell** from the chain: hover a CE/PE row and press **B** or **S**, or hover any tradeable
    row and press **F1** (buy) / **F2** (sell). The ticket is prefilled from your saved defaults and
-   the current ask/bid. Nothing is sent until **Confirm**. Orders are allowed only while the feed is
-   live; replay/offline tickets open for review with Confirm disabled.
+   the LTP snapshot from when the dialog opened; margin is fetched live. Nothing is sent until
+   **Confirm**. Orders are allowed only while the feed is live; replay/offline tickets open for
+   review with Confirm disabled. Right-click a chain cell to add that CE/PE to an existing Stocks
+   card or a new one.
 6. **Positions & order book** live in the bottom dock. Open it from the footer bar; each panel has its
    own Refresh button. After a confirmed order the order book refreshes automatically if it is open.
 7. **Diagnostics** shows backend (`mongo` vs `in-memory`), frame rate, decode errors, and the live
@@ -158,7 +165,7 @@ broker-backed probe/account/order path. Verified against the live venue (NTPC/AC
 | Automatic broker calls | **one connect at launch** when a valid session exists; the account strip refreshes only on mount, on first connect, or manually - never on a timer |
 | Automatic login | never - startup only *adopts* a valid stored/env token; a fresh TOTP login happens only when you press Connect |
 
-| Order type | LMT only; one explicit Confirm per ticket; no automatic retry |
+| Order type | LMT, MKT (protected limit), SL-L, TSL; one explicit Confirm per ticket; no automatic retry |
 | Account/book calls | positions and order book load only when the bottom dock is opened or refreshed |
 
 Overflow is **refused and reported**, never silently dropped. The status bar shows
@@ -272,8 +279,12 @@ scripts/make-icon.ps1      regenerates src-tauri/icons
 - **Desktop builds must go through `npm run tauri:build`.** A plain `cargo build --release` produces a
   binary that tries to load `localhost:5173` and shows `ERR_CONNECTION_REFUSED`. The release script
   enforces this with a live port probe.
-- **Order entry is LMT only.** Shoonya rejects MKT; the ticket and defaults expose LMT. Modify/cancel,
-  product conversion, holdings and algo orders are absent.
+- **MKT is a protected marketable limit.** Shoonya rejects raw MKT on API orders, so the app adds a
+  1% buffer (minimum one tick) to the LTP and sends LMT. The order book therefore shows LMT. Modify/
+  cancel, product conversion, holdings and algo orders are absent.
+- **TSL runs only while the app is live.** The initial order is SL-L; a background monitor moves the
+  trigger every two seconds as LTP improves. Closing the app stops further trailing. A failed modify
+  drops the monitor rather than retrying ambiguously.
 - **Order send is live-feed only and never retried automatically.** Replay/offline tickets open for
   review with Confirm disabled. A network timeout is ambiguous; reconcile by the unique `remarks` tag
   in the order book before retrying.

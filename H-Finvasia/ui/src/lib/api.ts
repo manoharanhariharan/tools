@@ -195,6 +195,8 @@ export interface ContainerCardDto {
   /** Stored member count, which can exceed `rows.length` before the master loads. */
   count: number;
   rows: ContainerRowDto[];
+  /** Manual instrument order for the Custom sort; may be empty. */
+  custom_order: string[];
 }
 
 export interface OrderTargetDto {
@@ -225,12 +227,26 @@ export interface PlaceOrderRequest {
   product: string;
   price_type: string;
   price: string | null;
+  trigger_price?: string | null;
+  trail?: string | null;
   validity: string;
 }
 
 export interface OrderResult {
   order_no: string;
   status: string;
+}
+
+export interface MarginDto {
+  required: string;
+  after_trade: string | null;
+}
+
+export interface SquareOffRequest {
+  key: string;
+  side: string;
+  quantity: number;
+  product: string;
 }
 
 export interface DeltaDto {
@@ -317,6 +333,8 @@ export const api = {
     invoke<StockRowDto[]>("stocks_search", { query, limit }),
   containersList: () => invoke<ContainersView>("containers_list"),
   containerCreate: (name: string) => invoke<ContainersView>("container_create", { name }),
+  containerCreateEmpty: (name: string) =>
+    invoke<ContainersView>("container_create_empty", { name }),
   containerActivate: (name: string) => invoke<PlanDto>("container_activate", { name }),
   containerRename: (oldName: string, newName: string) =>
     invoke<ContainersView>("container_rename", { old: oldName, new: newName }),
@@ -330,12 +348,18 @@ export const api = {
     invoke<ContainersView>("container_remove", { name, key }),
   containerReorder: (order: string[]) =>
     invoke<ContainersView>("container_reorder", { order }),
+  containerReorderKeys: (name: string, keys: string[]) =>
+    invoke<ContainersView>("container_reorder_keys", { name, keys }),
   orderTarget: (key: string) => invoke<OrderTargetDto | null>("order_target", { key }),
   orderDefaultsGet: () => invoke<OrderDefaults>("order_defaults_get"),
   orderDefaultsSet: (defaults: OrderDefaults) =>
     invoke<OrderDefaults>("order_defaults_set", { defaults }),
+  marginRequired: (request: PlaceOrderRequest) =>
+    invoke<MarginDto>("margin_required", { request }),
   placeOrder: (request: PlaceOrderRequest) =>
     invoke<OrderResult>("place_order", { request }),
+  squareOff: (request: SquareOffRequest) =>
+    invoke<OrderResult>("square_off", { request }),
   stopFeed: () => invoke<void>("stop_feed"),
 };
 

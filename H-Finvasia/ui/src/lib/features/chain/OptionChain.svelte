@@ -3,6 +3,8 @@
   import { api, events, type ChainRowDto, type QuoteDto } from "../../api";
   import { formatVolume } from "../../state";
   import Badge from "../../components/Badge.svelte";
+  import ContextMenu from "../../components/ContextMenu.svelte";
+  import AddToGroupModal from "../groups/AddToGroupModal.svelte";
   import {
     deltaOi,
     fillPercent,
@@ -38,6 +40,9 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let loaded = $state(false);
+  let menu = $state<{ x: number; y: number; key: string; label: string } | null>(null);
+  let addTarget = $state<{ key: string; label: string } | null>(null);
+  let notice = $state<string | null>(null);
 
   // The underlying spot is only known when it is on the watch list. Without it
   // the ATM strike is used as the ITM/OTM reference, which is the same boundary.
@@ -141,6 +146,13 @@
         ? ["oi", "doi", "vol", "ltp", "chg", "bq", "bid", "ask", "aq"]
         : ["bq", "bid", "ask", "aq", "ltp", "chg", "vol", "doi", "oi"];
     return order.map((key) => column[key]);
+  }
+
+  function openAddMenu(event: MouseEvent, leg: ChainRowDto | null | undefined) {
+    if (!leg) return;
+    event.preventDefault();
+    event.stopPropagation();
+    menu = { x: event.clientX, y: event.clientY, key: leg.key, label: leg.symbol };
   }
 
   async function loadExpiries() {
@@ -324,6 +336,12 @@
   {#if error}
     <div class="banner"><span>{error}</span></div>
   {/if}
+  {#if notice}
+    <div class="banner ok-banner">
+      <span>{notice}</span>
+      <button class="ghost" onclick={() => (notice = null)}>Dismiss</button>
+    </div>
+  {/if}
 
   {#if loaded}
     <div class="chain-summary">
@@ -399,6 +417,7 @@
                 onmouseenter={() => {
                   if (row.ce) onactive(row.ce.key, row.ce.symbol);
                 }}
+                oncontextmenu={(event) => openAddMenu(event, row.ce)}
               >
                 {#if row.ce}
                   <button
@@ -415,7 +434,7 @@
               </td>
 
               {#each cells(row, "CE") as cell}
-                <td class={cell.cls}>
+                <td class={cell.cls} oncontextmenu={(event) => openAddMenu(event, row.ce)}>
                   {#if cell.fill > 0}
                     <span class="chain-fill {cell.fillClass}" style="width: {cell.fill}%"></span>
                   {/if}
@@ -428,7 +447,7 @@
               </td>
 
               {#each cells(row, "PE") as cell}
-                <td class={cell.cls}>
+                <td class={cell.cls} oncontextmenu={(event) => openAddMenu(event, row.pe)}>
                   {#if cell.fill > 0}
                     <span class="chain-fill {cell.fillClass}" style="width: {cell.fill}%"></span>
                   {/if}
@@ -441,6 +460,7 @@
                 onmouseenter={() => {
                   if (row.pe) onactive(row.pe.key, row.pe.symbol);
                 }}
+                oncontextmenu={(event) => openAddMenu(event, row.pe)}
               >
                 {#if row.pe}
                   <button
@@ -460,5 +480,33 @@
         </tbody>
       </table>
     </div>
+  {/if}
+
+  {#if menu}
+    <ContextMenu
+      x={menu.x}
+      y={menu.y}
+      items={[
+        {
+          label: `Add ${menu.label} to a Stocks card...`,
+          action: () => {
+            if (menu) addTarget = { key: menu.key, label: menu.label };
+          },
+        },
+      ]}
+      onclose={() => (menu = null)}
+    />
+  {/if}
+
+  {#if addTarget}
+    <AddToGroupModal
+      instrumentKey={addTarget.key}
+      instrumentLabel={addTarget.label}
+      onclose={() => (addTarget = null)}
+      onadded={(message) => {
+        notice = message;
+        addTarget = null;
+      }}
+    />
   {/if}
 </section>

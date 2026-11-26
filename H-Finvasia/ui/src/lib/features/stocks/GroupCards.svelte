@@ -8,24 +8,55 @@
     type InstrumentDto,
     type QuoteDto,
   } from "../../api";
-  import { instrumentDetail, instrumentKind, mergeOrder, moveRelative } from "./cards";
-  import { loadCollapsedGroups, saveCollapsedGroups } from "../../layoutPrefs";
+  import {
+    instrumentDetail,
+    instrumentKind,
+    mergeOrder,
+    moveRelative,
+    sortInstrumentRows,
+  } from "./cards";
+  import {
+    loadCollapsedGroups,
+    saveCollapsedGroups,
+    type SortMode,
+  } from "../../layoutPrefs";
 
   interface Props {
     cards: ContainerCardDto[];
     active: string | null;
+    sortMode: SortMode;
     onactivate: (name: string) => void;
     onadd: (group: string, key: string) => Promise<void>;
     onremove: (group: string, key: string) => Promise<void>;
     onreorder: (order: string[]) => Promise<void>;
+    onrename: (oldName: string, newName: string) => Promise<void>;
+    oncreate: (name: string) => Promise<void>;
+    onreorderkeys: (group: string, keys: string[]) => Promise<void>;
   }
-  let { cards, active, onactivate, onadd, onremove, onreorder }: Props = $props();
+  let {
+    cards,
+    active,
+    sortMode,
+    onactivate,
+    onadd,
+    onremove,
+    onreorder,
+    onrename,
+    oncreate,
+    onreorderkeys,
+  }: Props = $props();
 
   let order = $state<string[]>([]);
   let collapsed = $state<Record<string, boolean>>(loadCollapsedGroups());
   let quotes = $state<Map<string, QuoteDto>>(new Map());
   let keySet = $state<Set<string>>(new Set());
   let error = $state<string | null>(null);
+  let editing = $state<string | null>(null);
+  let editingDraft = $state("");
+  let creating = $state(false);
+  let createDraft = $state("");
+  let rowDragKey = $state<string | null>(null);
+  let rowDragGroup = $state<string | null>(null);
   let dragName = $state<string | null>(null);
   let dropTarget = $state<string | null>(null);
   let dragMoved = false;
@@ -128,6 +159,66 @@
   function focusOnMount(node: HTMLInputElement) {
     queueMicrotask(() => node.focus());
     return {};
+  }
+
+  async function commitRename(oldName: string) {
+    const next = editingDraft.trim();
+    if (editing !== oldName) return;
+    editing = null;
+    editingDraft = "";
+    if (next === "" || next === oldName) return;
+    error = null;
+    try {
+      await onrename(oldName, next);
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function createCard() {
+    const name = createDraft.trim();
+    if (name === "") return;
+    error = null;
+    try {
+      await oncreate(name);
+      creating = false;
+      createDraft = "";
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  function startRowDrag(event: DragEvent, group: string, key: string) {
+    if (sortMode !== "custom") return;
+    event.stopPropagation();
+    rowDragKey = key;
+    rowDragGroup = group;
+    event.dataTransfer?.setData("text/plain", key);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+  }
+
+  function endRowDrag() {
+    rowDragKey = null;
+    rowDragGroup = null;
+  }
+
+  function dropRow(
+    event: DragEvent,
+    group: string,
+    targetKey: string,
+    orderedKeys: string[],
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (rowDragGroup !== group || !rowDragKey || rowDragKey === targetKey) {
+      endRowDrag();
+      return;
+    }
+    const next = moveRelative(orderedKeys, rowDragKey, targetKey);
+    endRowDrag();
+    onreorderkeys(group, next).catch((e) => {
+      error = String(e);
+    });
   }
 
   function quoteFor(row: ContainerRowDto): QuoteDto | null {
@@ -233,6 +324,12 @@
   {/if}
 
   {#each ordered as card (card.name)}
+    {@const rowList = sortInstrumentRows(
+      card.rows,
+      sortMode,
+      card.rows.map((row) => row.key),
+      card.custom_order,
+    )}
     <article
       class="group-card"
       class:active={card.name === active}
@@ -252,14 +349,37 @@
         ondragend={endDrag}
       >
         <span class="group-card-dot" style="background: {card.color ?? 'var(--accent-2)'}"></span>
-        <button
-          class="group-card-name"
-          type="button"
-          title={card.name === active ? "Active group" : `Switch to ${card.name}`}
-          onclick={() => onactivate(card.name)}
-        >
-          {card.name}
-        </button>
+        {#if editing === card.name}
+          <input
+            class="group-card-edit"
+            use:focusOnMount
+            bind:value={editingDraft}
+            aria-label={`Rename ${card.name}`}
+            onclick={(event) => event.stopPropagation()}
+            onkeydown={(event) => {
+              if (event.key === "Enter") void commitRename(card.name);
+              if (event.key === "Escape") {
+                editing = null;
+                editingDraft = "";
+              }
+            }}
+            onblur={() => void commitRename(card.name)}
+          />
+        {:else}
+          <button
+            class="group-card-name"
+            type="button"
+            title={`${card.name === active ? "Active group" : "Switch to this group"}; double-click to rename`}
+            onclick={() => onactivate(card.name)}
+            ondblclick={(event) => {
+              event.stopPropagation();
+              editing = card.name;
+              editingDraft = card.name;
+            }}
+          >
+            {card.name}
+          </button>
+        {/if}
         <span class="group-card-count" title="Instruments in this group">{card.count}</span>
         {#if card.name === active}<span class="group-card-live">live</span>{/if}
         <span class="spacer"></span>
@@ -338,11 +458,32 @@
                 : "Waiting for the instrument master; stored members are kept."}
             </p>
           {:else}
-            {#each card.rows as row (row.key)}
+            {#each rowList as row (row.key)}
               {@const quote = quoteFor(row)}
               {@const kind = instrumentKind(row)}
-              <div class="group-card-row" title={row.name ?? row.symbol}>
+              <div
+                class="group-card-row"
+                role="listitem"
+                aria-label={`${row.symbol} in ${card.name}`}
+                class:row-draggable={sortMode === "custom"}
+                class:dragging={rowDragKey === row.key && rowDragGroup === card.name}
+                draggable={sortMode === "custom"}
+                title={row.name ?? row.symbol}
+                ondragstart={(event) => startRowDrag(event, card.name, row.key)}
+                ondragover={(event) => {
+                  if (sortMode === "custom" && rowDragGroup === card.name) event.preventDefault();
+                }}
+                ondrop={(event) =>
+                  dropRow(
+                    event,
+                    card.name,
+                    row.key,
+                    rowList.map((item) => item.key),
+                  )}
+                ondragend={endRowDrag}
+              >
                 <div class="group-card-inst">
+                  {#if sortMode === "custom"}<span class="row-grip" aria-hidden="true">::</span>{/if}
                   <span class="kind kind-{kind.toLowerCase()}">{kind}</span>
                   <span class="sym">{row.symbol}</span>
                   <span class="detail">{instrumentDetail(row)}</span>
@@ -368,4 +509,49 @@
       {/if}
     </article>
   {/each}
+
+  {#if creating}
+    <div class="group-card new-card">
+      <header class="group-card-head">
+        <span class="group-card-dot" style="background: var(--accent-2)"></span>
+        <input
+          class="group-card-edit"
+          use:focusOnMount
+          bind:value={createDraft}
+          placeholder="New card name"
+          aria-label="New card name"
+          onkeydown={(event) => {
+            if (event.key === "Enter") void createCard();
+            if (event.key === "Escape") {
+              creating = false;
+              createDraft = "";
+            }
+          }}
+        />
+      </header>
+      <div class="group-card-new-actions">
+        <button class="tiny" disabled={createDraft.trim() === ""} onclick={createCard}>Create</button>
+        <button
+          class="tiny ghost"
+          onclick={() => {
+            creating = false;
+            createDraft = "";
+          }}>Cancel</button
+        >
+      </div>
+    </div>
+  {:else}
+    <button
+      class="group-card new-card-tile"
+      type="button"
+      onclick={() => {
+        creating = true;
+        createDraft = "";
+      }}
+    >
+      <span class="new-card-plus">+</span>
+      <span>New card</span>
+      <small>Create an empty group and add instruments with its + button.</small>
+    </button>
+  {/if}
 </div>

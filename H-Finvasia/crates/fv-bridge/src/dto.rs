@@ -149,6 +149,8 @@ pub struct ContainerCardDto {
     pub color: Option<String>,
     pub count: usize,
     pub rows: Vec<ContainerRowDto>,
+    /// Manual instrument order for the "Custom" sort; may be empty.
+    pub custom_order: Vec<String>,
 }
 
 /// One cash-equity row for the Stocks tab. The full universe comes from the

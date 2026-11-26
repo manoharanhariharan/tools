@@ -361,6 +361,7 @@ impl MarketData {
         name: &str,
         color: Option<String>,
         keys: &[String],
+        custom_order: Vec<String>,
     ) -> ContainerCardDto {
         ContainerCardDto {
             name: name.to_string(),
@@ -370,6 +371,7 @@ impl MarketData {
                 .iter()
                 .filter_map(|key| self.container_row(key))
                 .collect(),
+            custom_order,
         }
     }
 

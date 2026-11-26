@@ -1,4 +1,5 @@
 import type { ContainerRowDto } from "../../api";
+import type { SortMode } from "../../layoutPrefs";
 
 /** Keep the saved order, append groups the file did not know about yet. */
 export function mergeOrder(order: readonly string[], names: readonly string[]): string[] {
@@ -33,6 +34,71 @@ export function moveRelative(
   const [item] = next.splice(from, 1);
   next.splice(to, 0, item);
   return next;
+}
+
+export interface SortableInstrument {
+  key: string;
+  symbol: string;
+  quote: { ltp: { e6: number } | null } | null;
+}
+
+function orderMap(order: readonly string[]): Map<string, number> {
+  return new Map(order.map((key, index) => [key, index]));
+}
+
+/**
+ * Apply a display sort without mutating the stored group order.
+ * - `added` follows the group's insertion order.
+ * - `custom` follows the user's saved per-group order, falling back to insertion.
+ * - `price` is highest LTP first; rows without a quote come last.
+ */
+export function sortInstrumentRows<T extends SortableInstrument>(
+  rows: readonly T[],
+  mode: SortMode,
+  addedOrder: readonly string[] = rows.map((row) => row.key),
+  customOrder: readonly string[] = [],
+): T[] {
+  const out = [...rows];
+  if (mode === "name") {
+    return out.sort(
+      (a, b) => a.symbol.localeCompare(b.symbol, "en-IN") || a.key.localeCompare(b.key),
+    );
+  }
+  if (mode === "price") {
+    return out.sort((a, b) => {
+      const left = a.quote?.ltp?.e6;
+      const right = b.quote?.ltp?.e6;
+      if (left === undefined && right === undefined) {
+        return a.symbol.localeCompare(b.symbol, "en-IN") || a.key.localeCompare(b.key);
+      }
+      if (left === undefined) return 1;
+      if (right === undefined) return -1;
+      return right - left || a.symbol.localeCompare(b.symbol, "en-IN") || a.key.localeCompare(b.key);
+    });
+  }
+  const fallback = orderMap(addedOrder);
+  if (mode === "custom") {
+    const rank = orderMap(customOrder);
+    return out.sort((a, b) => {
+      const ar = rank.get(a.key);
+      const br = rank.get(b.key);
+      if (ar === undefined && br === undefined) {
+        return (
+          (fallback.get(a.key) ?? Number.MAX_SAFE_INTEGER) -
+            (fallback.get(b.key) ?? Number.MAX_SAFE_INTEGER) ||
+          a.key.localeCompare(b.key)
+        );
+      }
+      if (ar === undefined) return 1;
+      if (br === undefined) return -1;
+      return ar - br || a.key.localeCompare(b.key);
+    });
+  }
+  return out.sort((a, b) => {
+    const ar = fallback.get(a.key) ?? Number.MAX_SAFE_INTEGER;
+    const br = fallback.get(b.key) ?? Number.MAX_SAFE_INTEGER;
+    return ar - br || a.key.localeCompare(b.key);
+  });
 }
 
 export type InstrumentKind = "IDX" | "FUT" | "CE" | "PE" | "EQ" | "INS";

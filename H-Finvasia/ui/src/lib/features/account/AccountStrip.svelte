@@ -1,5 +1,6 @@
 ﻿<script lang="ts">
   import type { AccountSummaryDto, SourceKind } from "../../api";
+  import { amountTone, formatIndianAmount } from "../../format";
   import { loadHeaderCollapsed, saveHeaderCollapsed } from "../../layoutPrefs";
 
   interface Props {
@@ -31,16 +32,15 @@
   }
 
   function signed(value: string | null | undefined): string {
-    if (!value) return "-";
-    const n = Number(value);
-    if (Number.isFinite(n) && n > 0) return `+${value}`;
-    return value;
+    return formatIndianAmount(value, { signed: true });
+  }
+
+  function money(value: string | null | undefined): string {
+    return formatIndianAmount(value);
   }
 
   function tone(value: string | null | undefined): string {
-    const n = Number(value ?? 0);
-    if (!Number.isFinite(n) || n === 0) return "flat";
-    return n > 0 ? "up" : "down";
+    return amountTone(value);
   }
 </script>
 
@@ -61,7 +61,7 @@
         <span class="dot"></span>{feedLabel}
       </span>
       <span class="acct-line-item">Account <strong class="mono">{session?.actid || "-"}</strong></span>
-      <span class="acct-line-item">Cash <strong class="mono">{funds?.cash ?? "-"}</strong></span>
+      <span class="acct-line-item">Cash <strong class="mono">{money(funds?.cash)}</strong></span>
       <span class="acct-line-item">RPNL
         <strong class="mono {tone(summary?.totals.rpnl)}">{signed(summary?.totals.rpnl)}</strong></span
       >
@@ -111,12 +111,12 @@
           {loading ? "..." : "refresh"}
         </button>
       </div>
-      <div class="acct-value mono">{funds?.cash ?? "-"}</div>
+      <div class="acct-value mono">{money(funds?.cash)}</div>
       <div class="acct-sub dim">
-        Blocked <strong>{funds?.blocked ?? "-"}</strong>
+        Blocked <strong>{money(funds?.blocked)}</strong>
       </div>
       <div class="acct-sub dim">
-        Turnover <strong>{funds?.turnover ?? "-"}</strong>
+        Turnover <strong>{money(funds?.turnover)}</strong>
       </div>
     </div>
 

@@ -1232,6 +1232,32 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
 
 ---
 
+### Phase 2q - group editing, sorting, margin and extended orders (implemented)
+
+- **Cards** now support inline rename (double-click), a **New card** tile that creates an empty group
+  without stealing the active watch list, and both layouts share a **Sort** selector: Name,
+  Price (high first), Added and Custom. Custom order is stored per group in `watch-groups.json`;
+  dragging rows inside a card while Custom is selected updates it. The list layout applies the same
+  custom order to its visible cash-equity rows.
+- **Option-chain right-click** on a CE/PE cell opens a card picker: add to an existing Stocks group
+  or create a new card and add in one step. The picker uses `container_add` and, when needed,
+  `container_create_empty`; active-group edits also reconcile the live watch set.
+- The top account strip now formats cash, blocked, turnover, RPNL and MTM with Indian digit grouping
+  and derives colour from the parsed value, so `"1,23,456.70"` no longer falls back to a flat colour.
+- **Ticket price is the LTP snapshot** captured when the dialog opened (no ask/bid drift). The ticket
+  also shows broker pre-trade margin from `GetBasketMargin`, debounced as size/price/type change.
+- **Order types:** LMT, MKT (protected), SL-L and TSL. Shoonya rejects raw MKT/SL-M on the API, so
+  MKT sends a marketable LMT at LTP + 1% (minimum one tick); SL-L/TSL send `trgprc`. TSL registers an
+  in-memory trailing monitor that calls `ModifyOrder` as LTP moves favourably, and drops itself on a
+  modify failure. Trailing stops run only while the app is live.
+- **Square off:** right-click a live position to send the opposite side for the absolute net quantity
+  with the same protected market order. Any trailing monitor for that key is removed.
+- Tests: pure UI request building, Indian formatting, sorting/custom fallback, layout preferences;
+  Rust payload/margin/modify builders, protected market conversion, defaults, custom order and empty
+  group creation.
+
+---
+
 ### Provenance of this document
 
 | Evidence | Source |

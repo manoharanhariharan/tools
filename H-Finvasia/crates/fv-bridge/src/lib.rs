@@ -266,7 +266,9 @@ mod tests {
             "Mixed",
             Some("#12AB34".into()),
             &["NSE|2885".into(), "NFO|158614".into(), "NSE|999999".into()],
+            vec!["NFO|158614".into(), "NSE|2885".into()],
         );
+        assert_eq!(card.custom_order, vec!["NFO|158614", "NSE|2885"]);
 
         assert_eq!(card.name, "Mixed");
         assert_eq!(card.count, 3, "the unresolved key still counts");

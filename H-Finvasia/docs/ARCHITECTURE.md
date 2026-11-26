@@ -133,6 +133,10 @@ every stored key through `MarketData::container_row` into a mixed stock/option/f
 attaches whatever quote is already streaming. `container_add`/`container_remove` edit one named
 group; when that group is active they also reconcile the live watch set. `container_reorder` stores
 the card order in `watch-groups.json` and rejects a list that is missing or duplicating a group.
+`container_create_empty` adds a blank card without moving the active pointer, and
+`container_reorder_keys` stores the manual per-group order used by the **Custom** sort. Name/price/
+insertion/custom sorting is shared pure TypeScript (`ui/src/lib/features/stocks/cards.ts`) across both
+layouts; unknown custom keys fall back to insertion order rather than disappearing.
 
 Containers are named watch lists with a persisted `active` pointer; `watch_add`/`watch_remove` write
 the live list back into the active container, keeping the sidebar count and the watch list in sync.
@@ -155,7 +159,14 @@ screenshots and release probes stay broker-free.
 Rows do not build tickets themselves. They publish `(key, label)` on hover; the App asks
 `order_target` for the instrument metadata and quote, then opens the single global ticket. F1/F2
 resolve through the same path. This keeps lot size, exchange, symbol and price handling identical
-for stocks, futures and options, and lets non-live sources disable confirmation in one place.
+for stocks, futures and options, and lets non-live sources disable confirmation in one place. The
+ticket freezes that LTP snapshot as its default price, so later ticks cannot move the price under
+the user. `buildOrderRequest` is pure and unit-tested; `margin_required` fetches the broker margin
+on a debounce, never on every keystroke.
+
+Right-clicking an option-chain leg opens `AddToGroupModal`, which either adds the leg to an existing
+Stocks group (`container_add`) or creates a blank card first (`container_create_empty`). The card
+file is the single owner of group membership; active-group edits reconcile the live watch set.
 
 Appearance is applied before mount (`applyStoredTheme` in `main.ts`) so the first paint matches the
 saved theme. The picker also applies and persists each click immediately instead of waiting for an
@@ -239,14 +250,24 @@ The rest of the expiry stays in the local master and is served as metadata; it i
 `PlaceOrder` is the only write route. The path is deliberately narrow:
 
 - The UI prepares a ticket first; `place_order` re-validates instrument, lot size, side, product,
-  LMT price and quantity before building `jData`. `ordersource` is `API` and `remarks` carries a
+  price/trigger/quantity before building `jData`. `ordersource` is `API` and `remarks` carries a
   unique reconciliation tag.
+- **MKT is converted to a protected limit.** Shoonya blocks raw MKT on API orders, so `MKT` sends
+  `prctyp: "LMT"` at the LTP plus a 1% buffer (minimum one tick). SL-L and TSL send `prctyp: "SL-L"`
+  with `trgprc`. The margin calculator uses the same protected conversion because it also rejects MKT.
+- **TSL is an SL-L plus a monitor.** After a successful TSL placement the order is registered in an
+  in-memory list; every two seconds the monitor reads the live LTP, moves the trigger favourably, and
+  calls `ModifyOrder` (`post_write`). A failed modify drops the monitor instead of retrying blindly.
+  Closing the app ends trailing; the resting order remains at the broker.
+- **Square-off** right-click on a position sends the opposite side for the absolute net quantity
+  with a protected marketable limit; it removes any trailing monitor for that key.
 - The feed source must be `Live`; replay/idle and `FV_NO_AUTOCONNECT=1` are rejected. The command
   never logs in: it uses the session already cached by the live connection.
 - `post_write` form-encodes `jData` (symbols such as `M&M` contain `&`) and may retry once on a 401
   against the other REST host. Network failures are **not** retried, so an ambiguous send cannot be
   duplicated; the user reconciles via the unique remarks in the order book.
-- The ticket is the confirmation step. There is no one-click live order and no background trading.
+- The ticket is the confirmation step. There is no one-click live order and no background trading
+  other than the explicit trailing-SL modifier.
 
 ## 6. Cross-platform rules| Rule | Reason |
 |---|---|
