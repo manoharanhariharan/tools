@@ -8,13 +8,13 @@ the source commit, toolchain and build time for the current build, and
 
 | File | Size | SHA-256 |
 | --- | ---: | --- |
-| `h-finvasia-v26.11.26.1.exe` | 10550784 | `99b4cd38a72479c4c926f6e1daca677f1e4d6749d46a252b17174ed552b18d27` |
+| `h-finvasia-v26.11.26.2.exe` | 10550784 | `5b18d75287c5009f69800b9c5f5a52a146f82b12fd41f4db148757cb012fa511` |
 
 ## Running
 
 ```powershell
-.\h-finvasia-v26.11.26.1.exe doctor
-.\h-finvasia-v26.11.26.1.exe master stats
+.\h-finvasia-v26.11.26.2.exe doctor
+.\h-finvasia-v26.11.26.2.exe master stats
 ```
 
 Requires a local MongoDB (`FV_MONGO_URI`, default `mongodb://127.0.0.1:27017`)
