@@ -655,7 +655,7 @@
     </div>
   </div>
 
-  <BottomDock />
+  <BottomDock onnotify={showOrderToast} />
 
   <StatusBar {status} />
 

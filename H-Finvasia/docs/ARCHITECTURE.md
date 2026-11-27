@@ -289,9 +289,12 @@ The rest of the expiry stays in the local master and is served as metadata; it i
   calls `ModifyOrder` (`post_write`). A failed modify drops the monitor instead of retrying blindly.
   Closing the app ends trailing; the resting order remains at the broker.
 - **Square-off** right-click on a position sends the opposite side for the absolute net quantity
-  with a protected marketable limit; it removes any trailing monitor for that key.
-- The feed source must be `Live`; replay/idle and `FV_NO_AUTOCONNECT=1` are rejected. The command
-  never logs in: it uses the session already cached by the live connection.
+  with a protected marketable limit; it removes any trailing monitor for that key. It calls
+  `ensure_session` so an expired cached session is re-resolved, falls back to the row's LTP when the
+  websocket has not delivered a quote, and normalises CNC to NRML for derivatives.
+- The feed source must be `Live`; replay/idle and `FV_NO_AUTOCONNECT=1` are rejected. The order command
+  never logs in interactively: `ensure_session` reuses the cached live session or resolves one from the
+  configured credentials.
 - `post_write` keeps `jData` raw JSON, escaping only `&` inside values (symbols such as `M&M`) so the
   form body cannot split; full percent-encoding caused `jData is not valid json object`. It may retry
   once on a 401 against the other REST host. Network failures are **not** retried, so an ambiguous

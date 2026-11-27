@@ -89,12 +89,46 @@ pub struct SquareOffRequest {
     pub side: String,
     pub quantity: i64,
     pub product: String,
+    /// Last position LTP from the UI, used when the feed has not delivered a
+    /// fresh quote for this key yet.
+    #[serde(default)]
+    pub price: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct OrderResult {
     pub order_no: String,
     pub status: String,
+}
+
+/// NFO/BFO/CDS/MCX contracts cannot use the CNC product. Detection is by venue
+/// plus contract type so it still holds when expiry metadata is missing.
+pub fn is_derivative(exchange: &str, instrument_type: &str, expiry: Option<&str>) -> bool {
+    expiry.is_some()
+        || matches!(
+            instrument_type.trim().to_ascii_uppercase().as_str(),
+            "FUT" | "CE" | "PE" | "OPT"
+        )
+        || matches!(
+            exchange.trim().to_ascii_uppercase().as_str(),
+            "NFO" | "BFO" | "CDS" | "MCX"
+        )
+}
+
+/// Map a requested product onto one the instrument can actually trade.
+/// Derivatives normalise CNC to NRML instead of failing a square-off.
+pub fn normalize_product(requested: &str, derivative: bool) -> Result<&'static str, String> {
+    let product = match requested.trim().to_ascii_uppercase().as_str() {
+        "I" | "MIS" => "I",
+        "C" | "CNC" => "C",
+        "M" | "NRML" => "M",
+        other => return Err(format!("unsupported product '{other}'")),
+    };
+    Ok(if derivative && product == "C" {
+        "M"
+    } else {
+        product
+    })
 }
 
 pub fn file_path(config_dir: &Path) -> PathBuf {
@@ -538,6 +572,37 @@ mod tests {
         req.trail = Some("2".into());
         req.trigger_price = None;
         assert!(build_payload(&req, "u", "a", "NFO", "X", 1).is_err());
+    }
+
+    #[test]
+    fn square_off_products_are_derivative_safe() {
+        assert!(is_derivative("NFO", "CE", None));
+        assert!(is_derivative("NSE", "FUT", Some("2026-12-01")));
+        assert!(is_derivative("BFO", "XX", None));
+        assert!(!is_derivative("NSE", "EQ", None));
+
+        assert_eq!(normalize_product("C", true).unwrap(), "M");
+        assert_eq!(normalize_product("CNC", true).unwrap(), "M");
+        assert_eq!(normalize_product("C", false).unwrap(), "C");
+        assert_eq!(normalize_product("I", true).unwrap(), "I");
+        assert!(normalize_product("X", true).is_err());
+    }
+
+    #[test]
+    fn square_off_payload_uses_the_explicit_net_quantity() {
+        let mut req = request();
+        req.side = "S".into();
+        req.product = "M".into();
+        req.price_type = "MKT".into();
+        req.price = Some("77.20".into());
+        let payload = build_payload_for_qty(&req, "u", "a", "NFO", "NIFTY01DEC26P25500", 130)
+            .expect("square off");
+        let value: Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(value["qty"], "130");
+        assert_eq!(value["trantype"], "S");
+        assert_eq!(value["prd"], "M");
+        assert_eq!(value["prctyp"], "LMT");
+        assert_eq!(value["prc"], "76.43");
     }
 
     #[test]

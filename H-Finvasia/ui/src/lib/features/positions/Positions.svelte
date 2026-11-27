@@ -7,8 +7,9 @@
 
   interface Props {
     embedded?: boolean;
+    onnotify?: (message: string, tone: "ok" | "error" | "warn") => void;
   }
-  let { embedded = false }: Props = $props();
+  let { embedded = false, onnotify }: Props = $props();
 
   let view = $state<PositionsView | null>(null);
   let loading = $state(false);
@@ -63,11 +64,14 @@
         side,
         quantity: Math.abs(position.net_qty),
         product: position.product || position.product_alias,
+        price: position.ltp,
       });
       notice = `Square-off ${result.status}: ${result.order_no}`;
+      onnotify?.(`Square-off ${result.status}: ${result.order_no}`, "ok");
       await refresh();
     } catch (e) {
       error = String(e);
+      onnotify?.(`Square-off failed: ${String(e)}`, "error");
     } finally {
       busy = false;
     }

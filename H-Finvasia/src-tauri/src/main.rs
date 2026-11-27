@@ -1022,17 +1022,12 @@ async fn place_order(
         (instrument, key.exchange().to_string())
     };
 
-    let derivative = instrument.expiry.is_some()
-        || matches!(
-            instrument
-                .instrument_type
-                .trim()
-                .to_ascii_uppercase()
-                .as_str(),
-            "FUT" | "CE" | "PE" | "OPT"
-        )
-        || matches!(exchange.as_str(), "NFO" | "BFO" | "CDS" | "MCX");
-    if derivative && request.product.trim().eq_ignore_ascii_case("C") {
+    if orders::is_derivative(
+        &exchange,
+        &instrument.instrument_type,
+        instrument.expiry.as_deref(),
+    ) && request.product.trim().eq_ignore_ascii_case("C")
+    {
         return Err("CNC product is not enabled for F&O; use M - NRML or I - MIS".into());
     }
 
@@ -1109,12 +1104,7 @@ async fn square_off(
     if source != SourceKind::Live {
         return Err("square-off is allowed only on the live feed".into());
     }
-    let session = shared
-        .session
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or_else(|| "no active session; connect to the venue first".to_string())?;
+    let session = ensure_session(&shared).await?;
     let (instrument, exchange, ltp) = {
         let market = shared.market.lock().unwrap();
         let instrument = market
@@ -1125,19 +1115,35 @@ async fn square_off(
             .snapshot(&request.key)
             .and_then(|quote| quote.ltp)
             .map(|price| price.text)
-            .ok_or_else(|| "no live quote for this position yet".to_string())?;
+            .or_else(|| {
+                request
+                    .price
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+            })
+            .ok_or_else(|| {
+                "no live quote for this position yet; try again after the next tick".to_string()
+            })?;
         (instrument, key.exchange().to_string(), ltp)
     };
-    let product = match request.product.trim().to_ascii_uppercase().as_str() {
-        "I" | "MIS" => "I",
-        "C" | "CNC" => "C",
-        "M" | "NRML" => "M",
-        other => return Err(format!("unsupported product '{other}'")),
-    };
+    let derivative = orders::is_derivative(
+        &exchange,
+        &instrument.instrument_type,
+        instrument.expiry.as_deref(),
+    );
+    // A square-off must never be blocked by a stale CNC product on a position.
+    let product = orders::normalize_product(&request.product, derivative)?;
     let side = request.side.trim().to_ascii_uppercase();
     if !matches!(side.as_str(), "B" | "S") {
         return Err("side must be B or S".into());
     }
+    let quantity = request
+        .quantity
+        .checked_abs()
+        .filter(|qty| *qty > 0)
+        .ok_or_else(|| "square-off quantity must be non-zero".to_string())?;
     let ticket = orders::PlaceOrderRequest {
         key: request.key.clone(),
         side,
@@ -1155,7 +1161,7 @@ async fn square_off(
         &session.actid,
         &exchange,
         &instrument.trading_symbol,
-        request.quantity.abs(),
+        quantity,
     )?;
     let result = orders::submit(&shared.rest, &session.token, &payload).await?;
     shared

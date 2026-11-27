@@ -1255,7 +1255,10 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
   in-memory trailing monitor that calls `ModifyOrder` as LTP moves favourably, and drops itself on a
   modify failure. Trailing stops run only while the app is live.
 - **Square off:** right-click a live position to send the opposite side for the absolute net quantity
-  with the same protected market order. Any trailing monitor for that key is removed.
+  with the same protected market order. Any trailing monitor for that key is removed. The command
+  refreshes the session on demand, falls back to the position LTP from the table if the socket has not
+  ticked yet, and maps a stale CNC product to NRML on derivatives instead of letting the broker reject
+  it.
 - Tests: pure UI request building, Indian formatting, sorting/custom fallback, layout preferences;
   Rust payload/margin/modify builders, protected market conversion, defaults, custom order and empty
   group creation.
@@ -1327,6 +1330,9 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
 - Pinning now keeps exactly one spare blank chain tab and leaves focus on the pinned chain; duplicate
   blank tabs created by repeated pinning are normalised away.
 - Chain field ids are unique per tab, so labels and programmatic focus cannot jump to a hidden chain.
+- Square-off is hardened: it refreshes the session (`ensure_session`), accepts the position LTP as a
+  price fallback when no websocket tick exists, validates a non-zero quantity, and normalises CNC to
+  NRML on derivatives. Success and failure both raise the global order toast.
 
 ---
 

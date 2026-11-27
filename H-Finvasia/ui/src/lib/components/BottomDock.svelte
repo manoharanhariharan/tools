@@ -3,6 +3,11 @@
   import Positions from "../features/positions/Positions.svelte";
   import Orders from "../features/orders/Orders.svelte";
 
+  interface Props {
+    onnotify?: (message: string, tone: "ok" | "error" | "warn") => void;
+  }
+  let { onnotify }: Props = $props();
+
   const STORAGE_KEY = "fv.bottomDock";
   const MIN_HEIGHT = 140;
   const DEFAULT_HEIGHT = 260;
@@ -151,7 +156,7 @@
       style="grid-template-columns: {Math.round(split * 1000) / 10}% 6px 1fr"
     >
       <div class="dock-pane">
-        <Positions embedded />
+        <Positions embedded {onnotify} />
       </div>
       <div
         class="dock-split"

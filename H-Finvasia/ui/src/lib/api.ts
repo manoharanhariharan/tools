@@ -247,6 +247,8 @@ export interface SquareOffRequest {
   side: string;
   quantity: number;
   product: string;
+  /** Last position LTP, used if the socket has not ticked this key yet. */
+  price: string | null;
 }
 
 export interface DeltaDto {
