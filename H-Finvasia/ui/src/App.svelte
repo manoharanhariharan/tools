@@ -572,7 +572,7 @@
         />
         <SnapQuote quote={selectedQuote} instrument={instrumentMeta} onremove={removeInstrument} />
       </div>
-    {:else}
+    {:else if page === "settings"}
       <Settings
         {status}
         {info}
