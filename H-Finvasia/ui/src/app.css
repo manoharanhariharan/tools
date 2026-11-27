@@ -757,6 +757,55 @@ table.grid tbody tr.selected td:first-child {
   font-weight: 500;
 }
 
+/* ---- order notifications ---- */
+
+.order-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 42px;
+  z-index: 120;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: min(440px, calc(100vw - 36px));
+  padding: 11px 13px;
+  border-radius: 9px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel-3);
+  color: var(--text);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.order-toast-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.order-toast.ok {
+  border-color: rgba(61, 199, 126, 0.5);
+  background: color-mix(in srgb, var(--panel-3) 82%, var(--up));
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), inset 3px 0 0 var(--up);
+}
+
+.order-toast.error {
+  border-color: rgba(226, 92, 92, 0.6);
+  background: color-mix(in srgb, var(--panel-3) 82%, var(--down));
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), inset 3px 0 0 var(--down);
+}
+
+.order-toast.warn {
+  border-color: rgba(217, 164, 65, 0.6);
+  background: color-mix(in srgb, var(--panel-3) 82%, var(--warn));
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), inset 3px 0 0 var(--warn);
+}
+
+.order-toast button {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+}
+
 /* ---- panels: snap quote / forms ---- */
 
 .snap {
@@ -1124,6 +1173,57 @@ button.acct-toggle:hover {
   border-bottom: 1px solid var(--border);
   background: var(--panel);
   flex: 0 0 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
+  scrollbar-width: thin;
+}
+
+.ws-chain-group {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--panel-2);
+}
+
+.ws-chain-group .ws-tab {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.ws-chain-group.active {
+  border-color: #d9a441;
+  background: #d9a441;
+}
+
+.ws-chain-group.active .ws-tab {
+  color: #fff;
+  background: transparent;
+}
+
+.ws-chain-close {
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+  padding: 4px 7px;
+  font-size: 11px;
+}
+
+.ws-chain-group.active .ws-chain-close {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.ws-chain-close:hover {
+  color: var(--danger);
+}
+
+.ws-chain-group.active .ws-chain-close:hover {
+  color: #fff;
+  background: rgba(0, 0, 0, 0.15);
 }
 
 .ws-tab {

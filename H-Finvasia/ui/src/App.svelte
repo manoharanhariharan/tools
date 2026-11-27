@@ -7,6 +7,7 @@
     type AppInfo,
     type InstrumentDto,
     type OrderDefaults,
+    type OrderDto,
     type OrderResult,
     type PositionDto,
     type QuoteDto,
@@ -29,6 +30,7 @@
   import Stocks from "./lib/features/stocks/Stocks.svelte";
   import Settings from "./lib/features/settings/Settings.svelte";
   import { liveTotals } from "./lib/features/positions/live";
+  import { orderNotification } from "./lib/features/orders/notify";
 
   type Page = "index" | "stocks" | "chain" | "market" | "settings";
 
@@ -48,6 +50,43 @@
   let instrumentMeta = $state<InstrumentDto | null>(null);
   let notice = $state<string | null>(null);
   let busy = $state(false);
+  let orderToast = $state<{ text: string; tone: "ok" | "error" | "warn" } | null>(null);
+  let orderToastTimer: ReturnType<typeof setTimeout> | undefined;
+  let ordersSeeded = false;
+  const ordersSeen = new Set<string>();
+
+  function showOrderToast(text: string, tone: "ok" | "error" | "warn") {
+    if (orderToastTimer !== undefined) clearTimeout(orderToastTimer);
+    orderToast = { text, tone };
+    orderToastTimer = setTimeout(() => {
+      orderToast = null;
+      orderToastTimer = undefined;
+    }, 9000);
+  }
+
+  function orderSeenKey(order: OrderDto): string {
+    return `${order.order_no}|${order.status}|${order.filled}`;
+  }
+
+  async function syncOrderNotices() {
+    try {
+      const list = await api.ordersLoad();
+      if (!ordersSeeded) {
+        for (const order of list) ordersSeen.add(orderSeenKey(order));
+        ordersSeeded = true;
+        return;
+      }
+      for (const order of list) {
+        const key = orderSeenKey(order);
+        if (ordersSeen.has(key)) continue;
+        ordersSeen.add(key);
+        const notification = orderNotification(order);
+        if (notification) showOrderToast(notification.text, notification.tone);
+      }
+    } catch (error) {
+      console.warn("order notification refresh failed", error);
+    }
+  }
 
   interface ChainTab {
     id: string;
@@ -61,7 +100,7 @@
   let chainNonce = 0;
   function createChainTab(
     pending: { underlying: string; nonce: number } | null = null,
-    title = "New chain",
+    title = "Option chain",
   ): ChainTab {
     chainSeq += 1;
     return { id: `chain-${chainSeq}`, title, pinned: false, loaded: false, pending };
@@ -237,7 +276,7 @@
 
   function onSubmitted(result: OrderResult) {
     orderTicket = null;
-    notice = `Order ${result.status}: ${result.order_no}`;
+    showOrderToast(`Order ${result.status}: ${result.order_no}`, "ok");
   }
 
   function handleShortcut(event: KeyboardEvent) {
@@ -268,18 +307,6 @@
 
   function updateChainTab(id: string, patch: Partial<ChainTab>) {
     chainTabs = chainTabs.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab));
-  }
-
-  function newChainTab() {
-    const existing = chainTabs.find((tab) => !tab.loaded && !tab.pinned && !tab.pending);
-    if (existing) {
-      activeChainId = existing.id;
-      return existing;
-    }
-    const tab = createChainTab();
-    chainTabs = [...chainTabs, tab];
-    activeChainId = tab.id;
-    return tab;
   }
 
   /// Open the option chain for an instrument in a fresh/reusable chain tab.
@@ -441,6 +468,7 @@
               if (disposed) return;
               void refreshSummary();
               void refreshPositions();
+              void syncOrderNotices();
             }),
         ],
       ];
@@ -466,6 +494,7 @@
         if (!disposed) await hydrate();
         if (!disposed) await refreshSummary();
         if (!disposed) await refreshPositions();
+        if (!disposed) await syncOrderNotices();
       } catch (error) {
         if (!disposed) notice = `Backend unavailable: ${String(error)}`;
       }
@@ -473,6 +502,7 @@
 
     return () => {
       disposed = true;
+      if (orderToastTimer !== undefined) clearTimeout(orderToastTimer);
       for (const unlisten of unlisteners) unlisten();
     };
   });
@@ -507,15 +537,32 @@
     >
       <span class="tab-icon" aria-hidden="true">▤</span>Stocks
     </button>
-    <button
-      class="ws-tab intent-chain"
-      class:active={page === "chain"}
-      aria-selected={page === "chain"}
-      role="tab"
-      onclick={() => go("chain")}
-    >
-      <span class="tab-icon" aria-hidden="true">⇄</span>Option chain
-    </button>
+    {#each chainTabs as tab (tab.id)}
+      <div class="ws-chain-group" class:active={page === "chain" && activeChainId === tab.id}>
+        <button
+          class="ws-tab intent-chain"
+          aria-selected={page === "chain" && activeChainId === tab.id}
+          role="tab"
+          onclick={() => {
+            activeChainId = tab.id;
+            page = "chain";
+          }}
+        >
+          <span class="tab-icon" aria-hidden="true">⇄</span>
+          {#if tab.pinned}<span class="chain-pin" aria-hidden="true">•</span>{/if}
+          {tab.loaded || tab.pinned ? tab.title : "Option chain"}
+        </button>
+        {#if tab.pinned}
+          <button
+            class="ws-chain-close"
+            type="button"
+            title="Close pinned chain"
+            aria-label={`Close ${tab.title}`}
+            onclick={() => closeChainTab(tab.id)}>x</button
+          >
+        {/if}
+      </div>
+    {/each}
     <button
       class="ws-tab intent-market"
       class:active={page === "market"}
@@ -585,34 +632,6 @@
     {/if}
 
     <div class="chain-workspace" class:hidden={page !== "chain"}>
-      <div class="chain-tabbar">
-        {#each chainTabs as tab (tab.id)}
-          <div class="chain-tab" class:active={tab.id === activeChainId} class:pinned={tab.pinned}>
-            <button
-              class="chain-tab-name"
-              type="button"
-              title={tab.pinned ? "Pinned chain" : "Working chain"}
-              onclick={() => (activeChainId = tab.id)}
-            >
-              {#if tab.pinned}<span class="chain-pin" aria-hidden="true">•</span>{/if}
-              {tab.title}
-            </button>
-            <button
-              class="chain-tab-close"
-              type="button"
-              title="Close chain tab"
-              aria-label={`Close ${tab.title}`}
-              onclick={() => closeChainTab(tab.id)}>x</button
-            >
-          </div>
-        {/each}
-        <button class="chain-tab-new" type="button" onclick={newChainTab}>+ New chain</button>
-        <span class="spacer"></span>
-        {#if chainTabs.some((tab) => tab.pinned)}
-          <span class="chain-hint">Pinned chains stay loaded; use + New chain for another underlying.</span>
-        {/if}
-      </div>
-
       <div class="chain-views">
         {#each chainTabs as tab (tab.id)}
           <div class="chain-view" class:hidden={tab.id !== activeChainId}>
@@ -641,6 +660,13 @@
 
   <StatusBar {status} />
 
+  {#if orderToast}
+    <div class="order-toast {orderToast.tone}" role="status" aria-live="polite">
+      <span class="order-toast-text">{orderToast.text}</span>
+      <button class="ghost" onclick={() => (orderToast = null)}>Dismiss</button>
+    </div>
+  {/if}
+
   {#if orderTicket}
     <OrderTicket
       ticket={orderTicket}
@@ -648,6 +674,7 @@
       live={status?.source === "live"}
       onclose={() => (orderTicket = null)}
       onsubmitted={onSubmitted}
+      onerror={(message) => showOrderToast(`Order failed: ${message}`, "error")}
     />
   {/if}
 

@@ -154,7 +154,8 @@ The option chain's `groupStrikes`, `pickAtm`, `windowAround`, `deltaOi`, `fillPe
 component only maps data to the quad table; the ATM reference (watched spot, typed ATM, or middle
 strike) is resolved by those functions rather than scattered through markup.
 
-Chain tabs are keyed by a UI-generated `chainId`. Pinning marks the tab and opens a fresh one; the
+Chain tabs are keyed by a UI-generated `chainId` and rendered directly in the top-level workspace tab
+row (there is no secondary tab bar). Pinning marks the tab and opens a fresh Option-chain tab; the
 App keeps every chain view mounted (hidden when inactive) so pinned rows and their `onDelta` handlers
 survive page switches. `MarketData` stores a `BTreeMap<chainId, keys>`; `set_chain`/`clear_chain`
 operate on one tab, and the union of all pinned chains participates in the same 100-instrument

@@ -16,8 +16,9 @@
     live: boolean;
     onclose: () => void;
     onsubmitted: (result: OrderResult) => void;
+    onerror?: (message: string) => void;
   }
-  let { ticket, defaults, live, onclose, onsubmitted }: Props = $props();
+  let { ticket, defaults, live, onclose, onsubmitted, onerror }: Props = $props();
 
   let lots = $state(untrack(() => defaults.lots));
   let product = $state(untrack(() => defaults.product));
@@ -113,7 +114,9 @@
       const result = await api.placeOrder(orderRequest());
       onsubmitted(result);
     } catch (e) {
-      error = String(e);
+      const message = String(e);
+      error = message;
+      onerror?.(message);
     } finally {
       busy = false;
     }

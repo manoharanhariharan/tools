@@ -36,8 +36,10 @@ Confirm. The price starts at the LTP that was running when the ticket opened. Ty
 an **internal margin estimate** (no broker round-trip): option buys use premium, option sells use
 max(premium, 15% strike notional), futures 15%, and equity 20/50/100% by product. Defaults
 (lots/product/validity/type) are saved locally. Orders are allowed only on the live feed and never
-retried automatically. Positions and the order book live in a resizable bottom dock; right-click a
-live position to square it off with a protected market order.
+retried automatically. Every terminal order update raises a fixed screen toast: fills show quantity
+and average price, rejections show the broker's reason, and cancels are amber. Positions and the order
+book live in a resizable bottom dock; right-click a live position to square it off with a protected
+market order.
 
 **Still pending:** holdings, product conversion and algo orders. The test suite never sends a real
 order.
@@ -88,10 +90,12 @@ The workspace opens on a four-card account strip - **Account details** (user, ac
 state), **Funds available**, **RPNL**, **MTM**. The larger chevron at the right collapses it to a
 single-line band with the feed state, account, cash, RPNL, MTM and position count; the same
 right-hand control expands it again and the choice is remembered. RPNL and MTM are recomputed from
-the position snapshot plus live websocket LTPs, so the header moves with the market. Five icon-labelled tabs follow:
-**Index**, **Stocks**, **Option chain**, **Market watch** and **Settings**. Settings contains Order
-defaults, Appearance and Diagnostics, so there is no hidden More menu. Positions and the order book
-live in the bottom dock, keeping the working area uncluttered.
+the position snapshot plus live websocket LTPs, so the header moves with the market. The icon-labelled
+top-level tabs are **Index**, **Stocks**, one or more **Option chain** tabs, **Market watch** and
+**Settings**. Pinning a chain turns it into its own top-level tab and leaves a fresh Option chain tab
+for the next underlying, so there is no second tab bar. Settings contains Order defaults, Appearance
+and Diagnostics, so there is no hidden More menu. Positions and the order book live in the bottom
+dock, keeping the working area uncluttered.
 
 **Stocks** has two layouts. **List** shows the watched stocks in the active group; use the search
 bar above it to find an NSE stock. The groups sidebar creates, deletes and renames lists
@@ -117,8 +121,8 @@ box at the top adds directly to the active group.
 **Option chain** starts blank when opened directly. Type an underlying and pick it from the local
 suggestions; the expiry, strikes, ATM and filter controls then appear. Opening a chain from a row
 context menu pre-fills and loads it immediately. Once loaded, **Pin** keeps that chain alive as its
-own chain tab and opens a fresh tab for the next underlying. Pinned tabs stay subscribed even when
-you switch workspace pages; close a tab to release its legs. Chain tabs share the same 100-instrument
+own top-level tab and leaves a fresh **Option chain** tab for the next underlying. Pinned tabs stay
+subscribed even when you switch workspace pages; close a pinned tab to release its legs. Chain tabs share the same 100-instrument
 budget as the watch list and Stocks groups. The quad layout has calls on the left, puts on the right
 and strike price in the middle. Each side is mirrored around the strike (trade, OI, d OI, volume, LTP, change, bid qty,
 bid, ask, ask qty, then the strike). OI and volume cells carry a proportional background fill. Calls

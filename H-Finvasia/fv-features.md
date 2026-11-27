@@ -1276,8 +1276,9 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
 
 ### Phase 2s - workspace tabs, card controls and release stamp (implemented)
 
-- Tabs are now **Index**, **Stocks**, **Option chain**, **Market watch** and **Settings**, all
-  visible with icons and intent colours. The hidden More menu and Groups tab were removed;
+- Tabs are now **Index**, **Stocks**, dynamic **Option chain** tabs, **Market watch** and
+  **Settings**, all visible with icons and intent colours. Pinned chains are top-level tabs; the
+  secondary chain tab bar was removed. The hidden More menu and Groups tab were also removed;
   Order defaults, Appearance and Diagnostics live inside Settings.
 - Tab corners use a solid 6 px radius instead of pills, and the F1/F2 hint no longer sits between
   tabs.
@@ -1313,6 +1314,8 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
 - The account strip reuses those live totals, so RPNL/MTM move with the market instead of waiting
   for another REST summary.
 - `om` order frames now emit `orders:changed`; the order book and positions refresh from that event.
+- Terminal order changes raise a fixed toast: fills (quantity + average), rejections (broker reason),
+  cancels/lapses (amber). Historical orders are seeded on launch so old rejections are not replayed.
 - The order write body was also fixed: `jData` stays raw JSON with only `&` escaped, avoiding the
   venue's `jData is not valid json object` rejection.
 
