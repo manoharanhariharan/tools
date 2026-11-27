@@ -31,6 +31,7 @@
   import Settings from "./lib/features/settings/Settings.svelte";
   import { liveTotals } from "./lib/features/positions/live";
   import { orderNotification } from "./lib/features/orders/notify";
+  import { normaliseBlankChainTabs } from "./lib/features/chain/chainTabs";
 
   type Page = "index" | "stocks" | "chain" | "market" | "settings";
 
@@ -333,10 +334,8 @@
       title: `${info.underlying} ${info.expiry}`,
       pending: null,
     });
-    // Pinned chain stays mounted; open a fresh tab for the next underlying.
-    const next = createChainTab();
-    chainTabs = [...chainTabs, next];
-    activeChainId = next.id;
+    // Keep exactly one spare blank tab, but leave focus on the pinned chain.
+    chainTabs = normaliseBlankChainTabs(chainTabs, createChainTab);
   }
 
   function closeChainTab(id: string) {

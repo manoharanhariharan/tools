@@ -121,8 +121,9 @@ box at the top adds directly to the active group.
 **Option chain** starts blank when opened directly. Type an underlying and pick it from the local
 suggestions; the expiry, strikes, ATM and filter controls then appear. Opening a chain from a row
 context menu pre-fills and loads it immediately. Once loaded, **Pin** keeps that chain alive as its
-own top-level tab and leaves a fresh **Option chain** tab for the next underlying. Pinned tabs stay
-subscribed even when you switch workspace pages; close a pinned tab to release its legs. Chain tabs share the same 100-instrument
+own top-level tab. Exactly one spare **Option chain** tab is maintained, and pinning keeps focus on
+the chain you just pinned. Pinned tabs stay subscribed even when you switch workspace pages; close a
+pinned tab to release its legs. Chain tabs share the same 100-instrument
 budget as the watch list and Stocks groups. The quad layout has calls on the left, puts on the right
 and strike price in the middle. Each side is mirrored around the strike (trade, OI, d OI, volume, LTP, change, bid qty,
 bid, ask, ask qty, then the strike). OI and volume cells carry a proportional background fill. Calls

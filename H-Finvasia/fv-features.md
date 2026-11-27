@@ -1296,9 +1296,9 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
 
 ### Phase 2t - pinned option-chain tabs and order wire fix (implemented)
 
-- A loaded option chain exposes **Pin**. Pinning keeps that chain mounted as its own chain tab and
-  opens a fresh tab for the next underlying. Pinned tabs stay subscribed across workspace switches;
-  closing a tab releases its legs.
+- A loaded option chain exposes **Pin**. Pinning keeps that chain mounted as its own top-level tab,
+  keeps focus on it, and maintains exactly one spare blank Option-chain tab for the next underlying.
+  Pinned tabs stay subscribed across workspace switches; closing a tab releases its legs.
 - `MarketData` now keeps a `BTreeMap<chainId, keys>` so several chains can be subscribed at once.
   `chain_load`/`chain_close` are chain-tab scoped; the chain union participates in the same 100
   instrument budget as the watch list and groups.
