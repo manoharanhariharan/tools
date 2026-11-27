@@ -1288,6 +1288,8 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
   icons. Per-card sort choices are stored in `fv.groupSort`.
 - Option-chain F1/F2 arming is side-aware: hovering or clicking a call cell arms that CE, and a put
   cell arms that PE, instead of the row always selecting its call leg.
+- The redundant Option-chain panel header was removed; leg/live badges moved into the compact
+  control row, and the Spot/ATM/Expiry summary uses a shorter strip to recover vertical space.
 - `release.ps1` now sets `SOURCE_DATE_EPOCH` before building, so the binary and artifact tag use the
   current day instead of a stale compile date.
 

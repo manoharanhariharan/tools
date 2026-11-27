@@ -865,11 +865,35 @@ select {
 
 .chain-toolbar {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: flex-end;
-  padding: 12px 14px;
+  padding: 7px 12px;
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
+}
+
+.chain-toolbar .field {
+  gap: 3px;
+}
+
+.chain-toolbar .field label {
+  font-size: 9.5px;
+}
+
+.chain-toolbar input,
+.chain-toolbar select {
+  padding: 5px 8px;
+}
+
+.chain-toolbar button {
+  padding: 5px 11px;
+}
+
+.chain-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
 }
 
 .chain-underlying-field {
@@ -1502,7 +1526,7 @@ table.chain-grid tbody td.strike-cell.strike-atm {
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 7px 14px;
+  padding: 5px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--panel-2);
   font-size: 12px;

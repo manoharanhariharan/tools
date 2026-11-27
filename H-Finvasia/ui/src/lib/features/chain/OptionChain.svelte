@@ -387,15 +387,6 @@
 </script>
 
 <section class="panel">
-  <header class="panel-head">
-    <h2>Option chain</h2>
-    {#if loaded}
-      <Badge label={`${rows.length} legs`} />
-      <Badge label={`${liveCount} live`} tone={liveCount > 0 ? "ok" : "warn"} dot />
-    {/if}
-    <span class="spacer"></span>
-  </header>
-
   <div class="chain-toolbar">
     <div
       class="field chain-underlying-field"
@@ -461,6 +452,14 @@
       <button class="primary" disabled={loading || !expiry} onclick={loadChain}>
         {loading ? "Loading..." : "Load and subscribe"}
       </button>
+
+      {#if loaded}
+        <span class="spacer"></span>
+        <span class="chain-meta">
+          <Badge label={`${rows.length} legs`} />
+          <Badge label={`${liveCount} live`} tone={liveCount > 0 ? "ok" : "warn"} dot />
+        </span>
+      {/if}
     {/if}
   </div>
 
