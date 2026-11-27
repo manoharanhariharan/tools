@@ -433,6 +433,19 @@ pub fn remove_key(path: &Path, name: &str, key: &str) -> Result<Vec<String>, Str
     Ok(result)
 }
 
+/// Remove an instrument from every group. Used by the Market Watch global
+/// remove action, which sees the union of all group members.
+pub fn remove_key_everywhere(path: &Path, key: &str) -> Result<(), String> {
+    let mut file = read(path);
+    for keys in file.groups.values_mut() {
+        keys.retain(|existing| existing != key);
+    }
+    for custom in file.custom.values_mut() {
+        custom.retain(|existing| existing != key);
+    }
+    write(path, &file)
+}
+
 /// Save a manual ("Custom" sort) instrument order for one group.
 ///
 /// Unknown keys are ignored and any group member not listed is appended in
@@ -704,6 +717,24 @@ mod tests {
         create_empty(&path, "Other").unwrap();
         remove(&path, "Renamed").unwrap();
         assert!(!read(&path).custom.contains_key("Renamed"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn removing_everywhere_cleans_all_groups_and_custom_orders() {
+        let path = temp_path("remove-everywhere");
+        ensure_default(&path, vec!["A".into(), "B".into()]).unwrap();
+        create_empty(&path, "Other").unwrap();
+        add_key(&path, "Other", "B").unwrap();
+        set_custom_order(&path, "Other", vec!["B".into()]).unwrap();
+        remove_key_everywhere(&path, "B").unwrap();
+        assert_eq!(load(&path, DEFAULT_CONTAINER).unwrap(), vec!["A"]);
+        assert_eq!(load(&path, "Other").unwrap(), Vec::<String>::new());
+        assert!(!read(&path)
+            .custom
+            .get("Other")
+            .map(|keys| keys.contains(&"B".to_string()))
+            .unwrap_or(false));
         let _ = std::fs::remove_file(path);
     }
 

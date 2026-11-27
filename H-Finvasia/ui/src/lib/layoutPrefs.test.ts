@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   COLLAPSED_GROUPS_KEY,
+  GROUP_SORT_KEY,
   HEADER_KEY,
   STOCKS_SORT_KEY,
   STOCKS_VIEW_KEY,
   loadCollapsedGroups,
+  loadGroupSort,
   loadHeaderCollapsed,
   loadSortMode,
   loadStocksView,
   saveCollapsedGroups,
+  saveGroupSort,
   saveHeaderCollapsed,
   saveSortMode,
   saveStocksView,
@@ -69,6 +72,16 @@ describe("layoutPrefs", () => {
     expect(loadCollapsedGroups(store)).toEqual({ Alpha: true, Gamma: false });
     saveCollapsedGroups({ Alpha: false }, store);
     expect(loadCollapsedGroups(store)).toEqual({ Alpha: false });
+  });
+
+  it("round-trips per-group sort modes", () => {
+    const store = storage();
+    saveGroupSort({ Alpha: "price", Beta: "custom" }, store);
+    expect(store.data[GROUP_SORT_KEY]).toContain("price");
+    expect(loadGroupSort(store)).toEqual({ Alpha: "price", Beta: "custom" });
+    expect(loadGroupSort(storage({ [GROUP_SORT_KEY]: JSON.stringify({ A: "bad", B: "name" }) }))).toEqual({
+      B: "name",
+    });
   });
 
   it("ignores corrupt JSON and storage failures", () => {

@@ -103,6 +103,11 @@ function Get-NextVersion {
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
+    # Make the build stamp follow the calendar day. `build.rs` only reruns when
+    # this env var changes, so leaving it unset kept yesterday's tag forever.
+    if ([string]::IsNullOrWhiteSpace($env:SOURCE_DATE_EPOCH)) {
+        $env:SOURCE_DATE_EPOCH = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString()
+    }
     $repoRoot = (& git rev-parse --show-toplevel).Trim()
     if ([string]::IsNullOrWhiteSpace($repoRoot)) {
         throw "Not inside a git repository."

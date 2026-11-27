@@ -17,6 +17,7 @@ export type SortMode = "name" | "price" | "added" | "custom";
 export const HEADER_KEY = "fv.headerCollapsed";
 export const STOCKS_VIEW_KEY = "fv.stocksView";
 export const STOCKS_SORT_KEY = "fv.stocksSort";
+export const GROUP_SORT_KEY = "fv.groupSort";
 export const COLLAPSED_GROUPS_KEY = "fv.groupCards.collapsed";
 
 function defaultStorage(): StorageLike | null {
@@ -79,6 +80,31 @@ export function saveSortMode(
   storage: StorageLike | null = defaultStorage(),
 ): void {
   writeText(storage, STOCKS_SORT_KEY, mode);
+}
+
+export function loadGroupSort(
+  storage: StorageLike | null = defaultStorage(),
+): Record<string, SortMode> {
+  const raw = readText(storage, GROUP_SORT_KEY);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: Record<string, SortMode> = {};
+    for (const [name, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (SORT_MODES.includes(value as SortMode)) out[name] = value as SortMode;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function saveGroupSort(
+  modes: Record<string, SortMode>,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  writeText(storage, GROUP_SORT_KEY, JSON.stringify(modes));
 }
 
 /** Collapsed state per group name. Unknown values are ignored, not coerced. */

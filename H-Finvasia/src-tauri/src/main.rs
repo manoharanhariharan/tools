@@ -76,6 +76,17 @@ struct WatchChanged {
     quotes: Vec<QuoteDto>,
 }
 
+fn watch_snapshot(market: &MarketData) -> WatchChanged {
+    WatchChanged {
+        keys: market
+            .market_watch_keys()
+            .iter()
+            .map(|key| key.as_wire())
+            .collect(),
+        quotes: market.market_watch_quotes(),
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct AppInfo {
     version: String,
@@ -134,12 +145,19 @@ fn instrument(state: State<'_, Arc<AppState>>, key: String) -> Option<Instrument
 
 #[tauri::command]
 fn watch_list(state: State<'_, Arc<AppState>>) -> Vec<String> {
-    state.market.lock().unwrap().watched()
+    state
+        .market
+        .lock()
+        .unwrap()
+        .market_watch_keys()
+        .iter()
+        .map(|key| key.as_wire())
+        .collect()
 }
 
 #[tauri::command]
 fn watch_quotes(state: State<'_, Arc<AppState>>) -> Vec<QuoteDto> {
-    state.market.lock().unwrap().watch_quotes()
+    state.market.lock().unwrap().market_watch_quotes()
 }
 
 #[tauri::command]
@@ -157,10 +175,7 @@ fn watch_add(
     let (plan, payload) = {
         let mut market = state.market.lock().unwrap();
         let plan = market.add_to_watch(parsed);
-        let payload = WatchChanged {
-            keys: market.watched(),
-            quotes: market.watch_quotes(),
-        };
+        let payload = watch_snapshot(&market);
         (plan, payload)
     };
     forward_plan_to_live(&state, &plan);
@@ -180,10 +195,7 @@ fn watch_remove(
     let (plan, payload) = {
         let mut market = state.market.lock().unwrap();
         let plan = market.remove_from_watch(&key);
-        let payload = WatchChanged {
-            keys: market.watched(),
-            quotes: market.watch_quotes(),
-        };
+        let payload = watch_snapshot(&market);
         (plan, payload)
     };
     forward_plan_to_live(&state, &plan);
@@ -193,6 +205,31 @@ fn watch_remove(
     if !ensure_default_instrument(&app, state.inner()) {
         let _ = app.emit("watch:changed", payload);
     }
+    Ok(plan)
+}
+
+/// Remove an instrument from the active watch list and from every group.
+/// Market Watch shows the union, so its x button must clear all owners.
+#[tauri::command]
+fn remove_everywhere(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    key: String,
+) -> Result<PlanDto, String> {
+    let plan = {
+        let mut market = state.market.lock().unwrap();
+        market.remove_from_watch(&key)
+    };
+    forward_plan_to_live(&state, &plan);
+    groups::remove_key_everywhere(&groups_file(&app), &key)?;
+    save_watch(&app, state.inner());
+    sync_group_subscriptions(&app, state.inner());
+    ensure_default_instrument(&app, state.inner());
+    let payload = {
+        let market = state.market.lock().unwrap();
+        watch_snapshot(&market)
+    };
+    let _ = app.emit("watch:changed", payload);
     Ok(plan)
 }
 
@@ -308,10 +345,7 @@ async fn begin_feed(
         market.set_watch(keys);
         market.set_source(SourceKind::Replay);
         market.clear_error();
-        WatchChanged {
-            keys: market.watched(),
-            quotes: market.watch_quotes(),
-        }
+        watch_snapshot(&market)
     };
 
     let frames: Vec<Vec<u8>> = replay.frames().to_vec();
@@ -547,10 +581,7 @@ fn group_load(
     let (plan, payload) = {
         let mut market = state.market.lock().unwrap();
         let plan = market.set_watch(parsed);
-        let payload = WatchChanged {
-            keys: market.watched(),
-            quotes: market.watch_quotes(),
-        };
+        let payload = watch_snapshot(&market);
         (plan, payload)
     };
     forward_plan_to_live(&state, &plan);
@@ -595,10 +626,7 @@ fn apply_watch(app: &AppHandle, state: &Arc<AppState>, keys: Vec<SymbolKey>) -> 
     let (plan, payload) = {
         let mut market = state.market.lock().unwrap();
         let plan = market.set_watch(keys);
-        let payload = WatchChanged {
-            keys: market.watched(),
-            quotes: market.watch_quotes(),
-        };
+        let payload = watch_snapshot(&market);
         (plan, payload)
     };
     forward_plan_to_live(state, &plan);
@@ -1653,10 +1681,7 @@ fn main() {
                         let payload = {
                             let mut market = resume_state.market.lock().unwrap();
                             market.set_watch(keys.clone());
-                            WatchChanged {
-                                keys: market.watched(),
-                                quotes: market.watch_quotes(),
-                            }
+                            watch_snapshot(&market)
                         };
                         let _ = resume_handle.emit("watch:changed", payload);
                     }
@@ -1733,6 +1758,7 @@ fn main() {
             snapshot,
             watch_add,
             watch_remove,
+            remove_everywhere,
             start_replay,
             start_live,
             session_info,

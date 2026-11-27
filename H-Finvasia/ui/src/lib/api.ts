@@ -310,6 +310,7 @@ export const api = {
   snapshot: (key: string) => invoke<QuoteDto | null>("snapshot", { key }),
   watchAdd: (key: string) => invoke<PlanDto>("watch_add", { key }),
   watchRemove: (key: string) => invoke<PlanDto>("watch_remove", { key }),
+  removeEverywhere: (key: string) => invoke<PlanDto>("remove_everywhere", { key }),
   startReplay: (hz = 120) => invoke<string[]>("start_replay", { path: null, hz }),
   startReplayFile: (path: string, hz = 120) =>
     invoke<string[]>("start_replay", { path, hz }),

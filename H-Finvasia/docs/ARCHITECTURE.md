@@ -145,7 +145,9 @@ as well: every instrument in every group is in the desired-key union, so all car
 when their group is not active. Group membership is re-read after add/remove/delete and at startup.
 The union (group members + active watch + option chain) is capped at the 100-instrument budget, with
 excess keys reported in the plan rather than silently growing the socket. Switching a container
-changes which list is shown; it does not drop the other cards' subscriptions.
+changes which list is shown; it does not drop the other cards' subscriptions. Market Watch renders
+the same watch+group union (option-chain legs excluded), so instruments present only in a card still
+appear there; its remove action calls `remove_everywhere`, while a card's x is scoped to that group.
 
 The option chain's `groupStrikes`, `pickAtm`, `windowAround`, `deltaOi`, `fillPercent` and
 `defaultTicketPrice` are pure TypeScript in `ui/src/lib/features/chain/chain.ts` and unit-tested. The

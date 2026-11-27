@@ -441,6 +441,21 @@ impl MarketData {
         self.desired_keys().into_iter().collect()
     }
 
+    /// Market-watch rows are the active watch list **plus** every group member.
+    /// This is the user-facing "watching" set; the option-chain legs stay out.
+    pub fn market_watch_keys(&self) -> Vec<SymbolKey> {
+        self.watch.active().union(&self.groups).cloned().collect()
+    }
+
+    pub fn market_watch_quotes(&self) -> Vec<QuoteDto> {
+        let master = self.master.as_deref();
+        self.market_watch_keys()
+            .iter()
+            .filter_map(|key| self.book.get(key))
+            .map(|quote| quote_dto(quote, master))
+            .collect()
+    }
+
     /// Replace the group-card subscription set.
     ///
     /// Group members that are also in the active watch or chain are free; the
@@ -590,7 +605,7 @@ impl MarketData {
             backend: self.backend.to_string(),
             master_loaded: self.master.is_some(),
             instruments: self.master.as_ref().map(|m| m.len()).unwrap_or(0),
-            watched: self.watch.len(),
+            watched: self.market_watch_keys().len(),
             watch_limit: self.watch.max(),
             subscribed: self.subscribed_len(),
             subscription_limit: MAX_TOTAL_SUBSCRIPTIONS,

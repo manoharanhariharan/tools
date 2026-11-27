@@ -78,31 +78,40 @@ The executable lands at `src-tauri/target/release/h-finvasia-desktop.exe` and ru
 > `tauri.conf.json`'s `devUrl` is only meant for `tauri dev`. `scripts/release.ps1` builds through
 > the CLI and then probes port 5173 to prove the shipped app never touches it.
 
-`scripts/release.ps1` does all of this and publishes to `releases/`.
+`scripts/release.ps1` does all of this and publishes to `releases/`. It sets `SOURCE_DATE_EPOCH`
+to the current UTC day before building, so the artifact tag always follows today's
+`YY.MM.DD.<seq>` instead of a stale compile date.
 
 ### Layout
 
 The workspace opens on a four-card account strip - **Account details** (user, account, login
-state), **Funds available**, **RPNL**, **MTM**. The chevron at the right collapses it to a
-single-line band with the feed state, account, cash, RPNL, MTM and position count; the choice is
-remembered. Three tabs follow: **Index**, **Stocks** and **Option chain**. Market watch and
-Groups/Diagnostics sit behind the **More** menu; Positions and the order book live
-in the bottom dock, so the working area stays uncluttered.
+state), **Funds available**, **RPNL**, **MTM**. The larger chevron at the right collapses it to a
+single-line band with the feed state, account, cash, RPNL, MTM and position count; the same
+right-hand control expands it again and the choice is remembered. Five icon-labelled tabs follow:
+**Index**, **Stocks**, **Option chain**, **Market watch** and **Settings**. Settings contains Order
+defaults, Appearance and Diagnostics, so there is no hidden More menu. Positions and the order book
+live in the bottom dock, keeping the working area uncluttered.
 
 **Stocks** has two layouts. **List** shows the watched stocks in the active group; use the search
 bar above it to find an NSE stock. The groups sidebar creates, deletes and renames lists
 (double-click a name to edit), and each group has a color chip that opens the system color picker.
 **Cards** renders every group as a card in a three-column, endlessly scrolling grid. Cards can be
 dragged to reorder (the order is saved in `watch-groups.json`), collapsed individually, renamed
-inline (double-click the name, keeping the same slot), and deleted with the card's **x** button. Each card carries a **+**
-search that adds stocks, futures, indices or options to that specific group. A **New card** tile
-creates an empty group, and **Sort** switches both layouts between name, price, insertion order and
-a **Custom** order (drag rows in a card while Custom is selected). Cards keep their natural content
+inline (double-click the name, keeping the same slot), and deleted with the card's **x** button.
+Every card has an always-visible search box that adds stocks, futures, indices or options to that
+specific group, a per-card **Sort** selector (Name, Price, Added, Custom) and larger **+**/**toggle**
+icons. A **New card** tile creates an empty group; the workspace-wide Sort still controls the List
+view and is the fallback for new cards. Cards keep their natural content
 height and the grid scrolls vertically instead of squeezing row content. Every instrument stored in
 any group is subscribed, so all cards stream live - not just the active one. The active group remains
 the list view's watch list; switching it changes which list is shown without dropping the other
 cards' subscriptions. The combined group/watch/chain set stays within the 100-instrument budget, and
 anything beyond it is reported rather than silently dropped.
+
+**Market watch** shows the union of the active watch list and every Stocks group member, so indices
+and instruments living only in cards still appear there. Its **x** removes an instrument from every
+owner (active list and groups); the per-card **x** removes only from that card. The full-master search
+box at the top adds directly to the active group.
 
 **Option chain** starts blank when opened directly. Type an underlying and pick it from the local
 suggestions; the expiry, strikes, ATM and filter controls then appear. Opening a chain from a row

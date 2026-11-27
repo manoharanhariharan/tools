@@ -1,5 +1,5 @@
 ﻿<script lang="ts">
-  import { onMount, untrack } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import {
     api,
     events,
@@ -18,7 +18,9 @@
   } from "./cards";
   import {
     loadCollapsedGroups,
+    loadGroupSort,
     saveCollapsedGroups,
+    saveGroupSort,
     type SortMode,
   } from "../../layoutPrefs";
 
@@ -53,6 +55,7 @@
 
   let order = $state<string[]>([]);
   let collapsed = $state<Record<string, boolean>>(loadCollapsedGroups());
+  let cardSort = $state<Record<string, SortMode>>(loadGroupSort());
   let quotes = $state<Map<string, QuoteDto>>(new Map());
   let keySet = $state<Set<string>>(new Set());
   let error = $state<string | null>(null);
@@ -173,6 +176,24 @@
     return {};
   }
 
+  function focusWhen(node: HTMLInputElement, active: boolean) {
+    if (active) queueMicrotask(() => node.focus());
+    return {
+      update(next: boolean) {
+        if (next) queueMicrotask(() => node.focus());
+      },
+    };
+  }
+
+  function modeFor(name: string): SortMode {
+    return cardSort[name] ?? sortMode;
+  }
+
+  function setCardSort(name: string, mode: SortMode) {
+    cardSort = { ...cardSort, [name]: mode };
+    saveGroupSort(cardSort);
+  }
+
   async function commitRename(oldName: string) {
     const next = editingDraft.trim();
     if (editing !== oldName) return;
@@ -219,7 +240,7 @@
   }
 
   function startRowDrag(event: DragEvent, group: string, key: string) {
-    if (sortMode !== "custom") return;
+    if (modeFor(group) !== "custom") return;
     event.stopPropagation();
     rowDragKey = key;
     rowDragGroup = group;
@@ -265,16 +286,17 @@
     saveCollapsedGroups(collapsed);
   }
 
-  function openSearch(name: string, event: MouseEvent) {
+  async function openSearch(name: string, event: MouseEvent) {
     event.stopPropagation();
-    if (searchFor === name) {
-      closeSearch();
-      return;
-    }
     searchFor = name;
     query = "";
     results = [];
     searchError = null;
+    await tick();
+    const input = [...document.querySelectorAll<HTMLInputElement>("input[data-card-search]")].find(
+      (node) => node.dataset.cardSearch === name,
+    );
+    input?.focus();
   }
 
   function closeSearch() {
@@ -354,9 +376,10 @@
   {/if}
 
   {#each ordered as card (card.name)}
+    {@const mode = modeFor(card.name)}
     {@const rowList = sortInstrumentRows(
       card.rows,
-      sortMode,
+      mode,
       card.rows.map((row) => row.key),
       card.custom_order,
     )}
@@ -414,15 +437,29 @@
         <span class="group-card-count" title="Instruments in this group">{card.count}</span>
         {#if hasLive}<span class="group-card-live">live</span>{/if}
         <span class="spacer"></span>
+        <select
+          class="card-sort"
+          aria-label={`Sort ${card.name}`}
+          value={mode}
+          title={`Sort ${card.name}`}
+          onclick={(event) => event.stopPropagation()}
+          onpointerdown={(event) => event.stopPropagation()}
+          onchange={(event) => setCardSort(card.name, event.currentTarget.value as SortMode)}
+        >
+          <option value="name">Name</option>
+          <option value="price">Price</option>
+          <option value="added">Added</option>
+          <option value="custom">Custom</option>
+        </select>
         <button
-          class="icon"
+          class="icon add-instrument"
           type="button"
           title={`Add a stock, option or other instrument to ${card.name}`}
           aria-label={`Add instrument to ${card.name}`}
           onclick={(event) => openSearch(card.name, event)}>+</button
         >
         <button
-          class="icon"
+          class="icon group-card-toggle"
           type="button"
           title={isCollapsed(card.name) ? "Expand group" : "Collapse group"}
           aria-expanded={!isCollapsed(card.name)}
@@ -441,18 +478,30 @@
         </button>
       </header>
 
-      {#if searchFor === card.name}
-        <div class="group-card-search">
-          <input
-            use:focusOnMount
-            type="search"
-            aria-label={`Search instruments to add to ${card.name}`}
-            placeholder="Search stock, option, future or index"
-            bind:value={query}
-            onkeydown={(event) => {
-              if (event.key === "Escape") closeSearch();
-            }}
-          />
+      <div class="group-card-search">
+        <input
+          use:focusWhen={searchFor === card.name}
+          data-card-search={card.name}
+          type="search"
+          aria-label={`Search instruments to add to ${card.name}`}
+          placeholder="Search stock, option, future or index"
+          value={searchFor === card.name ? query : ""}
+          onfocus={() => {
+            if (searchFor !== card.name) {
+              searchFor = card.name;
+              query = "";
+              results = [];
+            }
+          }}
+          oninput={(event) => {
+            searchFor = card.name;
+            query = event.currentTarget.value;
+          }}
+          onkeydown={(event) => {
+            if (event.key === "Escape") closeSearch();
+          }}
+        />
+        {#if searchFor === card.name}
           {#if searchError}
             <p class="hint down">{searchError}</p>
           {:else if searching && results.length === 0}
@@ -486,8 +535,8 @@
               {/each}
             </div>
           {/if}
-        </div>
-      {/if}
+        {/if}
+      </div>
 
       {#if !isCollapsed(card.name)}
         <div class="group-card-body">
@@ -508,9 +557,9 @@
                 aria-selected={armedKey === row.key}
                 aria-label={`${row.symbol} in ${card.name}`}
                 tabindex="0"
-                class:row-draggable={sortMode === "custom"}
+                class:row-draggable={mode === "custom"}
                 class:dragging={rowDragKey === row.key && rowDragGroup === card.name}
-                draggable={sortMode === "custom"}
+                draggable={mode === "custom"}
                 title={row.name ?? row.symbol}
                 onmouseenter={() => arm(row)}
                 onclick={() => arm(row)}
@@ -522,7 +571,7 @@
                 }}
                 ondragstart={(event) => startRowDrag(event, card.name, row.key)}
                 ondragover={(event) => {
-                  if (sortMode === "custom" && rowDragGroup === card.name) event.preventDefault();
+                  if (mode === "custom" && rowDragGroup === card.name) event.preventDefault();
                 }}
                 ondrop={(event) =>
                   dropRow(
@@ -534,7 +583,7 @@
                 ondragend={endRowDrag}
               >
                 <div class="group-card-inst">
-                  {#if sortMode === "custom"}<span class="row-grip" aria-hidden="true">::</span>{/if}
+                  {#if mode === "custom"}<span class="row-grip" aria-hidden="true">::</span>{/if}
                   <span class="kind kind-{kind.toLowerCase()}">{kind}</span>
                   <span class="sym">{row.symbol}</span>
                   <span class="detail">{instrumentDetail(row)}</span>

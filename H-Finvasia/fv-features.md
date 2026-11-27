@@ -1274,6 +1274,21 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
   just the active group. The union with the active watch and option chain stays within the 100
   instrument budget.
 
+### Phase 2s - workspace tabs, card controls and release stamp (implemented)
+
+- Tabs are now **Index**, **Stocks**, **Option chain**, **Market watch** and **Settings**, all
+  visible with icons and intent colours. The hidden More menu and Groups tab were removed;
+  Order defaults, Appearance and Diagnostics live inside Settings.
+- Tab corners use a solid 6 px radius instead of pills, and the F1/F2 hint no longer sits between
+  tabs.
+- The account-strip collapse/expand control is a single larger right-hand chevron in both states.
+- Market Watch renders the union of the active watch list and all group members; its x removes the
+  instrument everywhere, while a card's x removes only from that card.
+- Every card has an always-visible search box, a per-card sort selector, and larger add/toggle
+  icons. Per-card sort choices are stored in `fv.groupSort`.
+- `release.ps1` now sets `SOURCE_DATE_EPOCH` before building, so the binary and artifact tag use the
+  current day instead of a stale compile date.
+
 ---
 
 ### Provenance of this document

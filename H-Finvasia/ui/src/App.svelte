@@ -26,10 +26,9 @@
   import OptionChain from "./lib/features/chain/OptionChain.svelte";
   import IndexWatch from "./lib/features/indices/IndexWatch.svelte";
   import Stocks from "./lib/features/stocks/Stocks.svelte";
-  import Groups from "./lib/features/groups/Groups.svelte";
-  import Diagnostics from "./lib/features/diagnostics/Diagnostics.svelte";
+  import Settings from "./lib/features/settings/Settings.svelte";
 
-  type Page = "index" | "stocks" | "chain" | "market" | "groups" | "diagnostics";
+  type Page = "index" | "stocks" | "chain" | "market" | "settings";
 
   const table = new QuoteTable();
 
@@ -45,13 +44,12 @@
   let instrumentMeta = $state<InstrumentDto | null>(null);
   let notice = $state<string | null>(null);
   let busy = $state(false);
-  let moreOpen = $state(false);
+
   /// Set by the row context menu; OptionChain consumes it and loads.
   let chainRequest = $state<{ underlying: string; nonce: number } | null>(null);
   let chainNonce = 0;
   /// Last row/leg under the pointer; F1/F2 act on it.
   let activeKey = $state<string | null>(null);
-  let activeLabel = $state("");
   let orderDefaults = $state<OrderDefaults>({
     product: "I",
     price_type: "LMT",
@@ -108,7 +106,6 @@
 
   async function startLive() {
     activeKey = null;
-    activeLabel = "";
     busy = true;
     notice = null;
     try {
@@ -144,7 +141,20 @@
       if (selected === key) selected = null;
       if (activeKey === key) {
         activeKey = null;
-        activeLabel = "";
+      }
+      await hydrate();
+    } catch (error) {
+      notice = String(error);
+    }
+  }
+
+  async function removeInstrumentEverywhere(key: string) {
+    notice = null;
+    try {
+      await api.removeEverywhere(key);
+      if (selected === key) selected = null;
+      if (activeKey === key) {
+        activeKey = null;
       }
       await hydrate();
     } catch (error) {
@@ -154,14 +164,11 @@
 
   function go(next: Page) {
     page = next;
-    moreOpen = false;
     activeKey = null;
-    activeLabel = "";
   }
 
-  function rememberActive(key: string, label: string) {
+  function rememberActive(key: string, _label: string) {
     activeKey = key;
-    activeLabel = label;
     // Picking a row is the action the warning asked for; clear it immediately.
     if (notice?.includes("instrument row first")) notice = null;
   }
@@ -218,11 +225,9 @@
   /// Open the option chain for an instrument whose underlying has derivatives.
   function openChain(underlying: string) {
     activeKey = null;
-    activeLabel = "";
     chainNonce += 1;
     chainRequest = { underlying, nonce: chainNonce };
     page = "chain";
-    moreOpen = false;
   }
 
   // Metadata for the selected scrip; cancelled if the selection changes.
@@ -372,36 +377,52 @@
     source={status?.source ?? "idle"}
   />
 
-  <div class="workspace-tabs">
-    <button class="ws-tab" class:active={page === "index"} onclick={() => go("index")}>Index</button>
-    <button class="ws-tab" class:active={page === "stocks"} onclick={() => go("stocks")}>Stocks</button>
-    <button class="ws-tab" class:active={page === "chain"} onclick={() => go("chain")}>
-      Option chain
+  <div class="workspace-tabs" role="tablist" aria-label="Workspace">
+    <button
+      class="ws-tab intent-index"
+      class:active={page === "index"}
+      aria-selected={page === "index"}
+      role="tab"
+      onclick={() => go("index")}
+    >
+      <span class="tab-icon" aria-hidden="true">▦</span>Index
     </button>
-
-    <span class="spacer"></span>
-
-    <span class="shortcut-hint" class:armed={activeKey !== null}>
-      {activeKey ? `F1 buy / F2 sell ${activeLabel}` : "F1 buy / F2 sell: hover a row"}
-    </span>
-
-    <button class="ghost" class:active={page === "market"} onclick={() => go("market")}>
-      Market watch
+    <button
+      class="ws-tab intent-stocks"
+      class:active={page === "stocks"}
+      aria-selected={page === "stocks"}
+      role="tab"
+      onclick={() => go("stocks")}
+    >
+      <span class="tab-icon" aria-hidden="true">▤</span>Stocks
     </button>
-
-    <div class="menu-wrap">
-      <button class="ghost" onclick={() => (moreOpen = !moreOpen)} aria-haspopup="menu">
-        More
-      </button>
-      {#if moreOpen}
-        <div class="menu" role="menu">
-          <button role="menuitem" onclick={() => go("groups")}>Groups</button>
-          <button role="menuitem" onclick={() => { showOrderDefaults = true; moreOpen = false; }}>Order defaults</button>
-          <button role="menuitem" onclick={() => { showTheme = true; moreOpen = false; }}>Appearance</button>
-          <button role="menuitem" onclick={() => go("diagnostics")}>Diagnostics</button>
-        </div>
-      {/if}
-    </div>
+    <button
+      class="ws-tab intent-chain"
+      class:active={page === "chain"}
+      aria-selected={page === "chain"}
+      role="tab"
+      onclick={() => go("chain")}
+    >
+      <span class="tab-icon" aria-hidden="true">⇄</span>Option chain
+    </button>
+    <button
+      class="ws-tab intent-market"
+      class:active={page === "market"}
+      aria-selected={page === "market"}
+      role="tab"
+      onclick={() => go("market")}
+    >
+      <span class="tab-icon" aria-hidden="true">◉</span>Market watch
+    </button>
+    <button
+      class="ws-tab intent-settings"
+      class:active={page === "settings"}
+      aria-selected={page === "settings"}
+      role="tab"
+      onclick={() => go("settings")}
+    >
+      <span class="tab-icon" aria-hidden="true">⚙</span>Settings
+    </button>
   </div>
 
   {#if notice}
@@ -442,16 +463,22 @@
           watched={watchedKeys}
           onadd={addInstrument}
           onselect={(key) => (selected = key)}
-          onremove={removeInstrument}
+          onremove={removeInstrumentEverywhere}
           onchain={openChain}
           onactive={rememberActive}
         />
         <SnapQuote quote={selectedQuote} instrument={instrumentMeta} onremove={removeInstrument} />
       </div>
-    {:else if page === "groups"}
-      <Groups watchCount={rows.length} />
     {:else}
-      <Diagnostics {status} {info} {session} {busy} onlive={startLive} />
+      <Settings
+        {status}
+        {info}
+        {session}
+        {busy}
+        onlive={startLive}
+        onorderdefaults={() => (showOrderDefaults = true)}
+        onappearance={() => (showTheme = true)}
+      />
     {/if}
   </div>
 

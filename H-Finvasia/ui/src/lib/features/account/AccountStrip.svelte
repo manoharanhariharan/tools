@@ -47,13 +47,6 @@
 <section class="account-strip" class:collapsed>
   {#if collapsed}
     <div class="acct-line">
-      <button
-        class="acct-toggle"
-        type="button"
-        title="Expand account details"
-        aria-expanded="false"
-        onclick={toggle}>v</button
-      >
       <span
         class="badge {source === 'replay' ? 'warn' : summary?.connected ? 'ok' : 'warn'}"
         title={feedTitle}
@@ -75,6 +68,13 @@
       <button class="icon" title="Refresh account" disabled={loading} onclick={onrefresh}>
         {loading ? "..." : "refresh"}
       </button>
+      <button
+        class="acct-toggle"
+        type="button"
+        title="Expand account details"
+        aria-expanded="false"
+        onclick={toggle}>⌄</button
+      >
     </div>
   {:else}
     <div class="acct-card">
@@ -142,7 +142,7 @@
         type="button"
         title="Collapse to a single band"
         aria-expanded="true"
-        onclick={toggle}>^</button
+        onclick={toggle}>⌃</button
       >
     </div>
   {/if}
