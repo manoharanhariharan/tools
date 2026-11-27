@@ -53,7 +53,11 @@ for (let attempt = 0; attempt < 40; attempt++) {
 
 if (navLabel) {
   const expr = `(() => {
-    const b = [...document.querySelectorAll("button")].find(x => x.textContent.trim() === ${JSON.stringify(navLabel)});
+    const target = ${JSON.stringify(navLabel)};
+    const b = [...document.querySelectorAll("button")].find(x => {
+      const text = x.textContent.trim();
+      return text === target || text.includes(target);
+    });
     if (!b) return "not-found";
     b.click();
     return "clicked";

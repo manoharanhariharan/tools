@@ -73,9 +73,9 @@
       </button>
     </div>
     <p class="hint" style="margin-top: 10px">
-      Uses the session already persisted in <code>STOCK.CONFIGS_GLOBAL</code> when it still
-      validates, otherwise logs in with the TOTP secret from <code>fv-cred.json</code>.
-      The stored token is only read, never overwritten, so other tools keep their session.
+      Uses the session persisted in <code>STOCK.CONFIGS_GLOBAL</code> when it still validates.
+      Otherwise it runs the fv-client TOTP login with <code>fv-cred.json</code> and writes the fresh
+      token and date back to <code>CONFIGS_GLOBAL</code>.
     </p>
   </div>
 
