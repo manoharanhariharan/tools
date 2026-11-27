@@ -53,9 +53,9 @@
     <div class="field">
       <label for="default-product">Product</label>
       <select id="default-product" bind:value={product}>
-        <option value="I">I - Intraday</option>
-        <option value="C">C - Delivery</option>
-        <option value="M">M - Margin</option>
+        <option value="I">I - MIS (intraday)</option>
+        <option value="C">C - CNC (equity delivery)</option>
+        <option value="M">M - NRML (F&amp;O carry forward)</option>
       </select>
     </div>
     <div class="field">
@@ -75,6 +75,11 @@
       </select>
     </div>
   </div>
+
+  <p class="hint">
+    CNC is equity-delivery only. Option and futures tickets automatically use M - NRML (or I - MIS if
+    selected), because NFO rejects CNC.
+  </p>
 
   <div class="modal-actions">
     <button class="ghost" disabled={busy} onclick={onclose}>Cancel</button>

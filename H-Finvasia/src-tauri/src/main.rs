@@ -1022,6 +1022,20 @@ async fn place_order(
         (instrument, key.exchange().to_string())
     };
 
+    let derivative = instrument.expiry.is_some()
+        || matches!(
+            instrument
+                .instrument_type
+                .trim()
+                .to_ascii_uppercase()
+                .as_str(),
+            "FUT" | "CE" | "PE" | "OPT"
+        )
+        || matches!(exchange.as_str(), "NFO" | "BFO" | "CDS" | "MCX");
+    if derivative && request.product.trim().eq_ignore_ascii_case("C") {
+        return Err("CNC product is not enabled for F&O; use M - NRML or I - MIS".into());
+    }
+
     let payload = orders::build_payload(
         &request,
         &session.uid,

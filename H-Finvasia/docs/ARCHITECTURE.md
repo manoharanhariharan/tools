@@ -278,6 +278,9 @@ The rest of the expiry stays in the local master and is served as metadata; it i
 - The UI prepares a ticket first; `place_order` re-validates instrument, lot size, side, product,
   price/trigger/quantity before building `jData`. `ordersource` is `API` and `remarks` carries a
   unique reconciliation tag.
+- Product is instrument-aware: cash equities use CNC/CNC-MIS; options/futures use NRML/MIS. The
+  backend rejects CNC on NFO/BFO/CDS/MCX because the venue answers
+  `ORA:Product CNC not enabled on exchange NFO`.
 - **MKT is converted to a protected limit.** Shoonya blocks raw MKT on API orders, so `MKT` sends
   `prctyp: "LMT"` at the LTP plus a 1% buffer (minimum one tick). SL-L and TSL send `prctyp: "SL-L"`
   with `trgprc`. The margin calculator uses the same protected conversion because it also rejects MKT.

@@ -4,6 +4,9 @@ import {
   buildOrderRequest,
   defaultOrderPrice,
   estimateMargin,
+  isDerivativeTarget,
+  normalizeProduct,
+  productOptions,
   shortcutSide,
   type TicketFields,
 } from "./order";
@@ -59,6 +62,31 @@ describe("order shortcuts", () => {
     expect(defaultOrderPrice(target("100.50", "99.50", "100.00"), "B")).toBe("100.00");
     expect(defaultOrderPrice(target("100.50", "99.50", "100.00"), "S")).toBe("100.00");
     expect(defaultOrderPrice(target(null, null, null), "B")).toBe("");
+  });
+});
+
+describe("product selection", () => {
+  it("does not offer CNC for options or futures", () => {
+    const option = target("100", "99", "100");
+    expect(isDerivativeTarget(option)).toBe(true);
+    expect(productOptions(option).map((item) => item.value)).toEqual(["M", "I"]);
+    expect(normalizeProduct(option, "C")).toBe("M");
+
+    const future = { ...option, strike_type: "XX", instrument_type: "FUT" };
+    expect(normalizeProduct(future, "C")).toBe("M");
+  });
+
+  it("keeps CNC for cash equities and maps NRML back to CNC", () => {
+    const equity = {
+      ...target("100", "99", "100"),
+      expiry: null,
+      strike_type: "XX",
+      instrument_type: "EQ",
+      exchange: "NSE",
+    };
+    expect(isDerivativeTarget(equity)).toBe(false);
+    expect(productOptions(equity).map((item) => item.value)).toEqual(["C", "I"]);
+    expect(normalizeProduct(equity, "M")).toBe("C");
   });
 });
 

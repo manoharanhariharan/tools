@@ -50,6 +50,54 @@ export function shortcutSide(key: string): "B" | "S" | null {
   return null;
 }
 
+export interface ProductOption {
+  value: string;
+  label: string;
+}
+
+/** NFO/BFO/CDS contracts, options and futures cannot use the CNC product. */
+export function isDerivativeTarget(
+  target: Pick<OrderTargetDto, "exchange" | "expiry" | "instrument_type" | "strike_type">,
+): boolean {
+  const type = target.instrument_type.trim().toUpperCase();
+  return (
+    target.expiry !== null ||
+    matchesDerivativeType(type) ||
+    target.strike_type === "CE" ||
+    target.strike_type === "PE" ||
+    ["NFO", "BFO", "CDS", "MCX"].includes(target.exchange.toUpperCase())
+  );
+}
+
+function matchesDerivativeType(type: string): boolean {
+  return type === "FUT" || type === "CE" || type === "PE" || type === "OPT";
+}
+
+export function productOptions(
+  target: Pick<OrderTargetDto, "exchange" | "expiry" | "instrument_type" | "strike_type">,
+): ProductOption[] {
+  if (isDerivativeTarget(target)) {
+    return [
+      { value: "M", label: "M - NRML (carry forward)" },
+      { value: "I", label: "I - MIS (intraday)" },
+    ];
+  }
+  return [
+    { value: "C", label: "C - CNC (delivery)" },
+    { value: "I", label: "I - MIS (intraday)" },
+  ];
+}
+
+/** Replace a saved CNC/MIS default that the selected instrument cannot use. */
+export function normalizeProduct(
+  target: Pick<OrderTargetDto, "exchange" | "expiry" | "instrument_type" | "strike_type">,
+  product: string,
+): string {
+  const allowed = productOptions(target).map((option) => option.value);
+  if (allowed.includes(product)) return product;
+  return isDerivativeTarget(target) ? "M" : "C";
+}
+
 export interface MarginInput {
   target: Pick<OrderTargetDto, "strike" | "strike_type" | "instrument_type" | "is_index" | "expiry">;
   side: "B" | "S";

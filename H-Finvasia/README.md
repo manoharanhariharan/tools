@@ -32,7 +32,9 @@ credentials required. Search, watch-list editing and diagnostics are wired to th
 **Order entry** is wired through a prepared ticket: hover a CE/PE row, press B or S, review the
 ticket, then Confirm. Quantity is focused when the ticket opens, and Enter submits the same as
 Confirm. The price starts at the LTP that was running when the ticket opened. Types are **LMT**,
-**MKT (protected marketable limit)**, **SL-L** and **TSL** (server-side trailing SL). The ticket shows
+**MKT (protected marketable limit)**, **SL-L** and **TSL** (server-side trailing SL). Product choices
+are instrument-aware: cash equities offer **C - CNC** or **I - MIS**, while options/futures offer
+**M - NRML** or **I - MIS** - CNC is never sent to NFO. The ticket shows
 an **internal margin estimate** (no broker round-trip): option buys use premium, option sells use
 max(premium, 15% strike notional), futures 15%, and equity 20/50/100% by product. Defaults
 (lots/product/validity/type) are saved locally. Orders are allowed only on the live feed and never

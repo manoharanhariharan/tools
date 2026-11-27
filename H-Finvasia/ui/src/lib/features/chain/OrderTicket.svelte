@@ -8,7 +8,13 @@
   } from "../../api";
   import { formatIndianAmount } from "../../format";
   import Modal from "../../components/Modal.svelte";
-  import { buildOrderRequest, estimateMargin, type OrderTicketState } from "../../order";
+  import {
+    buildOrderRequest,
+    estimateMargin,
+    normalizeProduct,
+    productOptions,
+    type OrderTicketState,
+  } from "../../order";
 
   interface Props {
     ticket: OrderTicketState;
@@ -21,7 +27,9 @@
   let { ticket, defaults, live, onclose, onsubmitted, onerror }: Props = $props();
 
   let lots = $state(untrack(() => defaults.lots));
-  let product = $state(untrack(() => defaults.product));
+  let product = $state(
+    untrack(() => normalizeProduct(ticket.target, defaults.product)),
+  );
   let priceType = $state(untrack(() => defaults.price_type));
   let validity = $state(untrack(() => defaults.validity));
   let price = $state(untrack(() => ticket.price));
@@ -45,6 +53,7 @@
   const lotSize = $derived(ticket.target.lot_size > 0 ? ticket.target.lot_size : 1);
   const qty = $derived(Math.max(1, Math.round(lots)) * lotSize);
   const sideLabel = $derived(ticket.side === "B" ? "BUY" : "SELL");
+  const products = $derived(productOptions(ticket.target));
   const needsTrigger = $derived(priceType === "SL-L" || priceType === "TSL");
   const needsTrail = $derived(priceType === "TSL");
   const valid = $derived(
@@ -167,9 +176,9 @@
     <div class="field">
       <label for="ticket-product">Product</label>
       <select id="ticket-product" bind:value={product}>
-        <option value="I">I - Intraday</option>
-        <option value="C">C - Delivery</option>
-        <option value="M">M - Margin</option>
+        {#each products as option (option.value)}
+          <option value={option.value}>{option.label}</option>
+        {/each}
       </select>
     </div>
     <div class="field">

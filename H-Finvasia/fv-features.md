@@ -1319,6 +1319,15 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
 - The order write body was also fixed: `jData` stays raw JSON with only `&` escaped, avoiding the
   venue's `jData is not valid json object` rejection.
 
+### Phase 2v - instrument-aware products and chain tab focus (implemented)
+
+- Option/futures tickets no longer offer **C - CNC**. They expose **M - NRML (carry forward)** and
+  **I - MIS (intraday)**; a saved CNC default is normalised to NRML for derivatives. Cash equities
+  keep CNC/MIS. The backend also rejects CNC on NFO/BFO/CDS/MCX with an actionable message.
+- Pinning now keeps exactly one spare blank chain tab and leaves focus on the pinned chain; duplicate
+  blank tabs created by repeated pinning are normalised away.
+- Chain field ids are unique per tab, so labels and programmatic focus cannot jump to a hidden chain.
+
 ---
 
 ### Provenance of this document
