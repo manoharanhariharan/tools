@@ -130,10 +130,11 @@ bar. It is collapsed by default so no account REST calls happen until you open i
 manual, never on a timer.
 
 **F1 / F2** buy and sell the last hovered or clicked row (or option leg) from Stocks, Market watch
-or the option chain. The tabs bar shows the active target; the card view highlights the
-armed row. If the instrument is not tradeable the app explains instead of opening a ticket.
+or the option chain. Chain arming is side-aware: a call cell arms its CE and a put cell arms its PE.
+The card view highlights the armed row. If the instrument is not tradeable the app explains instead
+of opening a ticket.
 
-**Appearance** (More -> Appearance) offers eleven themes - Midnight, Graphite, Ocean, Contrast,
+**Appearance** (Settings -> Appearance) offers eleven themes - Midnight, Graphite, Ocean, Contrast,
 Light, Nord, Solarized, Tokyo Night, Forest, Plum and Sand - plus six accent presets and a custom
 accent. Selecting a theme or accent applies it live (there is no Apply button); the choice is stored
 on this machine and applied before the next first paint.
@@ -181,7 +182,7 @@ broker-backed probe/account/order path. Verified against the live venue (NTPC/AC
 |---|---|
 | Total instruments subscribed at once | **100** (active watch + all group members + option chain combined) |
 | Option-chain legs subscribed | only a +/- strikes window (default +/-10 = 42 legs); other strikes stay in the local master as metadata |
-| Websocket connections per session | 1, opened at launch when a valid session exists (or via Diagnostics -> Connect live) |
+| Websocket connections per session | 1, opened at launch when a valid session exists (or via Settings -> Diagnostics -> Connect live) |
 | Automatic broker calls | **one connect at launch** when a valid session exists; the account strip refreshes only on mount, on first connect, or manually - never on a timer |
 | Automatic login | adopts a valid stored/env token; if none validates, performs the fv-client TOTP login and stores the fresh token in `CONFIGS_GLOBAL` |
 

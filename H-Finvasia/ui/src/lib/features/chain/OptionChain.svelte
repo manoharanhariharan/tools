@@ -537,15 +537,13 @@
         </thead>
         <tbody>
           {#each visibleRows as row (row.strike)}
-            <tr
-              class:atm-row={atmE6 !== null && row.strikeE6 === atmE6}
-              onmouseenter={() => {
-                if (row.ce) onactive(row.ce.key, row.ce.symbol);
-              }}
-            >
+            <tr class:atm-row={atmE6 !== null && row.strikeE6 === atmE6}>
               <td
                 class="trade-cell"
                 onmouseenter={() => {
+                  if (row.ce) onactive(row.ce.key, row.ce.symbol);
+                }}
+                onclick={() => {
                   if (row.ce) onactive(row.ce.key, row.ce.symbol);
                 }}
                 oncontextmenu={(event) => openAddMenu(event, row.ce)}
@@ -565,7 +563,16 @@
               </td>
 
               {#each cells(row, "CE") as cell}
-                <td class={cell.cls} oncontextmenu={(event) => openAddMenu(event, row.ce)}>
+                <td
+                  class={cell.cls}
+                  onmouseenter={() => {
+                    if (row.ce) onactive(row.ce.key, row.ce.symbol);
+                  }}
+                  onclick={() => {
+                    if (row.ce) onactive(row.ce.key, row.ce.symbol);
+                  }}
+                  oncontextmenu={(event) => openAddMenu(event, row.ce)}
+                >
                   {#if cell.fill > 0}
                     <span class="chain-fill {cell.fillClass}" style="width: {cell.fill}%"></span>
                   {/if}
@@ -578,7 +585,16 @@
               </td>
 
               {#each cells(row, "PE") as cell}
-                <td class={cell.cls} oncontextmenu={(event) => openAddMenu(event, row.pe)}>
+                <td
+                  class={cell.cls}
+                  onmouseenter={() => {
+                    if (row.pe) onactive(row.pe.key, row.pe.symbol);
+                  }}
+                  onclick={() => {
+                    if (row.pe) onactive(row.pe.key, row.pe.symbol);
+                  }}
+                  oncontextmenu={(event) => openAddMenu(event, row.pe)}
+                >
                   {#if cell.fill > 0}
                     <span class="chain-fill {cell.fillClass}" style="width: {cell.fill}%"></span>
                   {/if}
@@ -589,6 +605,9 @@
               <td
                 class="trade-cell"
                 onmouseenter={() => {
+                  if (row.pe) onactive(row.pe.key, row.pe.symbol);
+                }}
+                onclick={() => {
                   if (row.pe) onactive(row.pe.key, row.pe.symbol);
                 }}
                 oncontextmenu={(event) => openAddMenu(event, row.pe)}
