@@ -35,6 +35,9 @@ const SAMPLE_MASTER: &str = include_str!(concat!(
     "/../crates/fv-master/tests/fixtures/instruments.json"
 ));
 
+/// NIFTY 50 index key (NSE token 26000), used when the user has no instruments.
+const DEFAULT_WATCH_KEY: &str = "NSE|26000";
+
 /// Bundled feed capture used by `FV_AUTOSTART_DEMO=1` and the headless CLI.
 const SAMPLE_FEED: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -187,7 +190,9 @@ fn watch_remove(
     save_watch(&app, state.inner());
     persist_active_container(&app, state.inner());
     sync_group_subscriptions(&app, state.inner());
-    let _ = app.emit("watch:changed", payload);
+    if !ensure_default_instrument(&app, state.inner()) {
+        let _ = app.emit("watch:changed", payload);
+    }
     Ok(plan)
 }
 
@@ -634,6 +639,25 @@ fn sync_group_subscriptions(app: &AppHandle, state: &Arc<AppState>) -> PlanDto {
     plan
 }
 
+/// If the user has no instruments anywhere, seed NIFTY 50 so the app can
+/// connect and show a live row instead of sitting disabled.
+fn ensure_default_instrument(app: &AppHandle, state: &Arc<AppState>) -> bool {
+    let watched = state.market.lock().unwrap().watched();
+    if !watched.is_empty() {
+        return false;
+    }
+    if !group_subscription_keys(app).is_empty() {
+        return false;
+    }
+    let Ok(key) = SymbolKey::parse(DEFAULT_WATCH_KEY) else {
+        return false;
+    };
+    apply_watch(app, state, vec![key]);
+    persist_active_container(app, state);
+    sync_group_subscriptions(app, state);
+    true
+}
+
 #[tauri::command]
 fn containers_list(
     app: AppHandle,
@@ -789,6 +813,7 @@ fn container_remove(
         apply_watch(&app, state.inner(), parse_watch_keys(&keys));
     }
     sync_group_subscriptions(&app, state.inner());
+    ensure_default_instrument(&app, state.inner());
     Ok(view)
 }
 
@@ -1178,11 +1203,7 @@ async fn start_live(
 
     let keys: Vec<SymbolKey> = {
         let market = state.market.lock().unwrap();
-        market
-            .watched()
-            .iter()
-            .filter_map(|k| SymbolKey::parse(k).ok())
-            .collect()
+        market.subscription_keys()
     };
     if keys.is_empty() {
         return Err("add at least one instrument to the watch list first".into());
@@ -1225,6 +1246,7 @@ async fn begin_live(
     let feed_state = state.clone();
     let shared = state.clone();
     let handle = app.clone();
+    let notice_handle = app.clone();
     tauri::async_runtime::spawn(async move {
         let result = fv_feed::ws::run_forever(
             cfg,
@@ -1232,7 +1254,7 @@ async fn begin_live(
             move |frame| {
                 let _ = tx.send(frame);
             },
-            move |event| apply_feed_state(&feed_state, event),
+            move |event| apply_feed_state(&feed_state, &notice_handle, event),
             cmd_rx,
         )
         .await;
@@ -1262,29 +1284,40 @@ async fn begin_live(
 }
 
 /// Translate transport lifecycle events into UI state.
-fn apply_feed_state(state: &Arc<AppState>, event: fv_feed::ws::FeedState) {
+fn apply_feed_state(state: &Arc<AppState>, app: &AppHandle, event: fv_feed::ws::FeedState) {
     use fv_feed::ws::FeedState;
 
-    let mut market = state.market.lock().unwrap();
-    match event {
-        FeedState::Connected { source } => {
-            market.set_source(SourceKind::Live);
-            market.set_connected(true);
-            market.clear_error();
-            tracing::info!(%source, "live feed connected");
+    let notice = {
+        let mut market = state.market.lock().unwrap();
+        match event {
+            FeedState::Connected { source } => {
+                market.set_source(SourceKind::Live);
+                market.set_connected(true);
+                market.clear_error();
+                tracing::info!(%source, "live feed connected");
+                // Clear any "Live feed: ..." banner once the socket is back.
+                Some(String::new())
+            }
+            FeedState::Rejected { source } => {
+                let message = format!("session rejected for source '{source}'");
+                market.set_connected(false);
+                market.set_error(message.clone());
+                Some(message)
+            }
+            FeedState::Error { message } => {
+                market.set_connected(false);
+                market.set_error(message.clone());
+                Some(message)
+            }
+            FeedState::Reconnecting { attempt } => {
+                market.set_connected(false);
+                tracing::info!(attempt, "feed reconnecting");
+                None
+            }
         }
-        FeedState::Rejected { source } => {
-            market.set_connected(false);
-            market.set_error(format!("session rejected for source '{source}'"));
-        }
-        FeedState::Error { message } => {
-            market.set_connected(false);
-            market.set_error(message);
-        }
-        FeedState::Reconnecting { attempt } => {
-            market.set_connected(false);
-            tracing::info!(attempt, "feed reconnecting");
-        }
+    };
+    if let Some(message) = notice {
+        let _ = app.emit("feed:error", message);
     }
 }
 
@@ -1583,7 +1616,7 @@ fn main() {
                 let resume_state = setup_state.clone();
                 let resume_handle = handle.clone();
                 tauri::async_runtime::spawn(async move {
-                    let stored = groups::read_watch(&watch_file(&resume_handle));
+                    let mut stored = groups::read_watch(&watch_file(&resume_handle));
                     // Initialise containers from the persisted watch list before
                     // any demo/replay can replace the in-memory watch set.
                     if let Err(err) =
@@ -1598,6 +1631,18 @@ fn main() {
                     }
                     // Every card should stream, not just the active group.
                     sync_group_subscriptions(&resume_handle, &resume_state);
+
+                    // Empty install: seed NIFTY 50 so there is always something
+                    // live and auto-connect has a subscription to open.
+                    if stored.is_empty() && group_subscription_keys(&resume_handle).is_empty() {
+                        if let Ok(key) = SymbolKey::parse(DEFAULT_WATCH_KEY) {
+                            stored = vec![DEFAULT_WATCH_KEY.to_string()];
+                            apply_watch(&resume_handle, &resume_state, vec![key]);
+                            persist_active_container(&resume_handle, &resume_state);
+                            sync_group_subscriptions(&resume_handle, &resume_state);
+                        }
+                    }
+
                     let keys: Vec<SymbolKey> = stored
                         .iter()
                         .filter_map(|key| SymbolKey::parse(key).ok())
@@ -1616,22 +1661,48 @@ fn main() {
                         let _ = resume_handle.emit("watch:changed", payload);
                     }
 
-                    if !auto_connect || keys.is_empty() {
+                    if !auto_connect {
                         return;
                     }
 
-                    // Only adopt an existing session; never log in silently at
-                    // startup, because that could invalidate another tool.
-                    if let Some(resolved) = session::resolve_existing().await {
-                        tracing::info!(
-                            keys = keys.len(),
-                            "auto-connecting with an existing session"
-                        );
-                        if let Err(err) =
-                            begin_live(resume_handle.clone(), resume_state.clone(), resolved, keys)
-                                .await
+                    let connect_keys = {
+                        let market = resume_state.market.lock().unwrap();
+                        market.subscription_keys()
+                    };
+                    if connect_keys.is_empty() {
+                        return;
+                    }
+
+                    // Adopt a valid stored token first. If none validates, use
+                    // the same TOTP QuickAuth flow as the fv-client and persist
+                    // the new token for the next launch.
+                    let resolved = match session::resolve_existing().await {
+                        Some(session) => Some(session),
+                        None => match session::resolve_session().await {
+                            Ok(session) => {
+                                tracing::info!(source = session.source.as_str(), "auto-login");
+                                Some(session)
+                            }
+                            Err(err) => {
+                                tracing::warn!(error = %err, "auto-connect login failed");
+                                let _ = resume_handle.emit("feed:error", err);
+                                None
+                            }
+                        },
+                    };
+
+                    if let Some(resolved) = resolved {
+                        tracing::info!(keys = connect_keys.len(), "auto-connecting the live feed");
+                        if let Err(err) = begin_live(
+                            resume_handle.clone(),
+                            resume_state.clone(),
+                            resolved,
+                            connect_keys,
+                        )
+                        .await
                         {
                             tracing::warn!(error = %err, "auto-connect failed");
+                            let _ = resume_handle.emit("feed:error", err);
                         }
                     }
                 });

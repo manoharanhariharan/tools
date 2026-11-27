@@ -1515,6 +1515,7 @@ name = "h-finvasia-desktop"
 version = "0.2.0"
 dependencies = [
  "bson",
+ "chrono",
  "data-encoding",
  "fv-bridge",
  "fv-core",

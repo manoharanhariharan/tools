@@ -156,23 +156,25 @@ on this machine and applied before the next first paint.
 7. **Diagnostics** shows backend (`mongo` vs `in-memory`), frame rate, decode errors, and the live
    connect form.
 
-On launch the app restores the last watch list and, if a valid session is already stored,
-**connects automatically** - no click needed. No OAuth flow is created or needed: the app adopts the
-token already persisted in `STOCK.CONFIGS_GLOBAL` (or `FV_ACCESS_TOKEN`); the public API OAuth
-handshake is not used. Your morning login remains the only login. The stored token is read-only, so
-other tools keep their session. A fresh TOTP login happens only when you explicitly press Connect and
-no valid stored token exists. `FV_NO_AUTOCONNECT=1` disables startup adoption and every
+On launch the app restores the last watch list. If there are no instruments anywhere it seeds
+**NIFTY 50** (`NSE|26000`) so there is always a live row and a subscription to open. A valid session
+already stored in `STOCK.CONFIGS_GLOBAL` (or `FV_ACCESS_TOKEN`) is adopted and the app **connects
+automatically**; the public API OAuth handshake is not used. If the stored token no longer validates,
+the app runs the same TOTP `QuickAuth` login as the fv-client, then writes the fresh token and date
+back to `CONFIGS_GLOBAL` so the next launch can reuse it. Gateway/transport drops are surfaced in the
+UI and the websocket reconnects with backoff; if the gateway is unreachable the banner says so
+instead of failing silently. `FV_NO_AUTOCONNECT=1` disables startup adoption/login and every
 broker-backed probe/account/order path. Verified against the live venue (NTPC/ACC streaming).
 
 ### Operating limits (deliberately gentle on the broker)
 
 | Rule | Value |
 |---|---|
-| Total instruments subscribed at once | **100** (watch + option chain combined) |
+| Total instruments subscribed at once | **100** (active watch + all group members + option chain combined) |
 | Option-chain legs subscribed | only a +/- strikes window (default +/-10 = 42 legs); other strikes stay in the local master as metadata |
 | Websocket connections per session | 1, opened at launch when a valid session exists (or via Diagnostics -> Connect live) |
 | Automatic broker calls | **one connect at launch** when a valid session exists; the account strip refreshes only on mount, on first connect, or manually - never on a timer |
-| Automatic login | never - startup only *adopts* a valid stored/env token; a fresh TOTP login happens only when you press Connect |
+| Automatic login | adopts a valid stored/env token; if none validates, performs the fv-client TOTP login and stores the fresh token in `CONFIGS_GLOBAL` |
 
 | Order type | LMT, MKT (protected limit), SL-L, TSL; one explicit Confirm per ticket; no automatic retry |
 | Account/book calls | positions and order book load only when the bottom dock is opened or refreshed |

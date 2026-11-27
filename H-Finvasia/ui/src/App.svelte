@@ -316,6 +316,18 @@
               if (!disposed) notice = null;
             }),
         ],
+        [
+          "feed:error",
+          () =>
+            events.onFeedError((message) => {
+              if (disposed) return;
+              if (message === "") {
+                if (notice?.startsWith("Live feed:")) notice = null;
+              } else {
+                notice = `Live feed: ${message}`;
+              }
+            }),
+        ],
       ];
 
       for (const [name, subscribe] of subscriptions) {
@@ -439,15 +451,7 @@
     {:else if page === "groups"}
       <Groups watchCount={rows.length} />
     {:else}
-      <Diagnostics
-        {status}
-        {info}
-        {session}
-        {busy}
-        {notice}
-        onlive={startLive}
-        onnotice={(message) => (notice = message)}
-      />
+      <Diagnostics {status} {info} {session} {busy} onlive={startLive} />
     {/if}
   </div>
 

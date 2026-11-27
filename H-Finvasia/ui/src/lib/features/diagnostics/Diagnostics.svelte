@@ -7,11 +7,9 @@
     info: AppInfo | null;
     session: SessionInfo | null;
     busy: boolean;
-    notice: string | null;
     onlive: () => void;
-    onnotice: (message: string | null) => void;
   }
-  let { status, info, session, busy, notice, onlive, onnotice }: Props = $props();
+  let { status, info, session, busy, onlive }: Props = $props();
 
   const connected = $derived(status?.connected ?? false);
   const sessionReady = $derived(
@@ -32,13 +30,6 @@
 </script>
 
 <div class="stack">
-  {#if notice}
-    <div class="banner">
-      <span>{notice}</span>
-      <button class="ghost" onclick={() => onnotice(null)}>Dismiss</button>
-    </div>
-  {/if}
-
   <div class="section">
     <h3>Feed</h3>
     <div class="row" style="margin-bottom: 10px">

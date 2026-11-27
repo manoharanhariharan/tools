@@ -216,6 +216,42 @@ pub async fn persisted_token() -> Option<(String, Option<String>)> {
     Some((token.trim().to_string(), date))
 }
 
+/// Persist a freshly logged-in token in the same `CONFIGS_GLOBAL` documents the
+/// fv-client uses, so the next launch (and the other tools) can adopt it.
+pub async fn persist_token(token: &str) -> Result<(), String> {
+    use bson::doc;
+    use mongodb::Client;
+
+    let client = Client::with_uri_str(mongo_uri())
+        .await
+        .map_err(|e| format!("mongo: {e}"))?;
+    let collection = client
+        .database(&mongo_db())
+        .collection::<bson::Document>("CONFIGS_GLOBAL");
+    let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+
+    for (key, value) in [
+        ("FINVASIA_LOGIN_DETAIL", token.to_string()),
+        ("FINVASIA_LOGIN_DATE", date),
+    ] {
+        collection
+            .update_one(
+                doc! { "configKey": key },
+                doc! {
+                    "$set": {
+                        "configKey": key,
+                        "configValue": value,
+                    }
+                },
+            )
+            .upsert(true)
+            .await
+            .map_err(|e| format!("persist {key}: {e}"))?;
+    }
+    client.shutdown().await;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // REST
 // ---------------------------------------------------------------------------
@@ -411,6 +447,9 @@ pub async fn resolve_session() -> Result<Session, String> {
 
     let credentials = credentials.ok_or("no stored session and no credential file to log in")?;
     let (token, actid) = quick_auth(&client, &credentials).await?;
+    if let Err(err) = persist_token(&token).await {
+        tracing::warn!(error = %err, "could not persist the fresh login token");
+    }
     tracing::info!("logged in with TOTP");
     Ok(Session {
         token,

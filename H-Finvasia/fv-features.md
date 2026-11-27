@@ -1047,8 +1047,9 @@ Verified with one connection: 550-leg chain browsable, **42 subscribed**, `subsc
     zero extra subscriptions.
 
 17. **Auto-connect on launch.** The watch list is persisted (`watch.json`) and, when a stored/env
-    token still validates, the feed starts without a click. This uses `resolve_existing()`, which
-    **never logs in** - a silent login could invalidate another tool's session. Verified:
+    token still validates, the feed starts without a click. If it does not validate, the current
+    build performs the fv-client `QuickAuth` TOTP login and persists the new token; the original
+    implementation only adopted existing sessions. Verified:
     `auto-connecting with an existing session keys=2` followed by `live feed connected source=WEB`.
 
 ---
@@ -1258,6 +1259,20 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
 - Tests: pure UI request building, Indian formatting, sorting/custom fallback, layout preferences;
   Rust payload/margin/modify builders, protected market conversion, defaults, custom order and empty
   group creation.
+
+### Phase 2r - startup resilience and live group cards (implemented)
+
+- Removed the duplicated Diagnostics banner; only the workspace-level notice is rendered.
+- Empty installs seed **NIFTY 50** (`NSE|26000`) into the active group so the watch list is never
+  empty and auto-connect always has a subscription.
+- Startup adopts a valid stored token; if it does not validate, it runs the fv-client's TOTP
+  `QuickAuth` flow and writes `FINVASIA_LOGIN_DETAIL` / `FINVASIA_LOGIN_DATE` back to
+  `CONFIGS_GLOBAL`. Login failures are emitted as `feed:error` and shown in the UI.
+- Gateway/transport drops are reported as `feed:error`; `run_forever` reconnects with backoff and a
+  successful connection clears the banner.
+- All group members are subscribed through `set_group_keys`, so every Stocks card streams live, not
+  just the active group. The union with the active watch and option chain stays within the 100
+  instrument budget.
 
 ---
 

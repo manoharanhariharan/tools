@@ -378,6 +378,8 @@ export const events = {
     listen<WatchChanged>("watch:changed", (event) => handler(event.payload)),
   onFeed: (handler: (state: string) => void) =>
     listen<string>("feed:changed", (event) => handler(event.payload)),
+  onFeedError: (handler: (message: string) => void) =>
+    listen<string>("feed:error", (event) => handler(event.payload)),
   onMasterReady: (handler: () => void) =>
     listen<null>("master:ready", () => handler()),
   onOrdersChanged: (handler: (orderNo: string) => void) =>

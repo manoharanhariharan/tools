@@ -215,16 +215,19 @@ every path. Without it the driver panics when the runtime is dropped.
 FV_ACCESS_TOKEN?  ──yes──▶ use it
         │ no
         ▼
-CONFIGS_GLOBAL.FINVASIA_LOGIN_DETAIL ──validate (GetQuotes)──▶ use it  (read-only)
+CONFIGS_GLOBAL.FINVASIA_LOGIN_DETAIL ──validate (GetQuotes)──▶ use it
         │ invalid / absent
         ▼
-fv-cred.json ──TOTP + QuickAuth──▶ use the returned susertoken
+fv-cred.json ──TOTP + QuickAuth──▶ persist fresh token/date to CONFIGS_GLOBAL ──▶ use it
 ```
 
 Rules:
 
-- **Never write** the session back. Logging in again would invalidate the token the user's other
-  tools are using, so a stored token is only adopted after it validates.
+- A stored token is only adopted after it validates. If it does not, startup performs the same
+  `QuickAuth` TOTP login as the fv-client and **writes the fresh token and date back** to
+  `CONFIGS_GLOBAL` so the next launch (and the other tools) can reuse it.
+- An empty install seeds `NSE|26000` (NIFTY 50) into the active group so there is always a
+  subscription to open and a live row to show.
 - `actid` is the **user id**, not `report_schoonya` (that field holds a password).
 - The credential file is found via `FV_CRED_FILE`, then beside the exe, then `~/.fv/`, then
   `C:/repo/`; secrets are never logged.
@@ -233,7 +236,9 @@ Rules:
   symbols can contain `&`.
 - **One websocket per token.** The app opens a single socket and reports lifecycle through
   `FeedState::{Connected, Rejected, Error, Reconnecting}`; it never opens a probe socket first, and
-  `connected` in the status bar only becomes true after the handshake is accepted.
+  `connected` in the status bar only becomes true after the handshake is accepted. Transport/gateway
+  errors are emitted as `feed:error` so the UI shows a banner, while `run_forever` keeps reconnecting
+  with backoff; a successful reconnect clears the banner.
 - Web-minted sessions need `source:"WEB"`; the client retries once with `"API"` on `NOT_OK` and then
   surfaces `Rejected` to the UI instead of pretending to be live.
 
@@ -244,7 +249,7 @@ product rule, not a venue limit, and it is enforced in three places:
 
 | Place | Rule |
 |---|---|
-| `MarketData` | `MAX_TOTAL_SUBSCRIPTIONS = 100` across watch **and** chain; `set_chain` clamps, `set_watch` trims the chain group |
+| `MarketData` | `MAX_TOTAL_SUBSCRIPTIONS = 100` across active watch, all group members **and** chain; `set_chain`/`set_group_keys` clamp, `set_watch` trims the chain group |
 | `chain_load` | subscribes only `chain_window(...)` (+/-N strikes around the ATM, default +/-10), never the whole expiry |
 | UI | nothing is subscribed on page open; *Load and subscribe* or an explicit context-menu action is required, and the status bar shows `subscribed N/100` |
 
