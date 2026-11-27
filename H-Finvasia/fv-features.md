@@ -1342,8 +1342,9 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
 - Broker REST traffic is logged at DEBUG to
   `%APPDATA%\com.hfinvasia.desktop\logs\broker.<date>.log` (daily rotation, 7 files): route, host,
   redacted `jData`, HTTP status, elapsed time and redacted response. Tokens, passwords, TOTP and
-  `jKey` are replaced with `***`. Set `RUST_LOG=info` to quieten it; the default verbose targets are
-  temporary until order flow is verified.
+  `jKey` are replaced with `***`. Websocket order frames log order number, status and symbol. Set
+  `RUST_LOG=info` to quieten it; the default verbose desktop-crate logging is temporary until order
+  flow is verified.
 
 ---
 

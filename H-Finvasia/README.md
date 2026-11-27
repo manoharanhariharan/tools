@@ -182,8 +182,8 @@ on this machine and applied before the next first paint.
 7. **Diagnostics** shows backend (`mongo` vs `in-memory`), frame rate, decode errors, and the live
    connect form. Broker REST traffic is also written to
    `%APPDATA%\com.hfinvasia.desktop\logs\broker.<date>.log` with tokens and credentials redacted, so a
-   failed order can be inspected without reproducing it. These DEBUG logs for
-   `account`/`orders`/`session` are intentionally temporary while order flow is stabilised.
+   failed order can be inspected without reproducing it. These DEBUG logs for the desktop backend
+   are intentionally temporary while order flow is stabilised.
 
 On launch the app restores the last watch list. If there are no instruments anywhere it seeds
 **NIFTY 50** (`NSE|26000`) so there is always a live row and a subscription to open. A valid session
@@ -267,7 +267,7 @@ Measured against `STOCK.FINVASIA_SYMBOL` on this machine:
 | `FV_MONGO_DB` | `STOCK` | Database name |
 | `FV_MONGO_MASTER_COLLECTION` | `FINVASIA_SYMBOL` | Master collection |
 | `FV_AUTOSTART_DEMO` | — | `1` starts the bundled replay at launch (kiosk / CI smoke test) |
-| `RUST_LOG` | `info` plus DEBUG for broker account/order/session | `tracing` filter; set `RUST_LOG=info` to quieten broker diagnostics |
+| `RUST_LOG` | `info` plus DEBUG for the desktop crate | `tracing` filter; set `RUST_LOG=info` to quieten broker diagnostics |
 
 **Credentials are never written back** to Mongo or to disk. `report_schoonya` in the existing
 credential file is a *password*, not an account id — it is deliberately ignored.

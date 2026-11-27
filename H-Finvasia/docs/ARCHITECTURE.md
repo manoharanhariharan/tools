@@ -307,6 +307,8 @@ The rest of the expiry stays in the local master and is served as metadata; it i
   DEBUG to a rotating file under `%APPDATA%\com.hfinvasia.desktop\logs`. `broker_log` redacts
   `jKey`, `susertoken`, passwords, TOTP and API secrets before writing; write responses are logged up
   to 16 KiB and read responses up to 4 KiB so a large order/position book cannot flood the file.
+  Websocket `om` order frames are logged with order number, status, report type and symbol. The
+  desktop crate defaults to DEBUG (set `RUST_LOG=info` or `warn` to quieten it).
 - The ticket is the confirmation step. There is no one-click live order and no background trading
   other than the explicit trailing-SL modifier.
 

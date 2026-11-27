@@ -1511,6 +1511,13 @@ async fn consume(state: Arc<AppState>, mut rx: UnboundedReceiver<Frame>, app: Ap
                         let ts = now_ms();
                         state.market.lock().unwrap().apply(&frame, ts);
                         if let Frame::Order(order) = &frame {
+                            tracing::debug!(
+                                order_no = order.noren_order_no.as_deref().unwrap_or(""),
+                                status = order.status.as_deref().unwrap_or(""),
+                                report_type = order.report_type.as_deref().unwrap_or(""),
+                                symbol = order.trading_symbol.as_deref().unwrap_or(""),
+                                "order update frame"
+                            );
                             let order_no = order.noren_order_no.clone().unwrap_or_default();
                             let _ = app.emit("orders:changed", order_no);
                         }
@@ -1695,11 +1702,8 @@ fn main() {
     // Detailed broker traffic (requests/rejections) is logged by default while
     // order flow is being stabilised. Drop these targets back to `warn` once the
     // behaviour is verified.
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        tracing_subscriber::EnvFilter::new(
-            "info,h_finvasia_desktop::account=debug,h_finvasia_desktop::orders=debug,h_finvasia_desktop::session=debug",
-        )
-    });
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,h_finvasia_desktop=debug"));
 
     let mut log_dir = broker_log::log_dir();
     if std::fs::create_dir_all(&log_dir).is_err() {
