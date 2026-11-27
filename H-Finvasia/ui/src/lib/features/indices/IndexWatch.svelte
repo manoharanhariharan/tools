@@ -22,15 +22,13 @@
   } from "../../layoutPrefs";
 
   interface Props {
-    onadd: (key: string) => void;
-    onremove: (key: string) => void;
     onbuy: (key: string) => void;
     onsell: (key: string) => void;
     onchain: (underlying: string) => void;
     onactive: (key: string, label: string) => void;
     refreshToken: number;
   }
-  let { onadd, onremove, onbuy, onsell, onchain, onactive, refreshToken }: Props = $props();
+  let { onbuy, onsell, onchain, onactive, refreshToken }: Props = $props();
 
   let indices = $state<IndexRowDto[]>([]);
   let containers = $state<ContainersView>({ active: null, groups: [] });
@@ -92,11 +90,11 @@
   }
 
   async function loadContainers() {
-    containers = await api.containersList();
+    containers = await api.indexContainersList();
   }
 
   async function loadCards() {
-    cards = await api.containerCards();
+    cards = await api.indexContainerCards();
   }
 
   async function refresh() {
@@ -128,7 +126,7 @@
     busy = true;
     error = null;
     try {
-      await api.containerActivate(name);
+      await api.indexContainerActivate(name);
       await Promise.all([loadContainers(), loadCards()]);
     } catch (e) {
       error = String(e);
@@ -138,40 +136,40 @@
   }
 
   async function cardAdd(group: string, key: string) {
-    await api.containerAdd(group, key);
+    await api.indexContainerAdd(group, key);
     await Promise.all([loadCards(), loadContainers()]);
   }
 
   async function cardRemove(group: string, key: string) {
-    await api.containerRemove(group, key);
+    await api.indexContainerRemove(group, key);
     await Promise.all([loadCards(), loadContainers()]);
   }
 
   async function cardReorder(order: string[]) {
-    await api.containerReorder(order);
+    await api.indexContainerReorder(order);
     await loadCards();
   }
 
   async function cardRename(oldName: string, newName: string) {
-    await api.containerRename(oldName, newName);
+    await api.indexContainerRename(oldName, newName);
     await Promise.all([loadCards(), loadContainers()]);
     notice = `Renamed "${oldName}" to "${newName}".`;
   }
 
   async function cardCreate(name: string) {
-    await api.containerCreateEmpty(name);
+    await api.indexContainerCreateEmpty(name);
     await Promise.all([loadCards(), loadContainers()]);
     notice = `Created "${name}". Use its + button to add indices.`;
   }
 
   async function cardDelete(name: string) {
-    await api.containerDelete(name);
+    await api.indexContainerDelete(name);
     await Promise.all([loadCards(), loadContainers()]);
     notice = `Deleted card "${name}".`;
   }
 
   async function cardReorderKeys(group: string, keys: string[]) {
-    await api.containerReorderKeys(group, keys);
+    await api.indexContainerReorderKeys(group, keys);
     await loadCards();
   }
 
@@ -185,9 +183,14 @@
     }
   }
 
-  function toggleIndex(key: string) {
-    if (activeKeys.has(key)) onremove(key);
-    else onadd(key);
+  async function toggleIndex(key: string) {
+    if (!containers.active) return;
+    try {
+      if (activeKeys.has(key)) await cardRemove(containers.active, key);
+      else await cardAdd(containers.active, key);
+    } catch (e) {
+      error = String(e);
+    }
   }
 
   function indexToInstrument(row: IndexRowDto): InstrumentDto {
@@ -421,7 +424,7 @@
                       title={`Remove ${row.symbol} from ${containers.active ?? "group"}`}
                       onclick={(event) => {
                         event.stopPropagation();
-                        toggleIndex(row.key);
+                        void toggleIndex(row.key);
                       }}>Remove</button
                     >
                   {:else}
@@ -429,7 +432,7 @@
                       class="tiny"
                       onclick={(event) => {
                         event.stopPropagation();
-                        toggleIndex(row.key);
+                        void toggleIndex(row.key);
                       }}>Add</button
                     >
                   {/if}
@@ -454,7 +457,7 @@
       extras={[
         {
           label: activeKeys.has(menu.row.key) ? "Remove from group" : "Add to group",
-          action: () => toggleIndex(menu!.row.key),
+          action: () => void toggleIndex(menu!.row.key),
         },
       ]}
       onclose={() => (menu = null)}

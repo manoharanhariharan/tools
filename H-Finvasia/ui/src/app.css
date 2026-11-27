@@ -1506,7 +1506,11 @@ table.grid tbody tr.selected td:first-child {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .section {
@@ -3802,4 +3806,23 @@ table.grid.column-table thead th + th {
 /* keep the resize handle inside the clipped sticky header */
 .col-resize {
   right: 0;
+}
+
+/* ---- consistent scroll containers (trackpad / wheel) ---- */
+
+.grid-wrap,
+.stock-scroll,
+.group-cards,
+.chain-views,
+.containers,
+.modal,
+.modal-body {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.grid-wrap,
+.group-cards,
+.chain-views {
+  scrollbar-gutter: stable;
 }

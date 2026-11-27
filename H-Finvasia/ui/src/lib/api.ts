@@ -369,6 +369,25 @@ export const api = {
     invoke<ContainersView>("container_reorder", { order }),
   containerReorderKeys: (name: string, keys: string[]) =>
     invoke<ContainersView>("container_reorder_keys", { name, keys }),
+  indexContainersList: () => invoke<ContainersView>("index_containers_list"),
+  indexContainerCreateEmpty: (name: string) =>
+    invoke<ContainersView>("index_container_create_empty", { name }),
+  indexContainerActivate: (name: string) => invoke<PlanDto>("index_container_activate", { name }),
+  indexContainerRename: (oldName: string, newName: string) =>
+    invoke<ContainersView>("index_container_rename", { old: oldName, new: newName }),
+  indexContainerDelete: (name: string) =>
+    invoke<ContainersView>("index_container_delete", { name }),
+  indexContainerColor: (name: string, color: string) =>
+    invoke<ContainersView>("index_container_color", { name, color }),
+  indexContainerCards: () => invoke<ContainerCardDto[]>("index_container_cards"),
+  indexContainerAdd: (name: string, key: string) =>
+    invoke<ContainersView>("index_container_add", { name, key }),
+  indexContainerRemove: (name: string, key: string) =>
+    invoke<ContainersView>("index_container_remove", { name, key }),
+  indexContainerReorder: (order: string[]) =>
+    invoke<ContainersView>("index_container_reorder", { order }),
+  indexContainerReorderKeys: (name: string, keys: string[]) =>
+    invoke<ContainersView>("index_container_reorder_keys", { name, keys }),
   orderTarget: (key: string) => invoke<OrderTargetDto | null>("order_target", { key }),
   orderDefaultsGet: () => invoke<OrderDefaults>("order_defaults_get"),
   orderDefaultsSet: (defaults: OrderDefaults) =>

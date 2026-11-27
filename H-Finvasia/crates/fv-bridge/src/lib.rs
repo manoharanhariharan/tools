@@ -165,6 +165,26 @@ mod tests {
     }
 
     #[test]
+    fn index_groups_are_independent_of_stock_groups() {
+        let mut md = market();
+        let reliance = SymbolKey::parse("NSE|2885").unwrap();
+        let option = SymbolKey::parse("NFO|158614").unwrap();
+        let index = SymbolKey::parse("NSE|26000").unwrap();
+
+        md.set_watch(vec![reliance]);
+        md.set_group_keys(vec![option.clone()]);
+        let plan = md.set_index_group_keys(vec![index.clone()]);
+        assert!(plan.rejected.is_empty(), "index group fits the budget");
+        assert!(md.market_watch_keys().contains(&index));
+
+        // Replacing the Stocks groups must not unsubscribe the Index groups.
+        md.set_group_keys(Vec::new());
+        let keys = md.market_watch_keys();
+        assert!(keys.contains(&index), "index group survives a stock edit");
+        assert!(!keys.contains(&option), "stock group was removed");
+    }
+
+    #[test]
     fn tick_size_comes_from_the_master_and_falls_back_to_none() {
         let key = SymbolKey::parse("NFO|158614").unwrap();
         let mut instrument = master().get(&key).expect("fixture option").clone();

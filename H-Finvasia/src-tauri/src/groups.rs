@@ -25,6 +25,13 @@ pub struct GroupFile {
     /// Optional manual instrument order per group ("Custom" sort).
     #[serde(default)]
     pub custom: BTreeMap<String, Vec<String>>,
+    /// One-time marker for the Index default card. Not used by Stocks groups.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub seeded: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -64,6 +71,11 @@ fn normalize_color(color: &str) -> Result<String, String> {
 
 pub fn file_path(config_dir: &Path) -> PathBuf {
     config_dir.join("watch-groups.json")
+}
+
+/// Index-tab containers are independent from the Stocks watch groups.
+pub fn index_file_path(config_dir: &Path) -> PathBuf {
+    config_dir.join("index-groups.json")
 }
 
 /// The live watch list is persisted separately so a restart can resume.

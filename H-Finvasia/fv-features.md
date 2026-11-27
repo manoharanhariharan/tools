@@ -1366,6 +1366,11 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
   Tomorrow Night Blue. The catalogue is now 30 themes.
 - Index and Stocks share one List/Cards preference, so the Index container always matches the Stocks
   view. The account-strip collapse control now uses the same SVG chevron as the dock.
+- Index groups are independent: they live in `index-groups.json` and have their own active pointer, so
+  deleting or renaming a Stocks group never changes the Index tab. The first run seeds an **Indices**
+  card from the master. Both group sets share the 100-instrument subscription budget.
+- Every scroll surface (Settings, list/card panes, order book, dialogs) uses `overscroll-behavior:
+  contain` and a proper flex scroll container, so trackpad/wheel scrolling works consistently.
 - Escape closes any dialog from inside its body, including the order ticket with focus in the
   quantity field.
 

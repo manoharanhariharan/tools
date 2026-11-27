@@ -119,11 +119,13 @@ the list view's watch list; switching it changes which list is shown without dro
 cards' subscriptions. The combined group/watch/chain set stays within the 100-instrument budget, and
 anything beyond it is reported rather than silently dropped.
 
-**Index** mirrors the Stocks workspace: **List** shows the index instruments in the selected group and
-**Cards** uses the same group cards, filtered to indices. The List/Cards choice is shared with Stocks,
-so both tabs always use the same layout. Both layouts share rename, create, delete, drag-reorder,
-per-card sort/collapse, add/remove and the unified right-click menu. The list toolbar switches groups,
-filters the current list and adds an index to the active group.
+**Index** mirrors the Stocks workspace but keeps its **own group set** (`index-groups.json`), so
+renaming or deleting a card in Stocks never changes Index. **List** shows the index instruments in the
+selected Index group and **Cards** uses the same group-card component. The List/Cards choice is shared
+with Stocks, so both tabs always use the same layout. Both layouts share rename, create, delete,
+drag-reorder, per-card sort/collapse, add/remove and the unified right-click menu. The list toolbar
+switches groups, filters the current list and adds an index to the active group. The first run creates
+an **Indices** card containing the master's index instruments.
 
 **Market watch** shows the union of the active watch list and every Stocks group member, so indices
 and instruments living only in cards still appear there. Its **x** removes an instrument from every
@@ -151,6 +153,10 @@ resize the height, drag the middle divider to resize the columns, and collapse i
 bar. Inside either table, drag a column edge to resize it and right-click a header to show/hide
 columns or reset the layout; both are stored locally per table. It is collapsed by default so no
 account REST calls happen until you open it; refreshes are manual, never on a timer.
+
+All scrolling surfaces (Settings, stocks/index lists, card grids, the order book and dialogs) use
+contained scroll containers, so two-finger trackpad and mouse-wheel gestures behave the same wherever
+the pointer is.
 
 **F1 / F2** buy and sell the last hovered or clicked row (or option leg) from Index, Stocks, Market
 watch, instrument search or the option chain. The same actions are available from every instrument

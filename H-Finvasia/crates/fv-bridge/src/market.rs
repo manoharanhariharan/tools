@@ -78,6 +78,9 @@ pub struct MarketData {
     /// Every instrument stored in any Stocks group. Subscribed in addition to
     /// the active watch list so all group cards stream, not just the active one.
     groups: BTreeSet<SymbolKey>,
+    /// Index-tab card members, tracked separately from the Stocks groups so the
+    /// two workspaces can be edited independently while sharing the budget.
+    index_groups: BTreeSet<SymbolKey>,
     /// Instruments in the broker position book, subscribed so live LTP can
     /// recompute MTM/P&L without another REST round-trip.
     positions: BTreeSet<SymbolKey>,
@@ -104,6 +107,7 @@ impl MarketData {
             coalescer: Coalescer::new(30, DEFAULT_MAX_PER_FRAME),
             watch: WatchSet::new(DEFAULT_WATCH_LIMIT),
             groups: BTreeSet::new(),
+            index_groups: BTreeSet::new(),
             positions: BTreeSet::new(),
             chains: BTreeMap::new(),
             chain_limit: DEFAULT_CHAIN_LIMIT,
@@ -432,6 +436,7 @@ impl MarketData {
         self.watch
             .active()
             .union(&self.groups)
+            .chain(self.index_groups.iter())
             .chain(self.positions.iter())
             .chain(self.chains.values().flat_map(|group| group.iter()))
             .cloned()
@@ -441,6 +446,7 @@ impl MarketData {
     fn is_live(&self, key: &SymbolKey) -> bool {
         self.watch.active().contains(key)
             || self.groups.contains(key)
+            || self.index_groups.contains(key)
             || self.positions.contains(key)
             || self.chains.values().any(|group| group.contains(key))
     }
@@ -458,6 +464,7 @@ impl MarketData {
             .watch
             .active()
             .union(&self.groups)
+            .chain(self.index_groups.iter())
             .chain(chain_keys.iter())
             .count();
         let available = MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(base);
@@ -467,6 +474,7 @@ impl MarketData {
         for key in keys {
             if self.watch.active().contains(&key)
                 || self.groups.contains(&key)
+                || self.index_groups.contains(&key)
                 || chain_keys.contains(&key)
             {
                 accepted.insert(key);
@@ -494,7 +502,12 @@ impl MarketData {
     /// Market-watch rows are the active watch list **plus** every group member.
     /// This is the user-facing "watching" set; the option-chain legs stay out.
     pub fn market_watch_keys(&self) -> Vec<SymbolKey> {
-        self.watch.active().union(&self.groups).cloned().collect()
+        self.watch
+            .active()
+            .union(&self.groups)
+            .chain(self.index_groups.iter())
+            .cloned()
+            .collect()
     }
 
     pub fn market_watch_quotes(&self) -> Vec<QuoteDto> {
@@ -522,6 +535,7 @@ impl MarketData {
             .watch
             .active()
             .union(&self.groups)
+            .chain(self.index_groups.iter())
             .chain(self.positions.iter())
             .chain(chain_keys.iter())
             .count();
@@ -541,6 +555,44 @@ impl MarketData {
         }
         self.groups = accepted;
         // Group growth can push chain groups over the budget.
+        rejected.extend(self.clamp_chains());
+        self.reconcile(before, rejected)
+    }
+
+    /// Replace the Index-tab card subscription set. Index groups are independent
+    /// from Stocks groups in the UI but share the same global budget.
+    pub fn set_index_group_keys(&mut self, keys: Vec<SymbolKey>) -> PlanDto {
+        let before = self.desired_keys();
+        let chain_keys: BTreeSet<SymbolKey> = self
+            .chains
+            .values()
+            .flat_map(|group| group.iter().cloned())
+            .collect();
+        let base = self
+            .watch
+            .active()
+            .union(&self.groups)
+            .chain(self.index_groups.iter())
+            .chain(self.positions.iter())
+            .chain(chain_keys.iter())
+            .count();
+        let available = MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(base);
+
+        let mut accepted: BTreeSet<SymbolKey> = BTreeSet::new();
+        let mut rejected: Vec<SymbolKey> = Vec::new();
+        for key in keys {
+            if self.watch.active().contains(&key)
+                || self.groups.contains(&key)
+                || self.index_groups.contains(&key)
+                || chain_keys.contains(&key)
+                || accepted.len() < available
+            {
+                accepted.insert(key);
+            } else {
+                rejected.push(key);
+            }
+        }
+        self.index_groups = accepted;
         rejected.extend(self.clamp_chains());
         self.reconcile(before, rejected)
     }
@@ -579,6 +631,7 @@ impl MarketData {
             .watch
             .active()
             .union(&self.groups)
+            .chain(self.index_groups.iter())
             .chain(self.positions.iter())
             .count();
         let mut available = MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(base);
@@ -604,8 +657,13 @@ impl MarketData {
 
         // Keys already subscribed elsewhere are free; only new keys consume
         // the global budget.
-        let mut free_keys: BTreeSet<SymbolKey> =
-            self.watch.active().union(&self.groups).cloned().collect();
+        let mut free_keys: BTreeSet<SymbolKey> = self
+            .watch
+            .active()
+            .union(&self.groups)
+            .chain(self.index_groups.iter())
+            .cloned()
+            .collect();
         free_keys.extend(self.positions.iter().cloned());
         for (id, group) in &self.chains {
             if id.as_str() != chain_id {

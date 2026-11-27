@@ -138,9 +138,11 @@ the card order in `watch-groups.json` and rejects a list that is missing or dupl
 insertion/custom sorting is shared pure TypeScript (`ui/src/lib/features/stocks/cards.ts`) across both
 layouts; unknown custom keys fall back to insertion order rather than disappearing.
 
-The **Index** workspace reuses the same containers and card component, filtering each card's rows to
-`is_index`. Its list view shows the active group's index members and adds new ones through the same
-`container_add` path, so group renames/order are shared with Stocks.
+The **Index** workspace uses the same card component but its own container file
+(`index-groups.json`) and active pointer, so Stocks and Index edits are independent. Its list view
+shows the active Index group's members and adds new ones through `index_container_add`, which rejects
+non-index instruments. `MarketData` keeps a separate `index_groups` subscription set; both set
+functions share the 100-instrument budget and reconcile minimal plans.
 
 Every instrument row (Index, Stocks list/cards, Market watch, instrument search, option chain)
 right-clicks into `InstrumentMenu`, which resolves `order_target` once and emits the same items:

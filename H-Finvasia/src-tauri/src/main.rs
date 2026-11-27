@@ -555,6 +555,10 @@ fn groups_file(app: &AppHandle) -> std::path::PathBuf {
     groups::file_path(&config_dir(app))
 }
 
+fn index_groups_file(app: &AppHandle) -> std::path::PathBuf {
+    groups::index_file_path(&config_dir(app))
+}
+
 fn watch_file(app: &AppHandle) -> std::path::PathBuf {
     groups::watch_path(&config_dir(app))
 }
@@ -697,6 +701,37 @@ fn sync_group_subscriptions(app: &AppHandle, state: &Arc<AppState>) -> PlanDto {
         tracing::warn!(
             dropped = plan.rejected.len(),
             "group subscriptions exceeded the 100-instrument budget"
+        );
+    }
+    plan
+}
+
+fn index_group_subscription_keys(app: &AppHandle) -> Vec<SymbolKey> {
+    let file = groups::read(&index_groups_file(app));
+    let mut keys = BTreeSet::new();
+    for stored in file.groups.values() {
+        for key in stored {
+            if let Ok(parsed) = SymbolKey::parse(key) {
+                keys.insert(parsed);
+            }
+        }
+    }
+    keys.into_iter().collect()
+}
+
+/// Reconcile the Index-tab card subscription set independently of the Stocks
+/// groups, while sharing the same 100-instrument budget.
+fn sync_index_subscriptions(app: &AppHandle, state: &Arc<AppState>) -> PlanDto {
+    let keys = index_group_subscription_keys(app);
+    let plan = {
+        let mut market = state.market.lock().unwrap();
+        market.set_index_group_keys(keys)
+    };
+    forward_plan_to_live(state, &plan);
+    if plan.truncated {
+        tracing::warn!(
+            dropped = plan.rejected.len(),
+            "index group subscriptions exceeded the 100-instrument budget"
         );
     }
     plan
@@ -893,6 +928,221 @@ fn container_reorder_keys(
     keys: Vec<String>,
 ) -> Result<groups::ContainersView, String> {
     let path = groups_file(&app);
+    groups::set_custom_order(&path, &name, keys)?;
+    Ok(groups::view(&path))
+}
+
+// ---------------------------------------------------------------------------
+// Index containers (independent from the Stocks watch groups)
+// ---------------------------------------------------------------------------
+
+fn ensure_index_containers(path: &std::path::Path) -> Result<groups::ContainersView, String> {
+    let view = groups::view(path);
+    if view.groups.is_empty() {
+        groups::create_empty(path, "Indices")
+    } else {
+        Ok(view)
+    }
+}
+
+/// Create the default Index card with every index the master knows about.
+/// Only runs once: after the first successful seed, `seeded` is persisted so a
+/// deliberately emptied or renamed card is never repopulated.
+fn ensure_index_containers_seeded(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+) -> Result<groups::ContainersView, String> {
+    let path = index_groups_file(app);
+    let mut file = groups::read(&path);
+    let mut created = false;
+    if file.groups.is_empty() {
+        groups::create_empty(&path, "Indices")?;
+        file = groups::read(&path);
+        created = true;
+    }
+    let default_empty = file.groups.len() == 1
+        && file
+            .groups
+            .get("Indices")
+            .map(|keys| keys.is_empty())
+            .unwrap_or(false);
+    if !file.seeded && (created || default_empty) {
+        let keys: Vec<String> = state
+            .market
+            .lock()
+            .unwrap()
+            .index_rows(300)
+            .into_iter()
+            .map(|row| row.key)
+            .collect();
+        if !keys.is_empty() {
+            for key in keys {
+                groups::add_key(&path, "Indices", &key)?;
+            }
+            file = groups::read(&path);
+            file.seeded = true;
+            groups::write(&path, &file)?;
+            let _ = sync_index_subscriptions(app, state);
+        }
+    }
+    Ok(groups::view(&path))
+}
+
+#[tauri::command]
+fn index_containers_list(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> groups::ContainersView {
+    match ensure_index_containers_seeded(&app, state.inner()) {
+        Ok(view) => view,
+        Err(err) => {
+            tracing::warn!(error = %err, "could not initialise index containers");
+            groups::view(&index_groups_file(&app))
+        }
+    }
+}
+
+#[tauri::command]
+fn index_container_create_empty(
+    app: AppHandle,
+    name: String,
+) -> Result<groups::ContainersView, String> {
+    let path = index_groups_file(&app);
+    ensure_index_containers(&path)?;
+    groups::create_empty(&path, &name)
+}
+
+#[tauri::command]
+fn index_container_activate(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    name: String,
+) -> Result<PlanDto, String> {
+    let path = index_groups_file(&app);
+    ensure_index_containers(&path)?;
+    if !groups::read(&path).groups.contains_key(&name) {
+        return Err(format!("index container \"{name}\" does not exist"));
+    }
+    groups::set_active(&path, &name)?;
+    Ok(sync_index_subscriptions(&app, state.inner()))
+}
+
+#[tauri::command]
+fn index_container_rename(
+    app: AppHandle,
+    old: String,
+    new: String,
+) -> Result<groups::ContainersView, String> {
+    let path = index_groups_file(&app);
+    ensure_index_containers(&path)?;
+    groups::rename(&path, &old, &new)
+}
+
+#[tauri::command]
+fn index_container_delete(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    name: String,
+) -> Result<groups::ContainersView, String> {
+    let path = index_groups_file(&app);
+    ensure_index_containers(&path)?;
+    let (view, _next) = groups::remove(&path, &name)?;
+    sync_index_subscriptions(&app, state.inner());
+    Ok(view)
+}
+
+#[tauri::command]
+fn index_container_color(
+    app: AppHandle,
+    name: String,
+    color: String,
+) -> Result<groups::ContainersView, String> {
+    let path = index_groups_file(&app);
+    ensure_index_containers(&path)?;
+    groups::set_color(&path, &name, &color)
+}
+
+#[tauri::command]
+fn index_container_cards(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Vec<fv_bridge::ContainerCardDto> {
+    let path = index_groups_file(&app);
+    let _ = ensure_index_containers_seeded(&app, state.inner());
+    let file = groups::read(&path);
+    let view = groups::view(&path);
+    let market = state.market.lock().unwrap();
+    view.groups
+        .into_iter()
+        .map(|group| {
+            let keys = file
+                .groups
+                .get(&group.name)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let custom = file.custom.get(&group.name).cloned().unwrap_or_default();
+            market.container_card(&group.name, group.color, keys, custom)
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn index_container_add(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    name: String,
+    key: String,
+) -> Result<groups::ContainersView, String> {
+    let key = key.trim().to_string();
+    SymbolKey::parse(&key).map_err(|e| e.to_string())?;
+    let instrument = state
+        .market
+        .lock()
+        .unwrap()
+        .instrument(&key)
+        .ok_or_else(|| format!("instrument {key} is not in the master yet"))?;
+    if !instrument.is_index {
+        return Err("only index instruments can be added to Index cards".into());
+    }
+    let path = index_groups_file(&app);
+    ensure_index_containers(&path)?;
+    groups::add_key(&path, &name, &key)?;
+    sync_index_subscriptions(&app, state.inner());
+    Ok(groups::view(&path))
+}
+
+#[tauri::command]
+fn index_container_remove(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    name: String,
+    key: String,
+) -> Result<groups::ContainersView, String> {
+    let path = index_groups_file(&app);
+    ensure_index_containers(&path)?;
+    groups::remove_key(&path, &name, &key)?;
+    sync_index_subscriptions(&app, state.inner());
+    Ok(groups::view(&path))
+}
+
+#[tauri::command]
+fn index_container_reorder(
+    app: AppHandle,
+    order: Vec<String>,
+) -> Result<groups::ContainersView, String> {
+    let path = index_groups_file(&app);
+    ensure_index_containers(&path)?;
+    groups::reorder(&path, order)
+}
+
+#[tauri::command]
+fn index_container_reorder_keys(
+    app: AppHandle,
+    name: String,
+    keys: Vec<String>,
+) -> Result<groups::ContainersView, String> {
+    let path = index_groups_file(&app);
+    ensure_index_containers(&path)?;
     groups::set_custom_order(&path, &name, keys)?;
     Ok(groups::view(&path))
 }
@@ -1791,6 +2041,8 @@ fn main() {
                     }
                     // Every card should stream, not just the active group.
                     sync_group_subscriptions(&resume_handle, &resume_state);
+                    // Index cards are a separate, equally live set.
+                    sync_index_subscriptions(&resume_handle, &resume_state);
 
                     // Empty install: seed NIFTY 50 so there is always something
                     // live and auto-connect has a subscription to open.
@@ -1916,6 +2168,17 @@ fn main() {
             container_remove,
             container_reorder,
             container_reorder_keys,
+            index_containers_list,
+            index_container_create_empty,
+            index_container_activate,
+            index_container_rename,
+            index_container_delete,
+            index_container_color,
+            index_container_cards,
+            index_container_add,
+            index_container_remove,
+            index_container_reorder,
+            index_container_reorder_keys,
             order_defaults_get,
             order_defaults_set,
             order_target,

@@ -592,8 +592,6 @@
   <div class="workspace-body">
     {#if page === "index"}
       <IndexWatch
-        onadd={addInstrument}
-        onremove={removeInstrument}
         onchain={openChain}
         onbuy={(key) => void openOrder(key, "B")}
         onsell={(key) => void openOrder(key, "S")}
