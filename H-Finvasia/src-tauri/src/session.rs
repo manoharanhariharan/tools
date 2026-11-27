@@ -11,10 +11,11 @@
 //!
 //! Credentials are never written back to the database and never logged.
 
+use crate::broker_log;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// REST base that is actually live. `NorenWClientTP` (used by older clients)
 /// now answers 502; `NorenWClientAPI` is the working endpoint.
@@ -271,16 +272,55 @@ async fn post_route(
     json: &str,
     jkey: Option<&str>,
 ) -> Result<serde_json::Value, String> {
-    let response = client
+    let body = form_body(json, jkey);
+    tracing::debug!(
+        route,
+        host = REST_BASE,
+        request = %broker_log::redact_form_body(&body),
+        "broker auth request"
+    );
+    let started = Instant::now();
+    let response = match client
         .post(format!("{REST_BASE}/{route}"))
         .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(form_body(json, jkey))
+        .body(body)
         .send()
         .await
-        .map_err(|e| format!("{route}: {e}"))?;
+    {
+        Ok(response) => response,
+        Err(error) => {
+            tracing::warn!(
+                route,
+                host = REST_BASE,
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                %error,
+                "broker auth transport failed"
+            );
+            return Err(format!("{route}: {error}"));
+        }
+    };
 
     let status = response.status();
-    let text = response.text().await.map_err(|e| format!("{route}: {e}"))?;
+    let text = match response.text().await {
+        Ok(text) => text,
+        Err(error) => {
+            tracing::warn!(
+                route,
+                status = status.as_u16(),
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                %error,
+                "broker auth response read failed"
+            );
+            return Err(format!("{route}: {error}"));
+        }
+    };
+    tracing::debug!(
+        route,
+        status = status.as_u16(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        response = %broker_log::clip(&broker_log::redact_json(&text), 8 * 1024),
+        "broker auth response"
+    );
 
     serde_json::from_str::<serde_json::Value>(&text)
         .map_err(|_| format!("{route}: HTTP {status}, non-JSON body: {}", truncate(&text)))

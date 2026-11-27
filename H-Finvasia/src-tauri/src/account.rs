@@ -7,16 +7,26 @@
 //!
 //! Nothing here writes: positions, funds and the order book are read-only.
 
+use crate::broker_log;
 use fv_core::Price;
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::time::Instant;
 
 pub const WEB_BASE: &str = "https://trade.shoonya.com/NorenWClientWeb";
 pub const API_BASE: &str = "https://api.shoonya.com/NorenWClientAPI";
 
 /// Which base last worked: 0 unknown, 1 web, 2 api.
 static PREFERRED: AtomicU8 = AtomicU8::new(0);
+
+/// Write routes whose response is always small enough to log in full.
+fn is_write_route(route: &str) -> bool {
+    matches!(
+        route,
+        "PlaceOrder" | "ModifyOrder" | "CancelOrder" | "GetBasketMargin"
+    )
+}
 
 /// Percent-encode a form value. `PlaceOrder` payloads can contain `&` in the
 /// trading symbol (`M&M`), which would otherwise split the form body.
@@ -301,17 +311,63 @@ impl RestClient {
     }
 
     async fn post_raw_at(&self, base: &str, route: &str, body: String) -> Result<Value, String> {
-        let response = self
+        tracing::debug!(
+            route,
+            host = base,
+            request = %broker_log::redact_form_body(&body),
+            "broker request"
+        );
+        let started = Instant::now();
+        let response = match self
             .http
             .post(format!("{base}/{route}"))
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(body)
             .send()
             .await
-            .map_err(|e| format!("{route}: {e}"))?;
+        {
+            Ok(response) => response,
+            Err(error) => {
+                tracing::warn!(
+                    route,
+                    host = base,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    %error,
+                    "broker transport failed"
+                );
+                return Err(format!("{route}: {error}"));
+            }
+        };
 
         let status = response.status();
-        let body = response.text().await.map_err(|e| format!("{route}: {e}"))?;
+        let body = match response.text().await {
+            Ok(body) => body,
+            Err(error) => {
+                tracing::warn!(
+                    route,
+                    host = base,
+                    status = status.as_u16(),
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    %error,
+                    "broker response read failed"
+                );
+                return Err(format!("{route}: {error}"));
+            }
+        };
+        // Writes are small and high-value; reads can be large, so bound them.
+        let limit = if is_write_route(route) {
+            16 * 1024
+        } else {
+            4 * 1024
+        };
+        tracing::debug!(
+            route,
+            host = base,
+            status = status.as_u16(),
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            response = %broker_log::clip(&broker_log::redact_json(&body), limit),
+            "broker response"
+        );
         if status.as_u16() == 401 {
             return Err(format!("SESSION: {body}"));
         }

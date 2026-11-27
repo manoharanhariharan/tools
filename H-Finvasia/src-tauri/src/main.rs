@@ -25,6 +25,7 @@ use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tauri::async_runtime::JoinHandle;
 
 mod account;
+mod broker_log;
 mod groups;
 mod orders;
 mod session;
@@ -1050,6 +1051,17 @@ async fn place_order(
         tick,
     )?;
 
+    tracing::debug!(
+        key = %request.key,
+        symbol = %instrument.trading_symbol,
+        exchange = %exchange,
+        side = %request.side,
+        product = %request.product,
+        price_type = %request.price_type,
+        lots = request.lots,
+        tick = tick.map(|value| value.format(2)),
+        "placing order"
+    );
     let result = orders::submit(&shared.rest, &session.token, &payload).await?;
     tracing::info!(
         order_no = %result.order_no,
@@ -1155,6 +1167,17 @@ async fn square_off(
         .checked_abs()
         .filter(|qty| *qty > 0)
         .ok_or_else(|| "square-off quantity must be non-zero".to_string())?;
+    tracing::debug!(
+        key = %request.key,
+        symbol = %instrument.trading_symbol,
+        exchange = %exchange,
+        side = %side,
+        quantity,
+        product = %product,
+        reference_price = %ltp,
+        tick = tick.map(|value| value.format(2)),
+        "square-off request"
+    );
     let ticket = orders::PlaceOrderRequest {
         key: request.key.clone(),
         side,
@@ -1176,6 +1199,12 @@ async fn square_off(
         tick,
     )?;
     let result = orders::submit(&shared.rest, &session.token, &payload).await?;
+    tracing::info!(
+        order_no = %result.order_no,
+        status = %result.status,
+        key = %request.key,
+        "square-off submitted"
+    );
     shared
         .trailing
         .lock()
@@ -1663,13 +1692,35 @@ async fn load_master(state: Arc<AppState>, app: AppHandle) {
 }
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+    // Detailed broker traffic (requests/rejections) is logged by default while
+    // order flow is being stabilised. Drop these targets back to `warn` once the
+    // behaviour is verified.
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        tracing_subscriber::EnvFilter::new(
+            "info,h_finvasia_desktop::account=debug,h_finvasia_desktop::orders=debug,h_finvasia_desktop::session=debug",
         )
-        .with_target(false)
+    });
+
+    let mut log_dir = broker_log::log_dir();
+    if std::fs::create_dir_all(&log_dir).is_err() {
+        log_dir = std::env::temp_dir().join("h-finvasia-logs");
+        let _ = std::fs::create_dir_all(&log_dir);
+    }
+    let appender = tracing_appender::rolling::Builder::new()
+        .rotation(tracing_appender::rolling::Rotation::DAILY)
+        .filename_prefix("broker")
+        .filename_suffix("log")
+        .max_log_files(7)
+        .build(&log_dir)
+        .unwrap_or_else(|_| tracing_appender::rolling::never(&log_dir, "broker.log"));
+
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(true)
+        .with_ansi(false)
+        .with_writer(appender)
         .init();
+    tracing::info!(dir = %log_dir.display(), "broker diagnostics logging enabled");
 
     let (tx, rx) = mpsc::unbounded_channel();
     let state = Arc::new(AppState {

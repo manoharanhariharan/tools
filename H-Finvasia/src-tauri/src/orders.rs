@@ -548,7 +548,16 @@ pub async fn submit(
     payload: &str,
 ) -> Result<OrderResult, String> {
     let value = client.post_write("PlaceOrder", payload, token).await?;
-    parse_place_response(&value)
+    match parse_place_response(&value) {
+        Ok(result) => {
+            tracing::info!(order_no = %result.order_no, status = %result.status, "order accepted");
+            Ok(result)
+        }
+        Err(error) => {
+            tracing::warn!(%error, "order rejected");
+            Err(error)
+        }
+    }
 }
 
 pub async fn modify(
@@ -557,7 +566,16 @@ pub async fn modify(
     payload: &str,
 ) -> Result<(), String> {
     let value = client.post_write("ModifyOrder", payload, token).await?;
-    parse_ok_response(&value)
+    match parse_ok_response(&value) {
+        Ok(()) => {
+            tracing::debug!("order modification accepted");
+            Ok(())
+        }
+        Err(error) => {
+            tracing::warn!(%error, "order modification rejected");
+            Err(error)
+        }
+    }
 }
 
 pub async fn margin(

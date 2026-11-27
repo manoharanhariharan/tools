@@ -1339,6 +1339,11 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
 - Protected market prices and all order prices are aligned to the exchange tick. A sell rounds down and
   a buy rounds up so the order stays marketable; this fixes
   `ORA:Price 73.16 is not a multiple of tick size 0.05`.
+- Broker REST traffic is logged at DEBUG to
+  `%APPDATA%\com.hfinvasia.desktop\logs\broker.<date>.log` (daily rotation, 7 files): route, host,
+  redacted `jData`, HTTP status, elapsed time and redacted response. Tokens, passwords, TOTP and
+  `jKey` are replaced with `***`. Set `RUST_LOG=info` to quieten it; the default verbose targets are
+  temporary until order flow is verified.
 
 ---
 

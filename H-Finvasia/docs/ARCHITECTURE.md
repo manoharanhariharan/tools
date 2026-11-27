@@ -303,6 +303,10 @@ The rest of the expiry stays in the local master and is served as metadata; it i
   form body cannot split; full percent-encoding caused `jData is not valid json object`. It may retry
   once on a 401 against the other REST host. Network failures are **not** retried, so an ambiguous
   send cannot be duplicated; the user reconciles via the unique remarks in the order book.
+- Broker REST calls log route, host, redacted `jData`, status, elapsed time and a redacted response at
+  DEBUG to a rotating file under `%APPDATA%\com.hfinvasia.desktop\logs`. `broker_log` redacts
+  `jKey`, `susertoken`, passwords, TOTP and API secrets before writing; write responses are logged up
+  to 16 KiB and read responses up to 4 KiB so a large order/position book cannot flood the file.
 - The ticket is the confirmation step. There is no one-click live order and no background trading
   other than the explicit trailing-SL modifier.
 
