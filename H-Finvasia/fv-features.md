@@ -1360,6 +1360,14 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
   show/hide columns or reset. Widths and visibility persist in `localStorage`.
 - Group-card add/collapse/delete and row-remove icons are SVG, aligned in fixed-size buttons, with
   bolder labels. The bottom dock bar uses the same SVG chevron and no longer clips its content.
+- Added the Visual Studio Code theme family: Abyss, Dark (Visual Studio), Dark 2026, Dark High
+  Contrast, Dark Modern, Dark+, Kimbie Dark, Light (Visual Studio), Light 2026, Light High Contrast,
+  Light Modern, Light+, Monokai, Monokai Dimmed, Quiet Light, Red, Solarized Dark, Solarized Light and
+  Tomorrow Night Blue. The catalogue is now 30 themes.
+- Index and Stocks share one List/Cards preference, so the Index container always matches the Stocks
+  view. The account-strip collapse control now uses the same SVG chevron as the dock.
+- Escape closes any dialog from inside its body, including the order ticket with focus in the
+  quantity field.
 
 ---
 

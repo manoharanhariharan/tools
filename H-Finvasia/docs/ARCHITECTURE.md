@@ -204,9 +204,13 @@ of group membership; active-group edits reconcile the live watch set.
 
 Appearance is applied before mount (`applyStoredTheme` in `main.ts`) so the first paint matches the
 saved theme. The picker also applies and persists each click immediately instead of waiting for an
-Apply action. Theme/accent live in localStorage; group colours and card order live in
+Apply action. `THEMES` carries the display metadata for the 30-theme catalogue (11 terminal themes
+plus the Visual Studio Code family); the actual colour tokens live in `app.css` under
+`[data-theme=...]`. Theme/accent live in localStorage; group colours and card order live in
 `watch-groups.json`. Neither is a broker concern. The collapsed header band and per-card collapsed
-flags are UI-only localStorage preferences (`layoutPrefs.ts`), not broker or watch state.
+flags are UI-only localStorage preferences (`layoutPrefs.ts`), not broker or watch state. The shared
+`Modal` handles Escape in its body as well as on the backdrop, so a focused input cannot swallow the
+close key.
 
 ## 5. Threading and lifecycle (src-tauri)
 

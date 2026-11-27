@@ -73,8 +73,12 @@
         type="button"
         title="Expand account details"
         aria-expanded="false"
-        onclick={toggle}>⌄</button
+        onclick={toggle}
       >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M4 6l4 4 4-4" />
+        </svg>
+      </button>
     </div>
   {:else}
     <div class="acct-card">
@@ -142,8 +146,12 @@
         type="button"
         title="Collapse to a single band"
         aria-expanded="true"
-        onclick={toggle}>⌃</button
+        onclick={toggle}
       >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M4 10l4-4 4 4" />
+        </svg>
+      </button>
     </div>
   {/if}
 </section>

@@ -9,7 +9,26 @@ export type ThemeId =
   | "tokyo"
   | "forest"
   | "plum"
-  | "sand";
+  | "sand"
+  | "abyss"
+  | "vs-dark"
+  | "dark-2026"
+  | "dark-high-contrast"
+  | "dark-modern"
+  | "dark-plus"
+  | "kimbie-dark"
+  | "vs-light"
+  | "light-2026"
+  | "light-high-contrast"
+  | "light-modern"
+  | "light-plus"
+  | "monokai"
+  | "monokai-dimmed"
+  | "quiet-light"
+  | "red"
+  | "solarized-dark"
+  | "solarized-light"
+  | "tomorrow-night-blue";
 
 export interface ThemeSpec {
   id: ThemeId;
@@ -42,6 +61,25 @@ export const THEMES: ThemeSpec[] = [
   { id: "forest", label: "Forest", description: "Deep green, calm contrast", swatch: "#102218" },
   { id: "plum", label: "Plum", description: "Dark violet with rose accents", swatch: "#241a33" },
   { id: "sand", label: "Sand", description: "Warm light paper theme", swatch: "#f0e8d8" },
+  { id: "abyss", label: "Abyss", description: "VS Code deep-blue Abyss", swatch: "#000c18" },
+  { id: "vs-dark", label: "Dark (Visual Studio)", description: "Classic Visual Studio dark", swatch: "#2d2d30" },
+  { id: "dark-2026", label: "Dark 2026", description: "Modern near-black with cool signals", swatch: "#101418" },
+  { id: "dark-high-contrast", label: "Dark High Contrast", description: "Black, white and bright borders", swatch: "#000000" },
+  { id: "dark-modern", label: "Dark Modern", description: "VS Code modern dark default", swatch: "#1f1f1f" },
+  { id: "dark-plus", label: "Dark+", description: "VS Code classic Dark+", swatch: "#1e1e1e" },
+  { id: "kimbie-dark", label: "Kimbie Dark", description: "Warm brown Kimbie palette", swatch: "#221a0f" },
+  { id: "vs-light", label: "Light (Visual Studio)", description: "Classic Visual Studio light", swatch: "#ffffff" },
+  { id: "light-2026", label: "Light 2026", description: "Modern light with cool greys", swatch: "#fbfbfb" },
+  { id: "light-high-contrast", label: "Light High Contrast", description: "White with black borders", swatch: "#ffffff" },
+  { id: "light-modern", label: "Light Modern", description: "VS Code modern light default", swatch: "#ffffff" },
+  { id: "light-plus", label: "Light+", description: "VS Code classic Light+", swatch: "#ffffff" },
+  { id: "monokai", label: "Monokai", description: "Original warm Monokai", swatch: "#272822" },
+  { id: "monokai-dimmed", label: "Monokai Dimmed", description: "Muted Monokai contrast", swatch: "#1e1e1e" },
+  { id: "quiet-light", label: "Quiet Light", description: "Soft light with blue accents", swatch: "#f5f5f5" },
+  { id: "red", label: "Red", description: "Dark red editor palette", swatch: "#390000" },
+  { id: "solarized-dark", label: "Solarized Dark", description: "Solarized dark, exact base tones", swatch: "#002b36" },
+  { id: "solarized-light", label: "Solarized Light", description: "Solarized light, warm paper", swatch: "#fdf6e3" },
+  { id: "tomorrow-night-blue", label: "Tomorrow Night Blue", description: "Deep blue Tomorrow Night", swatch: "#002451" },
 ];
 
 export const ACCENTS: AccentSpec[] = [

@@ -11,6 +11,10 @@ describe("theme helpers", () => {
     expect(isThemeId("forest")).toBe(true);
     expect(isThemeId("plum")).toBe(true);
     expect(isThemeId("sand")).toBe(true);
+    expect(isThemeId("dark-plus")).toBe(true);
+    expect(isThemeId("light-high-contrast")).toBe(true);
+    expect(isThemeId("solarized-light")).toBe(true);
+    expect(isThemeId("tomorrow-night-blue")).toBe(true);
     expect(isThemeId("neon")).toBe(false);
     expect(isThemeId(null)).toBe(false);
   });
@@ -18,7 +22,7 @@ describe("theme helpers", () => {
   it("keeps the theme catalogue unique and complete", () => {
     const ids = THEMES.map((theme) => theme.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.length).toBeGreaterThanOrEqual(11);
+    expect(ids.length).toBeGreaterThanOrEqual(30);
     for (const theme of THEMES) {
       expect(theme.label.trim()).not.toBe("");
       expect(theme.swatch).toMatch(/^#[0-9a-fA-F]{6}$/);

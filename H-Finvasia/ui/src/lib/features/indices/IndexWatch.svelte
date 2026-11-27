@@ -13,10 +13,10 @@
   import GroupCards from "../stocks/GroupCards.svelte";
   import { sortInstrumentRows } from "../stocks/cards";
   import {
-    loadIndexView,
     loadSortMode,
-    saveIndexView,
+    loadStocksView,
     saveSortMode,
+    saveStocksView,
     type SortMode,
     type StocksView,
   } from "../../layoutPrefs";
@@ -35,7 +35,7 @@
   let indices = $state<IndexRowDto[]>([]);
   let containers = $state<ContainersView>({ active: null, groups: [] });
   let cards = $state<ContainerCardDto[]>([]);
-  let view = $state<StocksView>(loadIndexView());
+  let view = $state<StocksView>(loadStocksView());
   let sortMode = $state<SortMode>(loadSortMode());
   let query = $state("");
   let addQuery = $state("");
@@ -115,7 +115,7 @@
   function setView(next: StocksView) {
     if (view === next) return;
     view = next;
-    saveIndexView(next);
+    saveStocksView(next);
   }
 
   function setSort(next: SortMode) {

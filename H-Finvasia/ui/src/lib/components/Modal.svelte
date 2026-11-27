@@ -34,7 +34,12 @@
     aria-label={title}
     tabindex="-1"
     onclick={(event) => event.stopPropagation()}
-    onkeydown={(event) => event.stopPropagation()}
+    onkeydown={(event) => {
+      event.stopPropagation();
+      // Escape must close even while focus is inside the body (e.g. the
+      // quantity input), so handle it here before stopping propagation.
+      if (event.key === "Escape") onclose();
+    }}
   >
     <header class="modal-head">
       <div>

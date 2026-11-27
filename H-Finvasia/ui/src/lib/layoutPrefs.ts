@@ -16,7 +16,6 @@ export type SortMode = "name" | "price" | "added" | "custom";
 
 export const HEADER_KEY = "fv.headerCollapsed";
 export const STOCKS_VIEW_KEY = "fv.stocksView";
-export const INDEX_VIEW_KEY = "fv.indexView";
 export const STOCKS_SORT_KEY = "fv.stocksSort";
 export const GROUP_SORT_KEY = "fv.groupSort";
 export const COLLAPSED_GROUPS_KEY = "fv.groupCards.collapsed";
@@ -67,17 +66,6 @@ export function saveStocksView(
   storage: StorageLike | null = defaultStorage(),
 ): void {
   writeText(storage, STOCKS_VIEW_KEY, view);
-}
-
-export function loadIndexView(storage: StorageLike | null = defaultStorage()): StocksView {
-  return readText(storage, INDEX_VIEW_KEY) === "cards" ? "cards" : "list";
-}
-
-export function saveIndexView(
-  view: StocksView,
-  storage: StorageLike | null = defaultStorage(),
-): void {
-  writeText(storage, INDEX_VIEW_KEY, view);
 }
 
 const SORT_MODES: readonly SortMode[] = ["name", "price", "added", "custom"];

@@ -120,9 +120,10 @@ cards' subscriptions. The combined group/watch/chain set stays within the 100-in
 anything beyond it is reported rather than silently dropped.
 
 **Index** mirrors the Stocks workspace: **List** shows the index instruments in the selected group and
-**Cards** uses the same group cards, filtered to indices. Both layouts share rename, create, delete,
-drag-reorder, per-card sort/collapse, add/remove and the unified right-click menu. The list toolbar
-switches groups, filters the current list and adds an index to the active group.
+**Cards** uses the same group cards, filtered to indices. The List/Cards choice is shared with Stocks,
+so both tabs always use the same layout. Both layouts share rename, create, delete, drag-reorder,
+per-card sort/collapse, add/remove and the unified right-click menu. The list toolbar switches groups,
+filters the current list and adds an index to the active group.
 
 **Market watch** shows the union of the active watch list and every Stocks group member, so indices
 and instruments living only in cards still appear there. Its **x** removes an instrument from every
@@ -155,11 +156,16 @@ account REST calls happen until you open it; refreshes are manual, never on a ti
 watch, instrument search or the option chain. The same actions are available from every instrument
 row's right-click menu. Chain arming is side-aware: a call cell arms its CE and a put cell arms its PE.
 The card view highlights the armed row. If the instrument is not tradeable the app explains instead
-of opening a ticket.
+of opening a ticket. **Escape** closes any open dialog - order ticket, defaults or appearance - even
+while focus is inside a text or number field.
 
-**Appearance** (Settings -> Appearance) offers eleven themes - Midnight, Graphite, Ocean, Contrast,
-Light, Nord, Solarized, Tokyo Night, Forest, Plum and Sand - plus six accent presets and a custom
-accent. Selecting a theme or accent applies it live (there is no Apply button); the choice is stored
+**Appearance** (Settings -> Appearance) offers thirty themes plus six accent presets and a custom
+accent. The base set is Midnight, Graphite, Ocean, Contrast, Light, Nord, Solarized, Tokyo Night,
+Forest, Plum and Sand. The Visual Studio Code family adds Abyss, Dark (Visual Studio), Dark 2026,
+Dark High Contrast, Dark Modern, Dark+, Kimbie Dark, Light (Visual Studio), Light 2026, Light High
+Contrast, Light Modern, Light+, Monokai, Monokai Dimmed, Quiet Light, Red, Solarized Dark, Solarized
+Light and Tomorrow Night Blue. Selecting a theme or accent applies it live (there is no Apply
+button); the choice is stored
 on this machine and applied before the next first paint.
 
 ### Using it
