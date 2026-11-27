@@ -744,6 +744,18 @@ impl MarketData {
             .and_then(|m| m.get(&key))
             .map(|i| instrument_dto(i, self.master.as_deref()))
     }
+
+    /// Exchange tick size for a symbol. Prefers the instrument master, then the
+    /// live quote (some feeds carry `ts`), so order prices can be aligned.
+    pub fn tick_size(&self, wire: &str) -> Option<Price> {
+        let key = SymbolKey::parse(wire).ok()?;
+        self.master
+            .as_ref()
+            .and_then(|m| m.get(&key))
+            .and_then(|i| i.tick_size)
+            .or_else(|| self.book.get(&key).and_then(|q| q.tick_size))
+            .filter(|value| value.scaled() > 0)
+    }
 }
 
 /// Pick a narrow window of strikes around `atm`.

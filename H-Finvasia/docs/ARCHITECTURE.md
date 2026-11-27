@@ -284,6 +284,10 @@ The rest of the expiry stays in the local master and is served as metadata; it i
 - **MKT is converted to a protected limit.** Shoonya blocks raw MKT on API orders, so `MKT` sends
   `prctyp: "LMT"` at the LTP plus a 1% buffer (minimum one tick). SL-L and TSL send `prctyp: "SL-L"`
   with `trgprc`. The margin calculator uses the same protected conversion because it also rejects MKT.
+  Generated prices are aligned to the instrument tick from the master/quote (fallback 0.05 for
+  NFO/BFO/MCX, 0.01 cash, 0.0001 CDS): protected buys round up, protected sells round down, and
+  explicit limits/triggers snap to the nearest tick. This prevents
+  `ORA:Price ... is not a multiple of tick size`.
 - **TSL is an SL-L plus a monitor.** After a successful TSL placement the order is registered in an
   in-memory list; every two seconds the monitor reads the live LTP, moves the trigger favourably, and
   calls `ModifyOrder` (`post_write`). A failed modify drops the monitor instead of retrying blindly.

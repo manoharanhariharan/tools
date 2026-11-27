@@ -1251,7 +1251,10 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
 - **Ticket price is the LTP snapshot** captured when the dialog opened (no ask/bid drift). The ticket
   also shows broker pre-trade margin from `GetBasketMargin`, debounced as size/price/type change.
 - **Order types:** LMT, MKT (protected), SL-L and TSL. Shoonya rejects raw MKT/SL-M on the API, so
-  MKT sends a marketable LMT at LTP + 1% (minimum one tick); SL-L/TSL send `trgprc`. TSL registers an
+  MKT sends a marketable LMT at LTP + 1% (minimum one tick); SL-L/TSL send `trgprc`. Every generated
+  price is snapped to the instrument tick (buys up, sells down for protected market; nearest for
+  explicit limits/triggers), using the master tick with a venue fallback (0.05 F&amp;O/MCX, 0.01 cash,
+  0.0001 CDS). TSL registers an
   in-memory trailing monitor that calls `ModifyOrder` as LTP moves favourably, and drops itself on a
   modify failure. Trailing stops run only while the app is live.
 - **Square off:** right-click a live position to send the opposite side for the absolute net quantity
@@ -1333,6 +1336,9 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
 - Square-off is hardened: it refreshes the session (`ensure_session`), accepts the position LTP as a
   price fallback when no websocket tick exists, validates a non-zero quantity, and normalises CNC to
   NRML on derivatives. Success and failure both raise the global order toast.
+- Protected market prices and all order prices are aligned to the exchange tick. A sell rounds down and
+  a buy rounds up so the order stays marketable; this fixes
+  `ORA:Price 73.16 is not a multiple of tick size 0.05`.
 
 ---
 

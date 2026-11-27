@@ -181,7 +181,9 @@ fn parse_positive(raw: Option<&str>, what: &str) -> Result<Price, String> {
 
 /// Market orders are converted to a marketable limit because Shoonya blocks
 /// raw MKT on API orders. The extra 1% (minimum one tick) makes the order cross.
-fn protected_market_price(base: Price, side: &str) -> Result<Price, String> {
+/// The result is aligned to the venue tick: buys round up, sells round down, so
+/// the order remains marketable and still passes the broker's tick check.
+fn protected_market_price(base: Price, side: &str, tick: Price) -> Result<Price, String> {
     let buffer = Price::from_scaled((base.scaled().abs() / 100).max(50_000));
     let price = if side == "B" {
         base.checked_add(buffer)
@@ -189,35 +191,116 @@ fn protected_market_price(base: Price, side: &str) -> Result<Price, String> {
         base.checked_sub(buffer)
     }
     .ok_or_else(|| "protected market price is out of range".to_string())?;
+    let price = align_to_tick(
+        price,
+        tick,
+        if side == "B" {
+            TickSide::Up
+        } else {
+            TickSide::Down
+        },
+    )?;
     if price.scaled() <= 0 {
         return Err("protected market price must be greater than zero".into());
     }
     Ok(price)
 }
 
+#[derive(Clone, Copy)]
+enum TickSide {
+    Up,
+    Down,
+    Nearest,
+}
+
+/// Fallback tick when the master/feed does not carry one for this instrument.
+pub fn default_tick_size(exchange: &str) -> Price {
+    let text = match exchange.trim().to_ascii_uppercase().as_str() {
+        "CDS" => "0.0001",
+        "NFO" | "BFO" | "MCX" => "0.05",
+        _ => "0.01",
+    };
+    Price::parse(text).unwrap_or(Price::ZERO)
+}
+
+/// Use the instrument tick when known, otherwise the venue default.
+pub fn effective_tick(tick: Option<Price>, exchange: &str) -> Price {
+    tick.filter(|value| value.scaled() > 0)
+        .unwrap_or_else(|| default_tick_size(exchange))
+}
+
+fn align_to_tick(price: Price, tick: Price, side: TickSide) -> Result<Price, String> {
+    let step = tick.scaled().abs();
+    if step == 0 || price.scaled() <= 0 {
+        return Ok(price);
+    }
+    let value = price.scaled();
+    let whole = value / step;
+    let remainder = value % step;
+    let aligned = if remainder == 0 {
+        value
+    } else {
+        let next = match side {
+            TickSide::Down => whole,
+            TickSide::Up => whole + 1,
+            TickSide::Nearest => {
+                if remainder * 2 >= step {
+                    whole + 1
+                } else {
+                    whole
+                }
+            }
+        };
+        next.checked_mul(step)
+            .ok_or_else(|| "price is out of range".to_string())?
+    };
+    Ok(Price::from_scaled(aligned))
+}
+
 fn resolve_price(
     request: &PlaceOrderRequest,
     side: &str,
+    tick: Price,
 ) -> Result<(&'static str, Price, Option<Price>), String> {
     let requested = request.price_type.trim().to_ascii_uppercase();
     match requested.as_str() {
         "LMT" => Ok((
             "LMT",
-            parse_positive(request.price.as_deref(), "limit price")?,
+            align_to_tick(
+                parse_positive(request.price.as_deref(), "limit price")?,
+                tick,
+                TickSide::Nearest,
+            )?,
             None,
         )),
         "MKT" => {
             let base = parse_positive(request.price.as_deref(), "market reference price")?;
-            Ok(("LMT", protected_market_price(base, side)?, None))
+            Ok(("LMT", protected_market_price(base, side, tick)?, None))
         }
         "SL-L" => {
-            let limit = parse_positive(request.price.as_deref(), "limit price")?;
-            let trigger = parse_positive(request.trigger_price.as_deref(), "trigger price")?;
+            let limit = align_to_tick(
+                parse_positive(request.price.as_deref(), "limit price")?,
+                tick,
+                TickSide::Nearest,
+            )?;
+            let trigger = align_to_tick(
+                parse_positive(request.trigger_price.as_deref(), "trigger price")?,
+                tick,
+                TickSide::Nearest,
+            )?;
             Ok(("SL-L", limit, Some(trigger)))
         }
         "TSL" => {
-            let limit = parse_positive(request.price.as_deref(), "limit price")?;
-            let trigger = parse_positive(request.trigger_price.as_deref(), "trigger price")?;
+            let limit = align_to_tick(
+                parse_positive(request.price.as_deref(), "limit price")?,
+                tick,
+                TickSide::Nearest,
+            )?;
+            let trigger = align_to_tick(
+                parse_positive(request.trigger_price.as_deref(), "trigger price")?,
+                tick,
+                TickSide::Nearest,
+            )?;
             parse_positive(request.trail.as_deref(), "trail amount")?;
             Ok(("SL-L", limit, Some(trigger)))
         }
@@ -262,6 +345,7 @@ pub fn build_payload(
     exchange: &str,
     trading_symbol: &str,
     lot_size: i64,
+    tick_size: Option<Price>,
 ) -> Result<String, String> {
     if lot_size <= 0 {
         return Err("instrument lot size is invalid".into());
@@ -274,7 +358,15 @@ pub fn build_payload(
         .checked_mul(lot_size)
         .filter(|qty| *qty > 0 && *qty <= 1_000_000_000)
         .ok_or_else(|| "quantity is out of range".to_string())?;
-    build_payload_for_qty(request, uid, actid, exchange, trading_symbol, qty)
+    build_payload_for_qty(
+        request,
+        uid,
+        actid,
+        exchange,
+        trading_symbol,
+        qty,
+        tick_size,
+    )
 }
 
 /// Same validation as [`build_payload`] but with an explicit share quantity.
@@ -286,12 +378,14 @@ pub fn build_payload_for_qty(
     exchange: &str,
     trading_symbol: &str,
     qty: i64,
+    tick_size: Option<Price>,
 ) -> Result<String, String> {
     if !(1..=1_000_000_000).contains(&qty) {
         return Err("quantity is out of range".into());
     }
     let (side, product, validity) = validate_common(request, uid, actid, exchange, trading_symbol)?;
-    let (price_type, price, trigger) = resolve_price(request, &side)?;
+    let (price_type, price, trigger) =
+        resolve_price(request, &side, effective_tick(tick_size, exchange))?;
 
     let remarks = unique_remark();
     Ok(json!({
@@ -322,6 +416,7 @@ pub fn build_margin_payload(
     exchange: &str,
     trading_symbol: &str,
     lot_size: i64,
+    tick_size: Option<Price>,
 ) -> Result<String, String> {
     if lot_size <= 0 {
         return Err("instrument lot size is invalid".into());
@@ -336,7 +431,8 @@ pub fn build_margin_payload(
         .ok_or_else(|| "quantity is out of range".to_string())?;
     let (side, product, _validity) =
         validate_common(request, uid, actid, exchange, trading_symbol)?;
-    let (price_type, price, trigger) = resolve_price(request, &side)?;
+    let (price_type, price, trigger) =
+        resolve_price(request, &side, effective_tick(tick_size, exchange))?;
     Ok(json!({
         "uid": uid,
         "actid": actid,
@@ -515,8 +611,16 @@ mod tests {
 
     #[test]
     fn payload_carries_side_quantity_and_price() {
-        let payload = build_payload(&request(), "FN1", "FN1", "NFO", "NIFTY01DEC26C25900", 65)
-            .expect("valid");
+        let payload = build_payload(
+            &request(),
+            "FN1",
+            "FN1",
+            "NFO",
+            "NIFTY01DEC26C25900",
+            65,
+            None,
+        )
+        .expect("valid");
         let value: Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(value["uid"], "FN1");
         assert_eq!(value["actid"], "FN1");
@@ -537,7 +641,7 @@ mod tests {
         let mut req = request();
         req.price_type = "MKT".into();
         req.price = Some("100.00".into());
-        let payload = build_payload(&req, "u", "a", "NFO", "X", 1).expect("protected market");
+        let payload = build_payload(&req, "u", "a", "NFO", "X", 1, None).expect("protected market");
         let value: Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(
             value["prctyp"], "LMT",
@@ -554,7 +658,7 @@ mod tests {
         req.price_type = "SL-L".into();
         req.price = Some("98.00".into());
         req.trigger_price = Some("99.00".into());
-        let payload = build_payload(&req, "u", "a", "NFO", "X", 1).unwrap();
+        let payload = build_payload(&req, "u", "a", "NFO", "X", 1, None).unwrap();
         let value: Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(value["prctyp"], "SL-L");
         assert_eq!(value["prc"], "98.00");
@@ -562,16 +666,16 @@ mod tests {
 
         req.price_type = "TSL".into();
         req.trail = Some("2.00".into());
-        let payload = build_payload(&req, "u", "a", "NFO", "X", 1).unwrap();
+        let payload = build_payload(&req, "u", "a", "NFO", "X", 1, None).unwrap();
         let value: Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(value["prctyp"], "SL-L");
         assert_eq!(value["trgprc"], "99.00");
 
         req.trail = None;
-        assert!(build_payload(&req, "u", "a", "NFO", "X", 1).is_err());
+        assert!(build_payload(&req, "u", "a", "NFO", "X", 1, None).is_err());
         req.trail = Some("2".into());
         req.trigger_price = None;
-        assert!(build_payload(&req, "u", "a", "NFO", "X", 1).is_err());
+        assert!(build_payload(&req, "u", "a", "NFO", "X", 1, None).is_err());
     }
 
     #[test]
@@ -595,14 +699,46 @@ mod tests {
         req.product = "M".into();
         req.price_type = "MKT".into();
         req.price = Some("77.20".into());
-        let payload = build_payload_for_qty(&req, "u", "a", "NFO", "NIFTY01DEC26P25500", 130)
+        let payload = build_payload_for_qty(&req, "u", "a", "NFO", "NIFTY01DEC26P25500", 130, None)
             .expect("square off");
         let value: Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(value["qty"], "130");
         assert_eq!(value["trantype"], "S");
         assert_eq!(value["prd"], "M");
         assert_eq!(value["prctyp"], "LMT");
-        assert_eq!(value["prc"], "76.43");
+        // 77.20 - 1% = 76.428; the NFO 0.05 tick floors a sell to 76.40.
+        assert_eq!(value["prc"], "76.40");
+    }
+
+    #[test]
+    fn protected_market_price_respects_the_instrument_tick() {
+        let mut req = request();
+        req.side = "S".into();
+        req.price_type = "MKT".into();
+        req.price = Some("73.16".into());
+
+        let tick = Price::parse("0.05").unwrap();
+        let payload =
+            build_payload_for_qty(&req, "u", "a", "NFO", "NIFTY01DEC26P25500", 65, Some(tick))
+                .unwrap();
+        let value: Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(value["prc"], "72.40");
+
+        req.side = "B".into();
+        let payload =
+            build_payload_for_qty(&req, "u", "a", "NFO", "NIFTY01DEC26P25500", 65, Some(tick))
+                .unwrap();
+        let value: Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(value["prc"], "73.90");
+
+        // A user LMT that is off-tick is snapped to the nearest tick.
+        req.price_type = "LMT".into();
+        req.price = Some("73.16".into());
+        let payload =
+            build_payload_for_qty(&req, "u", "a", "NFO", "NIFTY01DEC26P25500", 65, Some(tick))
+                .unwrap();
+        let value: Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(value["prc"], "73.15");
     }
 
     #[test]
@@ -610,7 +746,7 @@ mod tests {
         let mut req = request();
         req.price_type = "MKT".into();
         req.price = Some("100.00".into());
-        let payload = build_margin_payload(&req, "u", "a", "NFO", "X", 65).unwrap();
+        let payload = build_margin_payload(&req, "u", "a", "NFO", "X", 65, None).unwrap();
         let value: Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(value["qty"], "130");
         assert_eq!(value["prctyp"], "LMT");
@@ -651,24 +787,24 @@ mod tests {
 
     #[test]
     fn bad_tickets_are_rejected_before_the_wire() {
-        assert!(build_payload(&request(), "", "a", "NFO", "X", 1).is_err());
-        assert!(build_payload(&request(), "u", "a", "NFO", "X", 0).is_err());
+        assert!(build_payload(&request(), "", "a", "NFO", "X", 1, None).is_err());
+        assert!(build_payload(&request(), "u", "a", "NFO", "X", 0, None).is_err());
 
         let mut req = request();
         req.side = "X".into();
-        assert!(build_payload(&req, "u", "a", "NFO", "X", 1).is_err());
+        assert!(build_payload(&req, "u", "a", "NFO", "X", 1, None).is_err());
 
         let mut req = request();
         req.price = Some("0".into());
-        assert!(build_payload(&req, "u", "a", "NFO", "X", 1).is_err());
+        assert!(build_payload(&req, "u", "a", "NFO", "X", 1, None).is_err());
 
         let mut req = request();
         req.price = None;
-        assert!(build_payload(&req, "u", "a", "NFO", "X", 1).is_err());
+        assert!(build_payload(&req, "u", "a", "NFO", "X", 1, None).is_err());
 
         let mut req = request();
         req.lots = 0;
-        assert!(build_payload(&req, "u", "a", "NFO", "X", 65).is_err());
+        assert!(build_payload(&req, "u", "a", "NFO", "X", 65, None).is_err());
     }
 
     #[test]

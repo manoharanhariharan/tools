@@ -43,7 +43,9 @@ and average price, rejections show the broker's reason, and cancels are amber. P
 book live in a resizable bottom dock; right-click a live position to square it off with a protected
 market order. Square-off refreshes the session first and falls back to the position LTP shown in the
 table when the socket has not ticked that key yet, and it normalises a stale CNC product to NRML for
-F&amp;O rather than failing at the broker.
+F&amp;O rather than failing at the broker. Every generated price (protected market, SL trigger and
+limit) is aligned to the instrument's exchange tick, so the broker's
+`Price ... is not a multiple of tick size` rejection cannot happen.
 
 **Still pending:** holdings, product conversion and algo orders. The test suite never sends a real
 order.

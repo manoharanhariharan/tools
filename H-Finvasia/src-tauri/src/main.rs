@@ -961,13 +961,17 @@ async fn margin_required(
     }
     let shared = state.inner().clone();
     let session = ensure_session(&shared).await?;
-    let (instrument, exchange) = {
+    let (instrument, exchange, tick) = {
         let market = shared.market.lock().unwrap();
         let instrument = market
             .instrument(&request.key)
             .ok_or_else(|| format!("instrument {} is not in the master", request.key))?;
         let key = SymbolKey::parse(&request.key).map_err(|e| e.to_string())?;
-        (instrument, key.exchange().to_string())
+        (
+            instrument,
+            key.exchange().to_string(),
+            market.tick_size(&request.key),
+        )
     };
     let payload = orders::build_margin_payload(
         &request,
@@ -976,6 +980,7 @@ async fn margin_required(
         &exchange,
         &instrument.trading_symbol,
         instrument.lot_size,
+        tick,
     )?;
     orders::margin(&shared.rest, &session.token, &payload).await
 }
@@ -1013,13 +1018,17 @@ async fn place_order(
         .clone()
         .ok_or_else(|| "no active session; connect to the venue first".to_string())?;
 
-    let (instrument, exchange) = {
+    let (instrument, exchange, tick) = {
         let market = shared.market.lock().unwrap();
         let instrument = market
             .instrument(&request.key)
             .ok_or_else(|| format!("instrument {} is not in the master", request.key))?;
         let key = SymbolKey::parse(&request.key).map_err(|e| e.to_string())?;
-        (instrument, key.exchange().to_string())
+        (
+            instrument,
+            key.exchange().to_string(),
+            market.tick_size(&request.key),
+        )
     };
 
     if orders::is_derivative(
@@ -1038,6 +1047,7 @@ async fn place_order(
         &exchange,
         &instrument.trading_symbol,
         instrument.lot_size,
+        tick,
     )?;
 
     let result = orders::submit(&shared.rest, &session.token, &payload).await?;
@@ -1105,12 +1115,13 @@ async fn square_off(
         return Err("square-off is allowed only on the live feed".into());
     }
     let session = ensure_session(&shared).await?;
-    let (instrument, exchange, ltp) = {
+    let (instrument, exchange, ltp, tick) = {
         let market = shared.market.lock().unwrap();
         let instrument = market
             .instrument(&request.key)
             .ok_or_else(|| format!("instrument {} is not in the master", request.key))?;
         let key = SymbolKey::parse(&request.key).map_err(|e| e.to_string())?;
+        let tick = market.tick_size(&request.key);
         let ltp = market
             .snapshot(&request.key)
             .and_then(|quote| quote.ltp)
@@ -1126,7 +1137,7 @@ async fn square_off(
             .ok_or_else(|| {
                 "no live quote for this position yet; try again after the next tick".to_string()
             })?;
-        (instrument, key.exchange().to_string(), ltp)
+        (instrument, key.exchange().to_string(), ltp, tick)
     };
     let derivative = orders::is_derivative(
         &exchange,
@@ -1162,6 +1173,7 @@ async fn square_off(
         &exchange,
         &instrument.trading_symbol,
         quantity,
+        tick,
     )?;
     let result = orders::submit(&shared.rest, &session.token, &payload).await?;
     shared

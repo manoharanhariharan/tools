@@ -18,7 +18,7 @@ pub use market::{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fv_core::SymbolKey;
+    use fv_core::{Price, SymbolKey};
     use fv_master::{Instrument, MemoryMaster, StrikeType};
     use std::sync::Arc;
     use std::time::Instant;
@@ -162,6 +162,22 @@ mod tests {
         md.remove_from_watch("NSE|1");
         assert!(md.snapshot("NSE|1").is_none(), "quote must be evicted");
         assert_eq!(md.watch_quotes().len(), 1);
+    }
+
+    #[test]
+    fn tick_size_comes_from_the_master_and_falls_back_to_none() {
+        let key = SymbolKey::parse("NFO|158614").unwrap();
+        let mut instrument = master().get(&key).expect("fixture option").clone();
+        instrument.tick_size = Some(Price::parse("0.05").unwrap());
+        let mut md = market();
+        md.set_master(Arc::new(
+            MemoryMaster::build(vec![instrument]).expect("master builds"),
+        ));
+        assert_eq!(
+            md.tick_size("NFO|158614").map(|tick| tick.format(2)),
+            Some("0.05".to_string())
+        );
+        assert!(md.tick_size("NSE|2885").is_none());
     }
 
     #[test]
