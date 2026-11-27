@@ -54,6 +54,8 @@
   let groups = $state<GroupSummary[]>([]);
   let notice = $state<string | null>(null);
 
+  const fieldId = (name: string) => `${name}-${chainId}`;
+
   // The underlying spot is only known when it is on the watch list. Without it
   // the ATM strike is used as the ITM/OTM reference, which is the same boundary.
   let spot = $state<QuoteDto | null>(null);
@@ -412,9 +414,9 @@
         }
       }}
     >
-      <label for="chain-underlying">Underlying</label>
+      <label for={fieldId("chain-underlying")}>Underlying</label>
       <input
-        id="chain-underlying"
+        id={fieldId("chain-underlying")}
         value={underlying}
         placeholder="Type e.g. NIFTY, RELIANCE"
         autocomplete="off"
@@ -440,8 +442,8 @@
 
     {#if committedUnderlying}
       <div class="field" style="width: 165px">
-        <label for="chain-expiry">Expiry</label>
-        <select id="chain-expiry" bind:value={expiry}>
+        <label for={fieldId("chain-expiry")}>Expiry</label>
+        <select id={fieldId("chain-expiry")} bind:value={expiry}>
           {#each expiries as date (date)}
             <option value={date}>{date}</option>
           {/each}
@@ -449,18 +451,18 @@
       </div>
 
       <div class="field" style="width: 125px">
-        <label for="chain-strikes">Far strikes</label>
-        <input id="chain-strikes" type="number" min="1" max="20" bind:value={strikes} />
+        <label for={fieldId("chain-strikes")}>Far strikes</label>
+        <input id={fieldId("chain-strikes")} type="number" min="1" max="20" bind:value={strikes} />
       </div>
 
       <div class="field" style="width: 130px">
-        <label for="chain-atm">ATM (optional)</label>
-        <input id="chain-atm" bind:value={atm} placeholder="e.g. 25800" />
+        <label for={fieldId("chain-atm")}>ATM (optional)</label>
+        <input id={fieldId("chain-atm")} bind:value={atm} placeholder="e.g. 25800" />
       </div>
 
       <div class="field" style="width: 130px">
-        <label for="chain-quick">Filter strike</label>
-        <input id="chain-quick" bind:value={quick} placeholder="258" />
+        <label for={fieldId("chain-quick")}>Filter strike</label>
+        <input id={fieldId("chain-quick")} bind:value={quick} placeholder="258" />
       </div>
 
       <button onclick={ondefaults}>Defaults</button>
