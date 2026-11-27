@@ -8,6 +8,7 @@
     type InstrumentDto,
     type QuoteDto,
   } from "../../api";
+  import InstrumentMenu from "../../components/InstrumentMenu.svelte";
   import {
     instrumentDetail,
     instrumentKind,
@@ -37,6 +38,10 @@
     ondelete: (name: string) => Promise<void>;
     onreorderkeys: (group: string, keys: string[]) => Promise<void>;
     onactive: (key: string, label: string) => void;
+    onbuy: (key: string) => void;
+    onsell: (key: string) => void;
+    onchain: (underlying: string) => void;
+    search?: (text: string, limit: number) => Promise<InstrumentDto[]>;
   }
   let {
     cards,
@@ -51,6 +56,10 @@
     ondelete,
     onreorderkeys,
     onactive,
+    onbuy,
+    onsell,
+    onchain,
+    search = api.search,
   }: Props = $props();
 
   let order = $state<string[]>([]);
@@ -69,6 +78,7 @@
   let dragName = $state<string | null>(null);
   let dropTarget = $state<string | null>(null);
   let dragMoved = false;
+  let rowMenu = $state<{ x: number; y: number; row: ContainerRowDto; group: string } | null>(null);
 
   let searchFor = $state<string | null>(null);
   let query = $state("");
@@ -128,7 +138,7 @@
     searchError = null;
     const timer = setTimeout(async () => {
       try {
-        const hits = await api.search(text, 20);
+        const hits = await search(text, 20);
         if (seq === searchSeq) results = hits;
       } catch (e) {
         if (seq === searchSeq) {
@@ -456,8 +466,12 @@
           type="button"
           title={`Add a stock, option or other instrument to ${card.name}`}
           aria-label={`Add instrument to ${card.name}`}
-          onclick={(event) => openSearch(card.name, event)}>+</button
+          onclick={(event) => openSearch(card.name, event)}
         >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 3v10M3 8h10" />
+          </svg>
+        </button>
         <button
           class="icon group-card-toggle"
           type="button"
@@ -465,7 +479,15 @@
           aria-expanded={!isCollapsed(card.name)}
           onclick={(event) => toggleCollapse(card.name, event)}
         >
-          {isCollapsed(card.name) ? "v" : "^"}
+          {#if isCollapsed(card.name)}
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 6l4 4 4-4" />
+            </svg>
+          {:else}
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 10l4-4 4 4" />
+            </svg>
+          {/if}
         </button>
         <button
           class="icon group-card-delete"
@@ -474,7 +496,9 @@
           aria-label={`Delete ${card.name}`}
           onclick={(event) => void deleteCard(card.name, event)}
         >
-          x
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4 4l8 8M12 4l-8 8" />
+          </svg>
         </button>
       </header>
 
@@ -563,6 +587,12 @@
                 title={row.name ?? row.symbol}
                 onmouseenter={() => arm(row)}
                 onclick={() => arm(row)}
+                oncontextmenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  arm(row);
+                  rowMenu = { x: event.clientX, y: event.clientY, row, group: card.name };
+                }}
                 onkeydown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
@@ -598,8 +628,12 @@
                   onclick={(event) => {
                     event.stopPropagation();
                     void removeInstrument(card.name, row);
-                  }}>x</button
+                  }}
                 >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M4 4l8 8M12 4l-8 8" />
+                  </svg>
+                </button>
               </div>
             {/each}
             {#if card.count > card.rows.length}
@@ -658,3 +692,22 @@
     </button>
   {/if}
 </div>
+
+{#if rowMenu}
+  <InstrumentMenu
+    x={rowMenu.x}
+    y={rowMenu.y}
+    instrumentKey={rowMenu.row.key}
+    symbol={rowMenu.row.symbol}
+    {onbuy}
+    {onsell}
+    {onchain}
+    extras={[
+      {
+        label: `Remove from ${rowMenu.group}`,
+        action: () => void removeInstrument(rowMenu!.group, rowMenu!.row),
+      },
+    ]}
+    onclose={() => (rowMenu = null)}
+  />
+{/if}

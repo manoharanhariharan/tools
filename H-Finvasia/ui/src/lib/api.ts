@@ -210,6 +210,8 @@ export interface OrderTargetDto {
   instrument_type: string;
   is_index: boolean;
   tradeable: boolean;
+  underlying: string | null;
+  has_fno: boolean;
   quote: QuoteDto | null;
 }
 

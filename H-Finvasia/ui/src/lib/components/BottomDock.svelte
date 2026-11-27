@@ -130,13 +130,21 @@
 >
   <div class="dock-bar">
     <button class="dock-toggle ghost" onclick={toggle} aria-expanded={open}>
-      <span class="dock-chevron">{open ? "v" : "^"}</span>
-      Positions &amp; order book
+      <span class="dock-chevron" aria-hidden="true">
+        {#if open}
+          <svg viewBox="0 0 16 16"><path d="M4 10l4-4 4 4" /></svg>
+        {:else}
+          <svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" /></svg>
+        {/if}
+      </span>
+      <span class="dock-title">Positions &amp; order book</span>
     </button>
     <span class="muted">positions support square-off</span>
     <span class="spacer"></span>
     {#if open}
       <span class="dock-hint">drag the top edge or the divider to resize</span>
+    {:else}
+      <button class="dock-expand ghost" onclick={toggle}>Open</button>
     {/if}
   </div>
 

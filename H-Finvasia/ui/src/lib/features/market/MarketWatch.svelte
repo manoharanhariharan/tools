@@ -2,7 +2,7 @@
   import { api, type InstrumentDto } from "../../api";
   import type { QuoteRow } from "../../state";
   import EmptyState from "../../components/EmptyState.svelte";
-  import ContextMenu from "../../components/ContextMenu.svelte";
+  import InstrumentMenu from "../../components/InstrumentMenu.svelte";
 
   interface Props {
     rows: QuoteRow[];
@@ -12,9 +12,11 @@
     onselect: (key: string) => void;
     onremove: (key: string) => void;
     onchain: (underlying: string) => void;
+    onbuy: (key: string) => void;
+    onsell: (key: string) => void;
     onactive: (key: string, label: string) => void;
   }
-  let { rows, selected, watched, onadd, onselect, onremove, onchain, onactive }: Props =
+  let { rows, selected, watched, onadd, onselect, onremove, onchain, onbuy, onsell, onactive }: Props =
     $props();
 
   let menu = $state<{ x: number; y: number; row: QuoteRow } | null>(null);
@@ -207,22 +209,15 @@
   {/if}
 
   {#if menu}
-    <ContextMenu
+    <InstrumentMenu
       x={menu.x}
       y={menu.y}
-      items={[
-        {
-          label:
-            menu.row.hasFno && menu.row.underlying
-              ? `Open option chain (${menu.row.underlying})`
-              : "No F&O for this instrument",
-          disabled: !(menu.row.hasFno && menu.row.underlying),
-          action: () => {
-            if (menu?.row.underlying) onchain(menu.row.underlying);
-          },
-        },
-        { label: "Remove from watch", action: () => onremove(menu!.row.key) },
-      ]}
+      instrumentKey={menu.row.key}
+      symbol={menu.row.symbol}
+      {onbuy}
+      {onsell}
+      {onchain}
+      extras={[{ label: "Remove from watch", action: () => onremove(menu!.row.key) }]}
       onclose={() => (menu = null)}
     />
   {/if}

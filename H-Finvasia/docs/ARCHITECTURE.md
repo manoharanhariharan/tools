@@ -138,6 +138,19 @@ the card order in `watch-groups.json` and rejects a list that is missing or dupl
 insertion/custom sorting is shared pure TypeScript (`ui/src/lib/features/stocks/cards.ts`) across both
 layouts; unknown custom keys fall back to insertion order rather than disappearing.
 
+The **Index** workspace reuses the same containers and card component, filtering each card's rows to
+`is_index`. Its list view shows the active group's index members and adds new ones through the same
+`container_add` path, so group renames/order are shared with Stocks.
+
+Every instrument row (Index, Stocks list/cards, Market watch, instrument search, option chain)
+right-clicks into `InstrumentMenu`, which resolves `order_target` once and emits the same items:
+F1/F2 when `tradeable`, the option chain when `has_fno`, then the caller's row actions.
+
+Positions and the order book are data-driven column tables
+(`ui/src/lib/table/columns.ts`). Column widths and hidden ids persist in `localStorage`; the header
+right-click menu toggles visibility and resets the layout. Drag listeners are attached to `window`
+only for the duration of a resize.
+
 Containers are named watch lists with a persisted `active` pointer; `watch_add`/`watch_remove` write
 the live list back into the active container, keeping the sidebar count and the watch list in sync.
 The table view uses that active watch list, but the feed subscribes to `MarketData::set_group_keys`

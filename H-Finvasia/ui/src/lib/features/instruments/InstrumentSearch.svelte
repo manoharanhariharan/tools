@@ -1,15 +1,17 @@
 ﻿<script lang="ts">
   import { api, type InstrumentDto } from "../../api";
   import EmptyState from "../../components/EmptyState.svelte";
-  import ContextMenu from "../../components/ContextMenu.svelte";
+  import InstrumentMenu from "../../components/InstrumentMenu.svelte";
 
   interface Props {
     watched: string[];
     onadd: (key: string) => void;
     onchain: (underlying: string) => void;
+    onbuy: (key: string) => void;
+    onsell: (key: string) => void;
     onactive: (key: string, label: string) => void;
   }
-  let { watched, onadd, onchain, onactive }: Props = $props();
+  let { watched, onadd, onchain, onbuy, onsell, onactive }: Props = $props();
 
   let menu = $state<{ x: number; y: number; row: InstrumentDto } | null>(null);
 
@@ -124,25 +126,19 @@
   {/if}
 
   {#if menu}
-    <ContextMenu
+    <InstrumentMenu
       x={menu.x}
       y={menu.y}
-      items={[
-        {
-          label: menu.row.underlying
-            ? `Open option chain (${menu.row.underlying})`
-            : "Open option chain",
-          disabled: !menu.row.has_fno,
-          action: () => {
-            if (menu?.row.underlying) onchain(menu.row.underlying);
-          },
-        },
+      instrumentKey={menu.row.key}
+      symbol={menu.row.trading_symbol}
+      {onbuy}
+      {onsell}
+      {onchain}
+      extras={[
         {
           label: watched.includes(menu.row.key) ? "Already watched" : "Add to watch",
           disabled: watched.includes(menu.row.key),
-          action: () => {
-            if (menu) onadd(menu.row.key);
-          },
+          action: () => onadd(menu!.row.key),
         },
       ]}
       onclose={() => (menu = null)}

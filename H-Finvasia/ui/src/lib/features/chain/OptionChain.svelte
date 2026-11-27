@@ -667,6 +667,18 @@
       y={menu.y}
       items={[
         {
+          label: `F1 — Buy ${menu.label}`,
+          action: () => {
+            if (menu) onorder(menu.key, "B");
+          },
+        },
+        {
+          label: `F2 — Sell ${menu.label}`,
+          action: () => {
+            if (menu) onorder(menu.key, "S");
+          },
+        },
+        {
           label: `Add ${menu.label} to card`,
           children: groups.map((group) => ({
             label: `${group.name} (${group.count})`,

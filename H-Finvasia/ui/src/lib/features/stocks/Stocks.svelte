@@ -17,7 +17,7 @@
     type StocksView,
   } from "../../layoutPrefs";
   import EmptyState from "../../components/EmptyState.svelte";
-  import ContextMenu from "../../components/ContextMenu.svelte";
+  import InstrumentMenu from "../../components/InstrumentMenu.svelte";
   import GroupCards from "./GroupCards.svelte";
   import { sortInstrumentRows } from "./cards";
 
@@ -26,9 +26,11 @@
     onadd: (key: string) => void;
     onremove: (key: string) => void;
     onchain: (underlying: string) => void;
+    onbuy: (key: string) => void;
+    onsell: (key: string) => void;
     onactive: (key: string, label: string) => void;
   }
-  let { watched, onadd, onremove, onchain, onactive }: Props = $props();
+  let { watched, onadd, onremove, onchain, onbuy, onsell, onactive }: Props = $props();
 
   let rows = $state<StockRowDto[]>([]);
   let containers = $state<ContainersView>({ active: null, groups: [] });
@@ -467,6 +469,9 @@
       ondelete={cardDelete}
       onreorderkeys={cardReorderKeys}
       {onactive}
+      {onbuy}
+      {onsell}
+      {onchain}
     />
   {:else}
   <div class="stocks-body">
@@ -687,24 +692,18 @@
   {/if}
 
   {#if menu}
-    <ContextMenu
+    <InstrumentMenu
       x={menu.x}
       y={menu.y}
-      items={[
-        {
-          label: menu.row.underlying
-            ? `Open option chain (${menu.row.underlying})`
-            : "Open option chain",
-          disabled: !menu.row.has_fno,
-          action: () => {
-            if (menu?.row.underlying) onchain(menu.row.underlying);
-          },
-        },
+      instrumentKey={menu.row.key}
+      symbol={menu.row.symbol}
+      onbuy={onbuy}
+      onsell={onsell}
+      onchain={onchain}
+      extras={[
         {
           label: "Remove from group",
-          action: () => {
-            if (menu) onremove(menu.row.key);
-          },
+          action: () => onremove(menu!.row.key),
         },
       ]}
       onclose={() => (menu = null)}

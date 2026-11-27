@@ -23,6 +23,8 @@ function target(ask: string | null, bid: string | null, ltp: string | null): Ord
     instrument_type: "CE",
     is_index: false,
     tradeable: true,
+    underlying: "NIFTY",
+    has_fno: true,
     quote: {
       key: "NFO|51001",
       trading_symbol: "NIFTY01DEC26C25900",

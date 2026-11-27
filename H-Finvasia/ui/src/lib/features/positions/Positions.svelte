@@ -4,6 +4,28 @@
   import EmptyState from "../../components/EmptyState.svelte";
   import ContextMenu from "../../components/ContextMenu.svelte";
   import { livePosition, liveTotals, positionKey } from "./live";
+  import { columnResize } from "../../table/resize";
+  import {
+    loadColumnLayout,
+    saveColumnLayout,
+    type ColumnMeta,
+  } from "../../table/columns";
+
+  const COLUMN_KEY = "fv.positions.columns";
+  const COLUMNS: ColumnMeta[] = [
+    { id: "exch", label: "Exch", width: 48, min: 38 },
+    { id: "symbol", label: "Symbol", width: 152, min: 90 },
+    { id: "product", label: "Product", width: 76, min: 56 },
+    { id: "type", label: "Type", width: 72, min: 54 },
+    { id: "lot", label: "Lot", width: 48, min: 38 },
+    { id: "netqty", label: "NetQty", width: 66, min: 48 },
+    { id: "avg", label: "Avg", width: 70, min: 52 },
+    { id: "ltp", label: "LTP", width: 70, min: 52 },
+    { id: "mtm", label: "MToM", width: 76, min: 56 },
+    { id: "pnl", label: "P&L", width: 76, min: 56 },
+    { id: "buyval", label: "BuyVal", width: 86, min: 62 },
+    { id: "sellval", label: "SellVal", width: 86, min: 62 },
+  ];
 
   interface Props {
     embedded?: boolean;
@@ -18,6 +40,135 @@
   let busy = $state(false);
   let menu = $state<{ x: number; y: number; position: PositionDto } | null>(null);
   let liveQuotes = $state<Map<string, QuoteDto>>(new Map());
+  let columnLayout = $state(loadColumnLayout(COLUMN_KEY, COLUMNS));
+  let columnMenu = $state<{ x: number; y: number } | null>(null);
+
+  const visibleColumns = $derived(
+    COLUMNS.filter((column) => !columnLayout.hidden.includes(column.id)),
+  );
+  const totalWidth = $derived(
+    visibleColumns.reduce(
+      (total, column) => total + (columnLayout.widths[column.id] ?? column.width),
+      0,
+    ),
+  );
+
+  function columnWidth(id: string): number {
+    return columnLayout.widths[id] ?? COLUMNS.find((column) => column.id === id)?.width ?? 80;
+  }
+
+  const LEFT_COLUMNS = new Set(["exch", "symbol", "product", "type"]);
+
+  function headerClass(id: string): string {
+    return LEFT_COLUMNS.has(id) ? "l" : "";
+  }
+
+  function setColumnWidth(id: string, width: number) {
+    columnLayout = {
+      ...columnLayout,
+      widths: { ...columnLayout.widths, [id]: Math.round(width) },
+    };
+  }
+
+  function persistColumns() {
+    saveColumnLayout(COLUMN_KEY, columnLayout);
+  }
+
+  function toggleColumn(id: string) {
+    const hidden = columnLayout.hidden.includes(id)
+      ? columnLayout.hidden.filter((item) => item !== id)
+      : [...columnLayout.hidden, id];
+    if (hidden.length >= COLUMNS.length) return;
+    columnLayout = { ...columnLayout, hidden };
+    persistColumns();
+  }
+
+  function resetColumns() {
+    columnLayout = {
+      widths: Object.fromEntries(COLUMNS.map((column) => [column.id, column.width])),
+      hidden: [],
+    };
+    persistColumns();
+  }
+
+  function positionCellClass(id: string, position: PositionDto): string {
+    switch (id) {
+      case "exch":
+        return "l dim";
+      case "symbol":
+        return "l mono";
+      case "product":
+        return "l";
+      case "type":
+        return "l dim";
+      case "lot":
+        return "num mono dim";
+      case "netqty":
+        return `num mono ${position.net_qty >= 0 ? "up" : "down"}`;
+      case "mtm":
+      case "pnl":
+        return `num mono ${Number(position[id] ?? 0) >= 0 ? "up" : "down"}`;
+      case "buyval":
+      case "sellval":
+        return "num mono dim";
+      default:
+        return "num mono";
+    }
+  }
+
+  function positionCellText(id: string, position: PositionDto): string | number {
+    switch (id) {
+      case "exch":
+        return position.exchange;
+      case "symbol":
+        return position.symbol;
+      case "product":
+        return position.product_alias || position.product;
+      case "type":
+        return position.instrument;
+      case "lot":
+        return position.lot_size;
+      case "netqty":
+        return position.net_qty;
+      case "avg":
+        return position.net_avg ?? "-";
+      case "ltp":
+        return position.ltp ?? "-";
+      case "mtm":
+        return position.mtm ?? "-";
+      case "pnl":
+        return position.pnl ?? "-";
+      case "buyval":
+        return position.buy_value ?? "-";
+      case "sellval":
+        return position.sell_value ?? "-";
+      default:
+        return "-";
+    }
+  }
+
+  function positionFooterClass(id: string, first: boolean): string {
+    if (first) return "l";
+    if (id === "mtm") return `num mono ${Number(totals.mtm) >= 0 ? "up" : "down"}`;
+    if (id === "pnl") return `num mono ${Number(totals.pnl) >= 0 ? "up" : "down"}`;
+    return "num mono";
+  }
+
+  function positionFooterText(id: string, first: boolean): string {
+    if (first) return "Totals";
+    switch (id) {
+      case "mtm":
+        return totals.mtm;
+      case "pnl":
+        return totals.pnl;
+      case "buyval":
+        return view?.totals.buy_value ?? "-";
+      case "sellval":
+        return view?.totals.sell_value ?? "-";
+      default:
+        return "-";
+    }
+  }
 
   const displayPositions = $derived(
     (view?.positions ?? []).map((position) =>
@@ -151,21 +302,37 @@
     <EmptyState title="No open positions" hint="Positions appear here once an order is executed." />
   {:else if view}
     <div class="grid-wrap">
-      <table class="grid">
+      <table class="grid column-table" style="width: {totalWidth}px">
+        <colgroup>
+          {#each visibleColumns as column (column.id)}
+            <col style="width: {columnWidth(column.id)}px" />
+          {/each}
+        </colgroup>
         <thead>
           <tr>
-            <th class="l">Exch</th>
-            <th class="l">Symbol</th>
-            <th class="l">Product</th>
-            <th class="l">Type</th>
-            <th>Lot</th>
-            <th>NetQty</th>
-            <th>Avg</th>
-            <th>LTP</th>
-            <th>MToM</th>
-            <th>P&amp;L</th>
-            <th>BuyVal</th>
-            <th>SellVal</th>
+            {#each visibleColumns as column (column.id)}
+              <th
+                class={headerClass(column.id)}
+                title="Drag the edge to resize; right-click to show or hide columns"
+                oncontextmenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  columnMenu = { x: event.clientX, y: event.clientY };
+                }}
+              >
+                {column.label}
+                <span
+                  class="col-resize"
+                  use:columnResize={{
+                    width: columnWidth(column.id),
+                    min: column.min,
+                    max: column.max,
+                    onresize: (width) => setColumnWidth(column.id, width),
+                    onend: persistColumns,
+                  }}
+                ></span>
+              </th>
+            {/each}
           </tr>
         </thead>
         <tbody>
@@ -178,31 +345,21 @@
                 menu = { x: event.clientX, y: event.clientY, position };
               }}
             >
-              <td class="l dim">{position.exchange}</td>
-              <td class="l mono">{position.symbol}</td>
-              <td class="l">{position.product_alias || position.product}</td>
-              <td class="l dim">{position.instrument}</td>
-              <td class="num mono dim">{position.lot_size}</td>
-              <td class="num mono {position.net_qty >= 0 ? "up" : "down"}">{position.net_qty}</td>
-              <td class="num mono">{position.net_avg ?? "-"}</td>
-              <td class="num mono">{position.ltp ?? "-"}</td>
-              <td class="num mono {Number(position.mtm ?? 0) >= 0 ? "up" : "down"}">{position.mtm ?? "-"}</td>
-              <td class="num mono {Number(position.pnl ?? 0) >= 0 ? "up" : "down"}">{position.pnl ?? "-"}</td>
-              <td class="num mono dim">{position.buy_value ?? "-"}</td>
-              <td class="num mono dim">{position.sell_value ?? "-"}</td>
+              {#each visibleColumns as column (column.id)}
+                <td class={positionCellClass(column.id, position)}>
+                  {positionCellText(column.id, position)}
+                </td>
+              {/each}
             </tr>
           {/each}
         </tbody>
         <tfoot>
           <tr>
-            <td class="l" colspan="5">Totals</td>
-            <td class="num mono">-</td>
-            <td class="num mono">-</td>
-            <td class="num mono">-</td>
-            <td class="num mono {Number(totals.mtm) >= 0 ? "up" : "down"}">{totals.mtm}</td>
-            <td class="num mono {Number(totals.pnl) >= 0 ? "up" : "down"}">{totals.pnl}</td>
-            <td class="num mono">{view.totals.buy_value}</td>
-            <td class="num mono">{view.totals.sell_value}</td>
+            {#each visibleColumns as column, positionIndex (column.id)}
+              <td class={positionFooterClass(column.id, positionIndex === 0)}>
+                {positionFooterText(column.id, positionIndex === 0)}
+              </td>
+            {/each}
           </tr>
         </tfoot>
       </table>
@@ -214,6 +371,21 @@
       Right-click a live position to square it off with a protected market order. Product conversion
       and margin updates are not wired yet.
     </p>
+  {/if}
+
+  {#if columnMenu}
+    <ContextMenu
+      x={columnMenu.x}
+      y={columnMenu.y}
+      items={[
+        ...COLUMNS.map((column) => ({
+          label: `${columnLayout.hidden.includes(column.id) ? "○" : "●"} ${column.label}`,
+          action: () => toggleColumn(column.id),
+        })),
+        { label: "Reset columns", action: resetColumns },
+      ]}
+      onclose={() => (columnMenu = null)}
+    />
   {/if}
 
   {#if menu}

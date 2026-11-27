@@ -119,6 +119,11 @@ the list view's watch list; switching it changes which list is shown without dro
 cards' subscriptions. The combined group/watch/chain set stays within the 100-instrument budget, and
 anything beyond it is reported rather than silently dropped.
 
+**Index** mirrors the Stocks workspace: **List** shows the index instruments in the selected group and
+**Cards** uses the same group cards, filtered to indices. Both layouts share rename, create, delete,
+drag-reorder, per-card sort/collapse, add/remove and the unified right-click menu. The list toolbar
+switches groups, filters the current list and adds an index to the active group.
+
 **Market watch** shows the union of the active watch list and every Stocks group member, so indices
 and instruments living only in cards still appear there. Its **x** removes an instrument from every
 owner (active list and groups); the per-card **x** removes only from that card. The full-master search
@@ -142,11 +147,13 @@ local master but is not streamed.
 book side by side. Position LTP, MTM and total P&L are recomputed from the websocket; the order book
 refreshes when an order update arrives on the socket. Drag its top edge to
 resize the height, drag the middle divider to resize the columns, and collapse it back to a footer
-bar. It is collapsed by default so no account REST calls happen until you open it; refreshes are
-manual, never on a timer.
+bar. Inside either table, drag a column edge to resize it and right-click a header to show/hide
+columns or reset the layout; both are stored locally per table. It is collapsed by default so no
+account REST calls happen until you open it; refreshes are manual, never on a timer.
 
-**F1 / F2** buy and sell the last hovered or clicked row (or option leg) from Stocks, Market watch
-or the option chain. Chain arming is side-aware: a call cell arms its CE and a put cell arms its PE.
+**F1 / F2** buy and sell the last hovered or clicked row (or option leg) from Index, Stocks, Market
+watch, instrument search or the option chain. The same actions are available from every instrument
+row's right-click menu. Chain arming is side-aware: a call cell arms its CE and a put cell arms its PE.
 The card view highlights the armed row. If the instrument is not tradeable the app explains instead
 of opening a ticket.
 
@@ -167,9 +174,11 @@ on this machine and applied before the next first paint.
    Search is relaxed and multi-term: `nifty 25800`, `25800 nifty`, `NIFTY 26NOV 25800` all find the
    25800-strike NIFTY contracts. Adding an instrument while **live** subscribes it on the open socket
    immediately - no reconnect, no manual refresh.
-4. **Right-click any row** (Index, Stocks, Market watch) for actions.
-   When the instrument's underlying has derivatives the menu offers **Open option chain
-   (UNDERLYING)**; choosing it switches to the Option chain tab, selects that underlying's nearest
+4. **Right-click any instrument row** (Index, Stocks, Market watch, instrument search, option chain)
+   for the same actions everywhere: **F1 - Buy**, **F2 - Sell** when the instrument is tradeable, and
+   **Open option chain (UNDERLYING)** when its underlying has derivatives. Row-specific actions such as
+   remove-from-group or add-to-card are appended below. Choosing the chain switches to the Option chain
+   tab, selects that underlying's nearest
    expiry, and loads the chain centred on the watched spot (or the entered ATM).
 5. **Buy / sell** from the chain: hover a CE/PE row and press **B** or **S**, or hover any tradeable
    row and press **F1** (buy) / **F2** (sell). The ticket is prefilled from your saved defaults and

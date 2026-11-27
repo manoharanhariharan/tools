@@ -1346,6 +1346,21 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
   `RUST_LOG=info` to quieten it; the default verbose desktop-crate logging is temporary until order
   flow is verified.
 
+### Phase 2w - unified instrument menu, index workspace and resizable books (implemented)
+
+- Every instrument row (Index, Stocks list, Stocks cards, Market watch, instrument search, option
+  chain) now right-clicks into one menu: **F1 - Buy**, **F2 - Sell** when tradeable, **Open option
+  chain (underlying)** when F&O exists, then row-specific actions. A non-tradeable index shows an
+  explicit "not tradeable" item instead of a broken action.
+- `order_target` now carries `underlying` and `has_fno`, so the menu is driven by the instrument
+  master rather than per-tab guesses.
+- The **Index** tab now matches Stocks: List/Cards toggle, group selector, filter, add-index search,
+  sort, and the same group-card actions (rename/delete/create/drag/sort/collapse/add/remove).
+- Positions and order-book tables have draggable column widths and a right-click header menu to
+  show/hide columns or reset. Widths and visibility persist in `localStorage`.
+- Group-card add/collapse/delete and row-remove icons are SVG, aligned in fixed-size buttons, with
+  bolder labels. The bottom dock bar uses the same SVG chevron and no longer clips its content.
+
 ---
 
 ### Provenance of this document

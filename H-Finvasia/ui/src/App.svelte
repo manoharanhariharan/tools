@@ -593,7 +593,11 @@
     {#if page === "index"}
       <IndexWatch
         onadd={addInstrument}
+        onremove={removeInstrument}
         onchain={openChain}
+        onbuy={(key) => void openOrder(key, "B")}
+        onsell={(key) => void openOrder(key, "S")}
+        onactive={rememberActive}
         refreshToken={watchedKeys.length}
       />
     {:else if page === "stocks"}
@@ -602,6 +606,8 @@
         onadd={addInstrument}
         onremove={removeInstrument}
         onchain={openChain}
+        onbuy={(key) => void openOrder(key, "B")}
+        onsell={(key) => void openOrder(key, "S")}
         onactive={rememberActive}
       />
     {:else if page === "market"}
@@ -614,6 +620,8 @@
           onselect={(key) => (selected = key)}
           onremove={removeInstrumentEverywhere}
           onchain={openChain}
+          onbuy={(key) => void openOrder(key, "B")}
+          onsell={(key) => void openOrder(key, "S")}
           onactive={rememberActive}
         />
         <SnapQuote quote={selectedQuote} instrument={instrumentMeta} onremove={removeInstrument} />

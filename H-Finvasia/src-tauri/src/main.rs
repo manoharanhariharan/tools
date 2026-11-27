@@ -922,6 +922,8 @@ struct OrderTargetDto {
     instrument_type: String,
     is_index: bool,
     tradeable: bool,
+    underlying: Option<String>,
+    has_fno: bool,
     quote: Option<QuoteDto>,
 }
 
@@ -947,6 +949,8 @@ fn order_target(state: State<'_, Arc<AppState>>, key: String) -> Option<OrderTar
         instrument_type: instrument.instrument_type,
         is_index: instrument.is_index,
         tradeable,
+        underlying: instrument.underlying,
+        has_fno: instrument.has_fno,
         quote: market.snapshot(&parsed.as_wire()),
     })
 }
