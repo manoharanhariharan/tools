@@ -45,9 +45,27 @@
   let notice = $state<string | null>(null);
   let busy = $state(false);
 
-  /// Set by the row context menu; OptionChain consumes it and loads.
-  let chainRequest = $state<{ underlying: string; nonce: number } | null>(null);
+  interface ChainTab {
+    id: string;
+    title: string;
+    pinned: boolean;
+    loaded: boolean;
+    pending: { underlying: string; nonce: number } | null;
+  }
+
+  let chainSeq = 0;
   let chainNonce = 0;
+  function createChainTab(
+    pending: { underlying: string; nonce: number } | null = null,
+    title = "New chain",
+  ): ChainTab {
+    chainSeq += 1;
+    return { id: `chain-${chainSeq}`, title, pinned: false, loaded: false, pending };
+  }
+
+  const firstChain = createChainTab();
+  let chainTabs = $state<ChainTab[]>([firstChain]);
+  let activeChainId = $state(firstChain.id);
   /// Last row/leg under the pointer; F1/F2 act on it.
   let activeKey = $state<string | null>(null);
   let orderDefaults = $state<OrderDefaults>({
@@ -222,12 +240,64 @@
     void openOrder(activeKey, side);
   }
 
-  /// Open the option chain for an instrument whose underlying has derivatives.
+  function updateChainTab(id: string, patch: Partial<ChainTab>) {
+    chainTabs = chainTabs.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab));
+  }
+
+  function newChainTab() {
+    const existing = chainTabs.find((tab) => !tab.loaded && !tab.pinned && !tab.pending);
+    if (existing) {
+      activeChainId = existing.id;
+      return existing;
+    }
+    const tab = createChainTab();
+    chainTabs = [...chainTabs, tab];
+    activeChainId = tab.id;
+    return tab;
+  }
+
+  /// Open the option chain for an instrument in a fresh/reusable chain tab.
   function openChain(underlying: string) {
     activeKey = null;
     chainNonce += 1;
-    chainRequest = { underlying, nonce: chainNonce };
+    let target = chainTabs.find((tab) => !tab.loaded && !tab.pinned && !tab.pending);
+    if (!target) {
+      target = createChainTab();
+      chainTabs = [...chainTabs, target];
+    }
+    updateChainTab(target.id, {
+      title: underlying,
+      pending: { underlying, nonce: chainNonce },
+    });
+    activeChainId = target.id;
     page = "chain";
+  }
+
+  function pinChain(id: string, info: { underlying: string; expiry: string }) {
+    updateChainTab(id, {
+      pinned: true,
+      loaded: true,
+      title: `${info.underlying} ${info.expiry}`,
+      pending: null,
+    });
+    // Pinned chain stays mounted; open a fresh tab for the next underlying.
+    const next = createChainTab();
+    chainTabs = [...chainTabs, next];
+    activeChainId = next.id;
+  }
+
+  function closeChainTab(id: string) {
+    void api.chainClose(id).catch(() => undefined);
+    if (chainTabs.length === 1) {
+      const replacement = createChainTab();
+      chainTabs = [replacement];
+      activeChainId = replacement.id;
+      return;
+    }
+    const index = chainTabs.findIndex((tab) => tab.id === id);
+    const next = chainTabs[index + 1] ?? chainTabs[index - 1] ?? chainTabs[0];
+    chainTabs = chainTabs.filter((tab) => tab.id !== id);
+    if (activeChainId === id) activeChainId = next.id;
   }
 
   // Metadata for the selected scrip; cancelled if the selection changes.
@@ -447,14 +517,6 @@
         onchain={openChain}
         onactive={rememberActive}
       />
-    {:else if page === "chain"}
-      <OptionChain
-        pending={chainRequest}
-        onconsumed={() => (chainRequest = null)}
-        onorder={openOrder}
-        ondefaults={() => (showOrderDefaults = true)}
-        onactive={rememberActive}
-      />
     {:else if page === "market"}
       <div class="ws-split">
         <MarketWatch
@@ -480,6 +542,58 @@
         onappearance={() => (showTheme = true)}
       />
     {/if}
+
+    <div class="chain-workspace" class:hidden={page !== "chain"}>
+      <div class="chain-tabbar">
+        {#each chainTabs as tab (tab.id)}
+          <div class="chain-tab" class:active={tab.id === activeChainId} class:pinned={tab.pinned}>
+            <button
+              class="chain-tab-name"
+              type="button"
+              title={tab.pinned ? "Pinned chain" : "Working chain"}
+              onclick={() => (activeChainId = tab.id)}
+            >
+              {#if tab.pinned}<span class="chain-pin" aria-hidden="true">•</span>{/if}
+              {tab.title}
+            </button>
+            <button
+              class="chain-tab-close"
+              type="button"
+              title="Close chain tab"
+              aria-label={`Close ${tab.title}`}
+              onclick={() => closeChainTab(tab.id)}>x</button
+            >
+          </div>
+        {/each}
+        <button class="chain-tab-new" type="button" onclick={newChainTab}>+ New chain</button>
+        <span class="spacer"></span>
+        {#if chainTabs.some((tab) => tab.pinned)}
+          <span class="chain-hint">Pinned chains stay loaded; use + New chain for another underlying.</span>
+        {/if}
+      </div>
+
+      <div class="chain-views">
+        {#each chainTabs as tab (tab.id)}
+          <div class="chain-view" class:hidden={tab.id !== activeChainId}>
+            <OptionChain
+              chainId={tab.id}
+              pinned={tab.pinned}
+              pending={tab.pending}
+              onconsumed={() => updateChainTab(tab.id, { pending: null })}
+              onloaded={(info) =>
+                updateChainTab(tab.id, {
+                  loaded: true,
+                  title: tab.pinned ? tab.title : `${info.underlying} ${info.expiry}`,
+                })}
+              onpin={(info) => pinChain(tab.id, info)}
+              onorder={openOrder}
+              ondefaults={() => (showOrderDefaults = true)}
+              onactive={rememberActive}
+            />
+          </div>
+        {/each}
+      </div>
+    </div>
   </div>
 
   <BottomDock />

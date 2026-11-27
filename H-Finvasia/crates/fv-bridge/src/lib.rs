@@ -457,7 +457,7 @@ mod tests {
         let leg_b = SymbolKey::parse("NFO|101").unwrap();
 
         md.set_watch(vec![watched.clone()]);
-        let plan = md.set_chain(vec![leg_a.clone(), leg_b.clone()]);
+        let plan = md.set_chain("c1", vec![leg_a.clone(), leg_b.clone()]);
         assert_eq!(plan.subscribe, vec!["NFO|100", "NFO|101"]);
         assert!(plan.unsubscribe.is_empty());
         assert_eq!(
@@ -469,11 +469,31 @@ mod tests {
     }
 
     #[test]
+    fn pinned_chains_keep_independent_subscriptions() {
+        let mut md = market();
+        let a = SymbolKey::parse("NFO|100").unwrap();
+        let b = SymbolKey::parse("NFO|101").unwrap();
+        let c = SymbolKey::parse("NFO|102").unwrap();
+
+        md.set_chain("c1", vec![a.clone(), b.clone()]);
+        md.set_chain("c2", vec![c.clone()]);
+        assert_eq!(md.chain_len(), 3);
+        assert!(md.chain_contains("c1", &a));
+        assert!(md.chain_contains("c2", &c));
+        assert!(!md.chain_contains("c1", &c));
+
+        let plan = md.clear_chain("c1");
+        assert_eq!(plan.unsubscribe, vec!["NFO|100", "NFO|101"]);
+        assert_eq!(md.chain_len(), 1);
+        assert!(md.chain_contains("c2", &c));
+    }
+
+    #[test]
     fn overlapping_key_is_not_unsubscribed_by_one_group() {
         let mut md = market();
         let shared = SymbolKey::parse("NSE|1").unwrap();
         md.set_watch(vec![shared.clone()]);
-        md.set_chain(vec![shared.clone()]);
+        md.set_chain("c1", vec![shared.clone()]);
 
         // Dropping it from the watch list must keep the chain subscription.
         let plan = md.remove_from_watch("NSE|1");
@@ -481,7 +501,7 @@ mod tests {
         assert_eq!(md.chain_len(), 1);
 
         // Removing it from the chain now unsubscribes for real.
-        let plan = md.clear_chain();
+        let plan = md.clear_chain("c1");
         assert_eq!(plan.unsubscribe, vec!["NSE|1"]);
     }
 
@@ -490,7 +510,7 @@ mod tests {
         let mut md = market();
         md.set_master(master());
         let key = SymbolKey::parse("NFO|158614").unwrap();
-        md.set_chain(vec![key.clone()]);
+        md.set_chain("c1", vec![key.clone()]);
         apply(
             &mut md,
             br#"{"t":"tk","e":"NFO","tk":"158614","lp":"12.35","bp1":"12.30","sp1":"12.40"}"#,
@@ -500,7 +520,7 @@ mod tests {
         let _ = instrument;
         let master = md.master().unwrap();
         let raw = master.get(&key).unwrap();
-        let row = md.chain_row(raw);
+        let row = md.chain_row(raw, md.chain_contains("c1", &key));
         assert_eq!(row.key, "NFO|158614");
         assert_eq!(row.strike, "1680.00");
         assert_eq!(row.strike_type, "PE");
@@ -515,13 +535,9 @@ mod tests {
         let mut md = market();
         md.set_master(master());
         let key = SymbolKey::parse("NFO|158614").unwrap();
-        md.set_chain(vec![key]);
-        let raw = md
-            .master()
-            .unwrap()
-            .get(&SymbolKey::parse("NFO|158614").unwrap())
-            .unwrap();
-        let row = md.chain_row(raw);
+        md.set_chain("c1", vec![key.clone()]);
+        let raw = md.master().unwrap().get(&key).unwrap();
+        let row = md.chain_row(raw, md.chain_contains("c1", &key));
         assert!(row.quote.is_none(), "no quote yet");
         assert_eq!(row.symbol, "ZYDUSLIFE23FEB27P1680");
     }
@@ -585,7 +601,7 @@ mod tests {
         let chain: Vec<SymbolKey> = (0..20)
             .map(|i| SymbolKey::parse(&format!("NFO|{i}")).unwrap())
             .collect();
-        let plan = md.set_chain(chain);
+        let plan = md.set_chain("c1", chain);
 
         assert!(plan.truncated, "overflow must be reported");
         assert_eq!(plan.rejected.len(), 15);
@@ -599,7 +615,7 @@ mod tests {
         let chain: Vec<SymbolKey> = (0..10)
             .map(|i| SymbolKey::parse(&format!("NFO|{i}")).unwrap())
             .collect();
-        md.set_chain(chain);
+        md.set_chain("c1", chain);
 
         let watch: Vec<SymbolKey> = (0..96)
             .map(|i| SymbolKey::parse(&format!("NSE|{i}")).unwrap())

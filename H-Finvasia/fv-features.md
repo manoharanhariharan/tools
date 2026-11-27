@@ -1293,6 +1293,18 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
 - `release.ps1` now sets `SOURCE_DATE_EPOCH` before building, so the binary and artifact tag use the
   current day instead of a stale compile date.
 
+### Phase 2t - pinned option-chain tabs and order wire fix (implemented)
+
+- A loaded option chain exposes **Pin**. Pinning keeps that chain mounted as its own chain tab and
+  opens a fresh tab for the next underlying. Pinned tabs stay subscribed across workspace switches;
+  closing a tab releases its legs.
+- `MarketData` now keeps a `BTreeMap<chainId, keys>` so several chains can be subscribed at once.
+  `chain_load`/`chain_close` are chain-tab scoped; the chain union participates in the same 100
+  instrument budget as the watch list and groups.
+- Fixed live order submission: `jData` is sent as raw JSON with only embedded `&` escaped. Fully
+  percent-encoding the JSON was rejected by the venue as `jData is not valid json object`.
+- Tests cover independent pinned-chain subscriptions and the raw-JSON/`&`-escaping wire body.
+
 ---
 
 ### Provenance of this document

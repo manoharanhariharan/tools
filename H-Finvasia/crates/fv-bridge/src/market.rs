@@ -13,7 +13,7 @@ use fv_core::{Price, Quote, SymbolKey};
 use fv_engine::{Coalescer, DeltaBatch};
 use fv_feed::{Applied, Frame, QuoteBook, WatchSet};
 use fv_master::{Instrument, MemoryMaster};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -78,8 +78,9 @@ pub struct MarketData {
     /// Every instrument stored in any Stocks group. Subscribed in addition to
     /// the active watch list so all group cards stream, not just the active one.
     groups: BTreeSet<SymbolKey>,
-    /// Option-chain subscriptions, tracked separately from the watch list.
-    chain: BTreeSet<SymbolKey>,
+    /// Option-chain subscriptions keyed by chain tab id, tracked separately
+    /// from the watch list. Multiple pinned chains can coexist.
+    chains: BTreeMap<String, BTreeSet<SymbolKey>>,
     chain_limit: usize,
     master: Option<Arc<MemoryMaster>>,
     source: SourceKind,
@@ -100,7 +101,7 @@ impl MarketData {
             coalescer: Coalescer::new(30, DEFAULT_MAX_PER_FRAME),
             watch: WatchSet::new(DEFAULT_WATCH_LIMIT),
             groups: BTreeSet::new(),
-            chain: BTreeSet::new(),
+            chains: BTreeMap::new(),
             chain_limit: DEFAULT_CHAIN_LIMIT,
             master: None,
             source: SourceKind::Idle,
@@ -427,13 +428,19 @@ impl MarketData {
         self.watch
             .active()
             .union(&self.groups)
-            .chain(self.chain.iter())
+            .chain(self.chains.values().flat_map(|group| group.iter()))
             .cloned()
             .collect::<BTreeSet<_>>()
     }
 
     fn is_live(&self, key: &SymbolKey) -> bool {
-        self.watch.active().contains(key) || self.groups.contains(key) || self.chain.contains(key)
+        self.watch.active().contains(key)
+            || self.groups.contains(key)
+            || self.chains.values().any(|group| group.contains(key))
+    }
+
+    fn chain_key_count(&self) -> usize {
+        self.chains.values().map(BTreeSet::len).sum()
     }
 
     /// Sorted unique keys the live feed must subscribe to right now.
@@ -463,14 +470,24 @@ impl MarketData {
     /// keys are reported in the plan rather than silently growing the socket.
     pub fn set_group_keys(&mut self, keys: Vec<SymbolKey>) -> PlanDto {
         let before = self.desired_keys();
-        let base = self.watch.active().union(&self.chain).count();
+        let chain_keys: BTreeSet<SymbolKey> = self
+            .chains
+            .values()
+            .flat_map(|group| group.iter().cloned())
+            .collect();
+        let base = self
+            .watch
+            .active()
+            .union(&self.groups)
+            .chain(chain_keys.iter())
+            .count();
         let available = MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(base);
 
         let mut accepted: BTreeSet<SymbolKey> = BTreeSet::new();
         let mut rejected: Vec<SymbolKey> = Vec::new();
         for key in keys {
             if self.watch.active().contains(&key)
-                || self.chain.contains(&key)
+                || chain_keys.contains(&key)
                 || accepted.len() < available
             {
                 accepted.insert(key);
@@ -479,8 +496,8 @@ impl MarketData {
             }
         }
         self.groups = accepted;
-        // Group growth can push the chain over the budget.
-        rejected.extend(self.clamp_chain());
+        // Group growth can push chain groups over the budget.
+        rejected.extend(self.clamp_chains());
         self.reconcile(before, rejected)
     }
 
@@ -505,43 +522,69 @@ impl MarketData {
         let before = self.desired_keys();
         let target: BTreeSet<SymbolKey> = keys.into_iter().collect();
         let (_accepted, mut rejected) = self.watch.replace(&target);
-        // Growing the watch list can push the chain over the global budget.
-        rejected.extend(self.clamp_chain());
+        // Growing the watch list can push chain groups over the global budget.
+        rejected.extend(self.clamp_chains());
         self.reconcile(before, rejected)
     }
 
-    /// Trim the chain group so the union stays within
-    /// [`MAX_TOTAL_SUBSCRIPTIONS`]. Returns the dropped keys.
-    fn clamp_chain(&mut self) -> Vec<SymbolKey> {
+    /// Trim all chain groups so the union stays within
+    /// [`MAX_TOTAL_SUBSCRIPTIONS`]. Existing groups keep their first keys; later
+    /// groups yield first. Returns the dropped keys.
+    fn clamp_chains(&mut self) -> Vec<SymbolKey> {
         let base = self.watch.active().union(&self.groups).count();
-        let available = MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(base);
-        if self.chain.len() <= available {
-            return Vec::new();
+        let mut available = MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(base);
+        let mut dropped: Vec<SymbolKey> = Vec::new();
+        for group in self.chains.values_mut() {
+            if group.len() <= available {
+                available -= group.len();
+                continue;
+            }
+            let keep: BTreeSet<SymbolKey> = group.iter().take(available).cloned().collect();
+            dropped.extend(group.difference(&keep).cloned());
+            *group = keep;
+            available = 0;
         }
-        let keep: BTreeSet<SymbolKey> = self.chain.iter().take(available).cloned().collect();
-        let dropped: Vec<SymbolKey> = self.chain.difference(&keep).cloned().collect();
-        self.chain = keep;
         dropped
     }
 
-    /// Replace the option-chain subscription group.
-    ///
-    /// Kept separate from the watch list because a single chain can exceed the
-    /// watch budget, and legs should not appear in the user's portfolio list.
-    pub fn set_chain(&mut self, keys: Vec<SymbolKey>) -> PlanDto {
+    /// Replace one chain tab's subscription group. Other pinned chains stay
+    /// intact; only the remaining global budget is used by this group.
+    pub fn set_chain(&mut self, chain_id: &str, keys: Vec<SymbolKey>) -> PlanDto {
         let before = self.desired_keys();
         let target: BTreeSet<SymbolKey> = keys.into_iter().collect();
-        let base = self.watch.active().union(&self.groups).count();
+
+        // Keys already subscribed elsewhere are free; only new keys consume
+        // the global budget.
+        let mut free_keys: BTreeSet<SymbolKey> =
+            self.watch.active().union(&self.groups).cloned().collect();
+        for (id, group) in &self.chains {
+            if id.as_str() != chain_id {
+                free_keys.extend(group.iter().cloned());
+            }
+        }
         let available = self
             .chain_limit
-            .min(MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(base));
-        let accepted: BTreeSet<SymbolKey> = target.iter().take(available).cloned().collect();
-        let rejected: Vec<SymbolKey> = target.iter().skip(available).cloned().collect();
-        self.chain = accepted;
+            .min(MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(free_keys.len()));
+
+        let mut accepted: BTreeSet<SymbolKey> = BTreeSet::new();
+        let mut rejected: Vec<SymbolKey> = Vec::new();
+        let mut new_keys = 0usize;
+        for key in target {
+            if free_keys.contains(&key) {
+                accepted.insert(key);
+            } else if new_keys < available {
+                accepted.insert(key);
+                new_keys += 1;
+            } else {
+                rejected.push(key);
+            }
+        }
+        self.chains.insert(chain_id.to_string(), accepted);
         if !rejected.is_empty() {
             tracing::warn!(
-                requested = target.len(),
-                accepted = available,
+                chain = chain_id,
+                requested = rejected.len() + self.chains[chain_id].len(),
+                accepted = self.chains[chain_id].len(),
                 dropped = rejected.len(),
                 "option chain request clamped to the subscription budget"
             );
@@ -549,24 +592,39 @@ impl MarketData {
         self.reconcile(before, rejected)
     }
 
-    /// Drop every chain subscription (leaving the watch list untouched).
-    pub fn clear_chain(&mut self) -> PlanDto {
+    /// Drop one chain tab's subscriptions, leaving other pinned chains intact.
+    pub fn clear_chain(&mut self, chain_id: &str) -> PlanDto {
         let before = self.desired_keys();
-        self.chain.clear();
+        self.chains.remove(chain_id);
         self.reconcile(before, Vec::new())
     }
 
-    pub fn chain_len(&self) -> usize {
-        self.chain.len()
+    /// Drop every chain subscription (used when leaving all chain tabs).
+    pub fn clear_all_chains(&mut self) -> PlanDto {
+        let before = self.desired_keys();
+        self.chains.clear();
+        self.reconcile(before, Vec::new())
     }
 
-    /// Total unique instruments currently subscribed (watch âˆª chain).
+    /// Total option-chain legs across all pinned tabs.
+    pub fn chain_len(&self) -> usize {
+        self.chain_key_count()
+    }
+
+    pub fn chain_contains(&self, chain_id: &str, key: &SymbolKey) -> bool {
+        self.chains
+            .get(chain_id)
+            .map(|group| group.contains(key))
+            .unwrap_or(false)
+    }
+
+    /// Total unique instruments currently subscribed (watch + groups + chains).
     pub fn subscribed_len(&self) -> usize {
         self.desired_keys().len()
     }
 
     /// One option-chain row: static instrument metadata plus the live quote.
-    pub fn chain_row(&self, instrument: &Instrument) -> ChainRowDto {
+    pub fn chain_row(&self, instrument: &Instrument, live: bool) -> ChainRowDto {
         ChainRowDto {
             key: instrument.key.as_wire(),
             exchange: instrument.key.exchange().to_string(),
@@ -579,7 +637,7 @@ impl MarketData {
                 .book
                 .get(&instrument.key)
                 .map(|q| quote_dto(q, self.master.as_deref())),
-            live: self.chain.contains(&instrument.key),
+            live,
         }
     }
 

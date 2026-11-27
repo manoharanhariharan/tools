@@ -319,9 +319,21 @@ export const api = {
   chainUnderlyings: (query = "", limit = 40) =>
     invoke<string[]>("chain_underlyings", { query, limit }),
   chainExpiries: (underlying: string) => invoke<string[]>("chain_expiries", { underlying }),
-  chainLoad: (underlying: string, expiry: string, strikes: number, atm: string | null) =>
-    invoke<ChainRowDto[]>("chain_load", { underlying, expiry, strikes, atm }),
-  chainClose: () => invoke<void>("chain_close"),
+  chainLoad: (
+    chainId: string,
+    underlying: string,
+    expiry: string,
+    strikes: number,
+    atm: string | null,
+  ) =>
+    invoke<ChainRowDto[]>("chain_load", {
+      chainId,
+      underlying,
+      expiry,
+      strikes,
+      atm,
+    }),
+  chainClose: (chainId: string) => invoke<void>("chain_close", { chainId }),
   positionsLoad: () => invoke<PositionsView>("positions_load"),
   accountSummary: () => invoke<AccountSummaryDto>("account_summary"),
   ordersLoad: () => invoke<OrderDto[]>("orders_load"),

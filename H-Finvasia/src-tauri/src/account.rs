@@ -35,6 +35,17 @@ fn encode_component(value: &str) -> String {
     out
 }
 
+/// Shoonya expects `jData` as raw JSON after the form key, not a fully
+/// percent-encoded JSON value. Only `&` inside string values (e.g. `M&M`)
+/// must be escaped so it cannot split the form body.
+fn write_body(json: &str, token: &str) -> String {
+    format!(
+        "jData={}&jKey={}",
+        json.replace('&', "%26"),
+        encode_component(token)
+    )
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct FundsDto {
     /// Profile name from `Limits` (e.g. SHOONYA).
@@ -286,12 +297,7 @@ impl RestClient {
         json: &str,
         token: &str,
     ) -> Result<Value, String> {
-        let body = format!(
-            "jData={}&jKey={}",
-            encode_component(json),
-            encode_component(token)
-        );
-        self.post_raw_at(base, route, body).await
+        self.post_raw_at(base, route, write_body(json, token)).await
     }
 
     async fn post_raw_at(&self, base: &str, route: &str, body: String) -> Result<Value, String> {
@@ -340,10 +346,11 @@ impl RestClient {
         }
     }
 
-    /// Write request. `jData` is form-encoded because trading symbols can
-    /// contain `&` (e.g. `M&M`); account reads keep their proven raw body. A
-    /// 401 is safe to retry on the other host; network failures are not retried,
-    /// so an ambiguous send is never duplicated.
+    /// Write request. `jData` stays raw JSON; only embedded `&` characters are
+    /// escaped so they cannot split the form body. Full percent-encoding makes
+    /// the venue answer `jData is not valid json object`. A 401 is safe to retry
+    /// on the other host; network failures are not retried, so an ambiguous send
+    /// is never duplicated.
     pub async fn post_write(&self, route: &str, json: &str, token: &str) -> Result<Value, String> {
         let preferred = match PREFERRED.load(Ordering::Relaxed) {
             2 => API_BASE,
@@ -426,10 +433,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn write_payloads_are_form_encoded() {
+    fn write_payloads_keep_raw_json_and_escape_ampersands() {
         assert_eq!(encode_component("M&M"), "M%26M");
-        assert_eq!(encode_component(r#"{"a":"b"}"#), "%7B%22a%22%3A%22b%22%7D");
         assert_eq!(encode_component("a-b_c.d~"), "a-b_c.d~");
+        assert_eq!(
+            write_body(r#"{"tsym":"M&M","qty":"1"}"#, "tok&en"),
+            r#"jData={"tsym":"M%26M","qty":"1"}&jKey=tok%26en"#
+        );
+        assert!(
+            !write_body(r#"{"a":"b"}"#, "t").contains("%7B"),
+            "jData braces must not be percent-encoded"
+        );
     }
 
     fn sample_positions() -> Vec<Value> {

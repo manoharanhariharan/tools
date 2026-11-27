@@ -15,18 +15,26 @@
   } from "./chain";
 
   interface Props {
+    chainId: string;
+    pinned?: boolean;
     pending?: { underlying: string; nonce: number } | null;
     onconsumed?: () => void;
     onorder: (key: string, side: "B" | "S") => void;
     ondefaults: () => void;
     onactive: (key: string, label: string) => void;
+    onloaded?: (info: { underlying: string; expiry: string }) => void;
+    onpin?: (info: { underlying: string; expiry: string }) => void;
   }
   let {
+    chainId,
+    pinned = false,
     pending = null,
     onconsumed,
     onorder,
     ondefaults,
     onactive,
+    onloaded,
+    onpin,
   }: Props = $props();
 
   let underlying = $state("");
@@ -305,6 +313,7 @@
       await refreshSpot();
       const centre = atm.trim() !== "" ? atm.trim() : (spot?.ltp?.text ?? null);
       const data = await api.chainLoad(
+        chainId,
         name,
         expiry,
         Math.max(1, Math.min(20, Math.round(Number(strikes) || 10))),
@@ -314,6 +323,7 @@
       index = new Map(data.map((row, i) => [row.key, i]));
       centreE6 = pickAtm(groupStrikes(data), centre);
       loaded = true;
+      onloaded?.({ underlying: name, expiry });
     } catch (e) {
       error = String(e);
       rows = [];
@@ -323,6 +333,26 @@
       loading = false;
     }
   }
+
+  async function applyPending(request: { underlying: string; nonce: number }) {
+    underlying = request.underlying;
+    committedUnderlying = request.underlying;
+    showUnderlyings = false;
+    atm = "";
+    quick = "";
+    centreE6 = null;
+    await loadExpiries();
+    await loadChain();
+    onconsumed?.();
+  }
+
+  let pendingNonce = 0;
+  $effect(() => {
+    const request = pending;
+    if (!request || request.nonce === pendingNonce) return;
+    pendingNonce = request.nonce;
+    void applyPending(request);
+  });
 
   onMount(() => {
     let disposed = false;
@@ -357,21 +387,6 @@
         else unlisteners.push(onMaster);
 
         underlyings = await api.chainUnderlyings("", 500).catch(() => []);
-
-        // Direct navigation starts blank: the user types, picks an underlying,
-        // then the expiry/strike controls appear. Opening from a row context
-        // menu is the only path that pre-fills and auto-loads.
-        if (pending) {
-          underlying = pending.underlying;
-          committedUnderlying = pending.underlying;
-          showUnderlyings = false;
-          atm = "";
-          quick = "";
-          centreE6 = null;
-          await loadExpiries();
-          await loadChain();
-          onconsumed?.();
-        }
       } catch (e) {
         if (!disposed) error = String(e);
       }
@@ -380,8 +395,9 @@
     return () => {
       disposed = true;
       for (const unlisten of unlisteners) unlisten();
-      // Release the chain subscriptions so the socket stops streaming legs.
-      void api.chainClose().catch(() => undefined);
+      // An unpinned draft releases its legs. Pinned tabs are closed explicitly
+      // by the chain tab bar so their subscriptions survive tab switches.
+      if (!pinned) void api.chainClose(chainId).catch(() => undefined);
     };
   });
 </script>
@@ -452,6 +468,18 @@
       <button class="primary" disabled={loading || !expiry} onclick={loadChain}>
         {loading ? "Loading..." : "Load and subscribe"}
       </button>
+
+      {#if loaded && !pinned}
+        <button
+          class="pin-chain"
+          title="Pin this chain and open a new chain tab"
+          onclick={() => onpin?.({ underlying: committedUnderlying, expiry })}
+        >
+          Pin
+        </button>
+      {:else if pinned}
+        <span class="badge ok">pinned</span>
+      {/if}
 
       {#if loaded}
         <span class="spacer"></span>

@@ -398,6 +398,7 @@ fn chain_expiries(state: State<'_, Arc<AppState>>, underlying: String) -> Vec<St
 #[tauri::command]
 fn chain_load(
     state: State<'_, Arc<AppState>>,
+    chain_id: String,
     underlying: String,
     expiry: String,
     strikes: Option<usize>,
@@ -423,13 +424,22 @@ fn chain_load(
         // the venue for hundreds of instruments.
         let centre = atm.and_then(|value| fv_core::Price::parse(value.trim()).ok());
         let window = fv_bridge::chain_window(&legs, strikes.unwrap_or(10).clamp(1, 20), centre);
-        let plan = market.set_chain(window);
-        let rows: Vec<fv_bridge::ChainRowDto> = legs.iter().map(|i| market.chain_row(i)).collect();
+        let plan = market.set_chain(&chain_id, window);
+        let rows: Vec<fv_bridge::ChainRowDto> = legs
+            .iter()
+            .map(|instrument| {
+                market.chain_row(
+                    instrument,
+                    market.chain_contains(&chain_id, &instrument.key),
+                )
+            })
+            .collect();
         (plan, rows)
     };
 
     forward_plan_to_live(&state, &plan);
     tracing::info!(
+        chain_id = %chain_id,
         underlying = %underlying,
         expiry = %expiry,
         legs = rows.len(),
@@ -440,10 +450,10 @@ fn chain_load(
 }
 
 #[tauri::command]
-fn chain_close(app: AppHandle, state: State<'_, Arc<AppState>>) {
-    let plan = { state.market.lock().unwrap().clear_chain() };
+fn chain_close(app: AppHandle, state: State<'_, Arc<AppState>>, chain_id: String) {
+    let plan = { state.market.lock().unwrap().clear_chain(&chain_id) };
     forward_plan_to_live(&state, &plan);
-    let _ = app.emit("chain:closed", ());
+    let _ = app.emit("chain:closed", chain_id);
 }
 
 // ---------------------------------------------------------------------------

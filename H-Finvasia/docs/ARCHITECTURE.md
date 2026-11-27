@@ -154,6 +154,12 @@ The option chain's `groupStrikes`, `pickAtm`, `windowAround`, `deltaOi`, `fillPe
 component only maps data to the quad table; the ATM reference (watched spot, typed ATM, or middle
 strike) is resolved by those functions rather than scattered through markup.
 
+Chain tabs are keyed by a UI-generated `chainId`. Pinning marks the tab and opens a fresh one; the
+App keeps every chain view mounted (hidden when inactive) so pinned rows and their `onDelta` handlers
+survive page switches. `MarketData` stores a `BTreeMap<chainId, keys>`; `set_chain`/`clear_chain`
+operate on one tab, and the union of all pinned chains participates in the same 100-instrument
+budget as the watch list and groups. Closing a pinned tab calls `chain_close(chainId)`.
+
 ### 4.9 The bottom dock is lazy
 
 Positions and the order book are mounted only while the bottom dock is open. Opening it is the
@@ -234,8 +240,8 @@ Rules:
 - The credential file is found via `FV_CRED_FILE`, then beside the exe, then `~/.fv/`, then
   `C:/repo/`; secrets are never logged.
 - The REST client tries `NorenWClientWeb` first for the web-scoped account/order routes, falling back
-  to `NorenWClientAPI` on a 401; `NorenWClientTP` is 502. Order writes form-encode `jData` because
-  symbols can contain `&`.
+  to `NorenWClientAPI` on a 401; `NorenWClientTP` is 502. Order writes keep `jData` as raw JSON and
+  escape only embedded `&` characters; fully percent-encoding the JSON makes the venue reject it.
 - **One websocket per token.** The app opens a single socket and reports lifecycle through
   `FeedState::{Connected, Rejected, Error, Reconnecting}`; it never opens a probe socket first, and
   `connected` in the status bar only becomes true after the handshake is accepted. Transport/gateway
@@ -276,9 +282,10 @@ The rest of the expiry stays in the local master and is served as metadata; it i
   with a protected marketable limit; it removes any trailing monitor for that key.
 - The feed source must be `Live`; replay/idle and `FV_NO_AUTOCONNECT=1` are rejected. The command
   never logs in: it uses the session already cached by the live connection.
-- `post_write` form-encodes `jData` (symbols such as `M&M` contain `&`) and may retry once on a 401
-  against the other REST host. Network failures are **not** retried, so an ambiguous send cannot be
-  duplicated; the user reconciles via the unique remarks in the order book.
+- `post_write` keeps `jData` raw JSON, escaping only `&` inside values (symbols such as `M&M`) so the
+  form body cannot split; full percent-encoding caused `jData is not valid json object`. It may retry
+  once on a 401 against the other REST host. Network failures are **not** retried, so an ambiguous
+  send cannot be duplicated; the user reconciles via the unique remarks in the order book.
 - The ticket is the confirmation step. There is no one-click live order and no background trading
   other than the explicit trailing-SL modifier.
 

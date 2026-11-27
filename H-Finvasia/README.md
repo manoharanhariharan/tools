@@ -115,8 +115,11 @@ box at the top adds directly to the active group.
 
 **Option chain** starts blank when opened directly. Type an underlying and pick it from the local
 suggestions; the expiry, strikes, ATM and filter controls then appear. Opening a chain from a row
-context menu pre-fills and loads it immediately. The quad layout has calls on the left, puts on the
-right and strike price in the middle. Each side is mirrored around the strike (trade, OI, d OI, volume, LTP, change, bid qty,
+context menu pre-fills and loads it immediately. Once loaded, **Pin** keeps that chain alive as its
+own chain tab and opens a fresh tab for the next underlying. Pinned tabs stay subscribed even when
+you switch workspace pages; close a tab to release its legs. Chain tabs share the same 100-instrument
+budget as the watch list and Stocks groups. The quad layout has calls on the left, puts on the right
+and strike price in the middle. Each side is mirrored around the strike (trade, OI, d OI, volume, LTP, change, bid qty,
 bid, ask, ask qty, then the strike). OI and volume cells carry a proportional background fill. Calls
 and puts are tinted by moneyness (ITM / ATM / OTM) around the spot, with the ATM row highlighted.
 The outermost column on each side exposes B/S on row hover; both open the same prepared ticket.
@@ -181,7 +184,7 @@ broker-backed probe/account/order path. Verified against the live venue (NTPC/AC
 | Rule | Value |
 |---|---|
 | Total instruments subscribed at once | **100** (active watch + all group members + option chain combined) |
-| Option-chain legs subscribed | only a +/- strikes window (default +/-10 = 42 legs); other strikes stay in the local master as metadata |
+| Option-chain legs subscribed | only a +/- strikes window (default +/-10 = 42 legs) per chain tab; all pinned tabs share the 100 budget, and other strikes stay in the local master as metadata |
 | Websocket connections per session | 1, opened at launch when a valid session exists (or via Settings -> Diagnostics -> Connect live) |
 | Automatic broker calls | **one connect at launch** when a valid session exists; the account strip refreshes only on mount, on first connect, or manually - never on a timer |
 | Automatic login | adopts a valid stored/env token; if none validates, performs the fv-client TOTP login and stores the fresh token in `CONFIGS_GLOBAL` |
