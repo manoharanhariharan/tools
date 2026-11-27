@@ -71,7 +71,7 @@
   {#if shown.length === 0}
     <EmptyState
       title={tab === "pending" ? "No pending orders" : "No closed orders"}
-      hint="Orders placed through the broker appear here. Placement from this app is not wired yet."
+      hint="Orders placed through the broker appear here and refresh on websocket order updates."
     />
   {:else}
     <div class="grid-wrap">

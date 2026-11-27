@@ -167,6 +167,12 @@ explicit signal to make the account REST calls; closing it unmounts both panels 
 listeners. There is no polling. `FV_NO_AUTOCONNECT=1` makes both commands return empty results, so
 screenshots and release probes stay broker-free.
 
+After `positions_load`, the position instruments are added to a dedicated subscription set, so the
+websocket streams their LTPs. The UI keeps the REST row (including realised `rpnl`) and recomputes
+LTP, MTM and total P&L from each quote without compounding. The account strip uses the same live
+totals. `Frame::Order` updates are emitted as `orders:changed`, which refreshes the REST order book
+and positions; the socket remains the trigger, not a polling timer.
+
 ### 4.10 One order target for every tradeable row
 
 Rows do not build tickets themselves. They publish `(key, label)` on hover and click; the App asks

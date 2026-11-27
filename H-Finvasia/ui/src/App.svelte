@@ -8,6 +8,7 @@
     type InstrumentDto,
     type OrderDefaults,
     type OrderResult,
+    type PositionDto,
     type QuoteDto,
     type SessionInfo,
     type StatusDto,
@@ -27,6 +28,7 @@
   import IndexWatch from "./lib/features/indices/IndexWatch.svelte";
   import Stocks from "./lib/features/stocks/Stocks.svelte";
   import Settings from "./lib/features/settings/Settings.svelte";
+  import { liveTotals } from "./lib/features/positions/live";
 
   type Page = "index" | "stocks" | "chain" | "market" | "settings";
 
@@ -40,6 +42,8 @@
   let session = $state<SessionInfo | null>(null);
   let summary = $state<AccountSummaryDto | null>(null);
   let summaryLoading = $state(false);
+  let positions = $state<PositionDto[]>([]);
+  let liveQuotes = $state<Map<string, QuoteDto>>(new Map());
   let selected = $state<string | null>(null);
   let instrumentMeta = $state<InstrumentDto | null>(null);
   let notice = $state<string | null>(null);
@@ -83,6 +87,19 @@
 
   const selectedQuote = $derived(selected ? (quoteMap.get(selected) ?? null) : null);
   const watchedKeys = $derived(rows.map((row) => row.key));
+  const liveAccount = $derived(liveTotals(positions, liveQuotes));
+  const displaySummary = $derived(
+    summary && positions.length > 0
+      ? {
+          ...summary,
+          totals: {
+            ...summary.totals,
+            mtm: liveAccount.mtm,
+            rpnl: liveAccount.rpnl,
+          },
+        }
+      : summary,
+  );
 
   function syncRows() {
     rows = table.rows();
@@ -119,6 +136,15 @@
       console.warn("account summary failed", error);
     } finally {
       summaryLoading = false;
+    }
+  }
+
+  async function refreshPositions() {
+    try {
+      const view = await api.positionsLoad();
+      positions = view.positions;
+    } catch (error) {
+      console.warn("positions unavailable for live totals", error);
     }
   }
 
@@ -352,6 +378,11 @@
               table.upsert(delta.quotes);
               syncRows();
               rememberQuotes(delta.quotes);
+              if (delta.quotes.length > 0) {
+                const next = new Map(liveQuotes);
+                for (const quote of delta.quotes) next.set(quote.key, quote);
+                liveQuotes = next;
+              }
             }),
         ],
         [
@@ -403,6 +434,15 @@
               }
             }),
         ],
+        [
+          "orders:changed",
+          () =>
+            events.onOrdersChanged(() => {
+              if (disposed) return;
+              void refreshSummary();
+              void refreshPositions();
+            }),
+        ],
       ];
 
       for (const [name, subscribe] of subscriptions) {
@@ -425,6 +465,7 @@
         if (!disposed) session = sessionInfo;
         if (!disposed) await hydrate();
         if (!disposed) await refreshSummary();
+        if (!disposed) await refreshPositions();
       } catch (error) {
         if (!disposed) notice = `Backend unavailable: ${String(error)}`;
       }
@@ -441,7 +482,7 @@
 
 <div class="shell">
   <AccountStrip
-    {summary}
+    summary={displaySummary}
     loading={summaryLoading}
     onrefresh={refreshSummary}
     source={status?.source ?? "idle"}

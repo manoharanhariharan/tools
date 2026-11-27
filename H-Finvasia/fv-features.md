@@ -1305,6 +1305,17 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
   percent-encoding the JSON was rejected by the venue as `jData is not valid json object`.
 - Tests cover independent pinned-chain subscriptions and the raw-JSON/`&`-escaping wire body.
 
+### Phase 2u - live positions, account totals and order updates (implemented)
+
+- `positions_load` subscribes the position-book instruments through `set_position_keys`, so the
+  websocket carries their LTPs. The position table recomputes LTP, MTM and total P&L on each quote
+  and leaves the REST realised P&L untouched (no compounding).
+- The account strip reuses those live totals, so RPNL/MTM move with the market instead of waiting
+  for another REST summary.
+- `om` order frames now emit `orders:changed`; the order book and positions refresh from that event.
+- The order write body was also fixed: `jData` stays raw JSON with only `&` escaped, avoiding the
+  venue's `jData is not valid json object` rejection.
+
 ---
 
 ### Provenance of this document

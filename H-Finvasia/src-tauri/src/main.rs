@@ -486,7 +486,14 @@ async fn positions_load(state: State<'_, Arc<AppState>>) -> Result<account::Posi
     }
     let shared = state.inner().clone();
     let mut session = ensure_session(&shared).await?;
-    match account::positions(&shared.rest, &session.uid, &session.actid, &session.token).await {
+    let result = match account::positions(
+        &shared.rest,
+        &session.uid,
+        &session.actid,
+        &session.token,
+    )
+    .await
+    {
         Ok(view) => Ok(view),
         Err(err) if looks_like_session_error(&err) => {
             // The cached token aged out: drop it and resolve once more.
@@ -495,7 +502,24 @@ async fn positions_load(state: State<'_, Arc<AppState>>) -> Result<account::Posi
             account::positions(&shared.rest, &session.uid, &session.actid, &session.token).await
         }
         Err(err) => Err(err),
-    }
+    };
+    let view = result?;
+    sync_position_keys(&shared, &view);
+    Ok(view)
+}
+
+/// Subscribe the position-book instruments so the UI can recompute LTP/MTM/P&L
+/// from the websocket instead of re-polling positions.
+fn sync_position_keys(state: &Arc<AppState>, view: &account::PositionsView) {
+    let keys: Vec<SymbolKey> = view
+        .positions
+        .iter()
+        .filter_map(|position| {
+            SymbolKey::parse(&format!("{}|{}", position.exchange, position.token)).ok()
+        })
+        .collect();
+    let plan = { state.market.lock().unwrap().set_position_keys(keys) };
+    forward_plan_to_live(state, &plan);
 }
 
 #[tauri::command]
@@ -1211,7 +1235,10 @@ async fn account_summary(state: State<'_, Arc<AppState>>) -> Result<AccountSumma
             match account::positions(&shared.rest, &current.uid, &current.actid, &current.token)
                 .await
             {
-                Ok(view) => (view.funds, view.totals, view.positions.len()),
+                Ok(view) => {
+                    sync_position_keys(&shared, &view);
+                    (view.funds, view.totals, view.positions.len())
+                }
                 Err(err) => {
                     tracing::warn!(error = %err, "account summary unavailable");
                     (None, account::PositionTotals::default(), 0)
@@ -1422,6 +1449,10 @@ async fn consume(state: Arc<AppState>, mut rx: UnboundedReceiver<Frame>, app: Ap
                     Some(frame) => {
                         let ts = now_ms();
                         state.market.lock().unwrap().apply(&frame, ts);
+                        if let Frame::Order(order) = &frame {
+                            let order_no = order.noren_order_no.clone().unwrap_or_default();
+                            let _ = app.emit("orders:changed", order_no);
+                        }
                     }
                     None => return,
                 }

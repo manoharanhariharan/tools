@@ -87,7 +87,8 @@ to the current UTC day before building, so the artifact tag always follows today
 The workspace opens on a four-card account strip - **Account details** (user, account, login
 state), **Funds available**, **RPNL**, **MTM**. The larger chevron at the right collapses it to a
 single-line band with the feed state, account, cash, RPNL, MTM and position count; the same
-right-hand control expands it again and the choice is remembered. Five icon-labelled tabs follow:
+right-hand control expands it again and the choice is remembered. RPNL and MTM are recomputed from
+the position snapshot plus live websocket LTPs, so the header moves with the market. Five icon-labelled tabs follow:
 **Index**, **Stocks**, **Option chain**, **Market watch** and **Settings**. Settings contains Order
 defaults, Appearance and Diagnostics, so there is no hidden More menu. Positions and the order book
 live in the bottom dock, keeping the working area uncluttered.
@@ -127,7 +128,8 @@ The default view is the 10 strikes either side of the ATM; the rest of the chain
 local master but is not streamed.
 
 **Bottom dock** holds the position book (live, with right-click square-off) and the read-only order
-book side by side. Drag its top edge to
+book side by side. Position LTP, MTM and total P&L are recomputed from the websocket; the order book
+refreshes when an order update arrives on the socket. Drag its top edge to
 resize the height, drag the middle divider to resize the columns, and collapse it back to a footer
 bar. It is collapsed by default so no account REST calls happen until you open it; refreshes are
 manual, never on a timer.

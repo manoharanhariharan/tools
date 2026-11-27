@@ -1,8 +1,9 @@
 ﻿<script lang="ts">
   import { onMount } from "svelte";
-  import { api, type PositionDto, type PositionsView } from "../../api";
+  import { api, events, type PositionDto, type PositionsView, type QuoteDto } from "../../api";
   import EmptyState from "../../components/EmptyState.svelte";
   import ContextMenu from "../../components/ContextMenu.svelte";
+  import { livePosition, liveTotals, positionKey } from "./live";
 
   interface Props {
     embedded?: boolean;
@@ -15,12 +16,26 @@
   let notice = $state<string | null>(null);
   let busy = $state(false);
   let menu = $state<{ x: number; y: number; position: PositionDto } | null>(null);
+  let liveQuotes = $state<Map<string, QuoteDto>>(new Map());
+
+  const displayPositions = $derived(
+    (view?.positions ?? []).map((position) =>
+      livePosition(position, liveQuotes.get(positionKey(position))),
+    ),
+  );
+  const totals = $derived(liveTotals(view?.positions ?? [], liveQuotes));
+  const positionKeys = $derived(new Set((view?.positions ?? []).map(positionKey)));
 
   async function refresh() {
     loading = true;
     error = null;
     try {
-      view = await api.positionsLoad();
+      const next = await api.positionsLoad();
+      view = next;
+      const keep = new Set(next.positions.map(positionKey));
+      if ([...liveQuotes.keys()].some((key) => !keep.has(key))) {
+        liveQuotes = new Map([...liveQuotes].filter(([key]) => keep.has(key)));
+      }
     } catch (e) {
       error = String(e);
     } finally {
@@ -60,6 +75,40 @@
 
   onMount(() => {
     void refresh();
+    let disposed = false;
+    const unlisteners: Array<() => void> = [];
+
+    (async () => {
+      try {
+        const onDelta = await events.onDelta((delta) => {
+          if (disposed) return;
+          let changed = false;
+          const next = new Map(liveQuotes);
+          for (const quote of delta.quotes) {
+            if (positionKeys.has(quote.key)) {
+              next.set(quote.key, quote);
+              changed = true;
+            }
+          }
+          if (changed) liveQuotes = next;
+        });
+        if (disposed) onDelta();
+        else unlisteners.push(onDelta);
+
+        const onOrders = await events.onOrdersChanged(() => {
+          if (!disposed) void refresh();
+        });
+        if (disposed) onOrders();
+        else unlisteners.push(onOrders);
+      } catch (e) {
+        if (!disposed) error = String(e);
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      for (const unlisten of unlisteners) unlisten();
+    };
   });
 
   const funds = $derived(view?.funds ?? null);
@@ -116,7 +165,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each view.positions as position (position.exchange + position.symbol + position.product)}
+          {#each displayPositions as position (position.exchange + position.symbol + position.product)}
             <tr
               title="Right-click to square off"
               oncontextmenu={(event) => {
@@ -146,8 +195,8 @@
             <td class="num mono">-</td>
             <td class="num mono">-</td>
             <td class="num mono">-</td>
-            <td class="num mono {Number(view.totals.mtm) >= 0 ? "up" : "down"}">{view.totals.mtm}</td>
-            <td class="num mono">-</td>
+            <td class="num mono {Number(totals.mtm) >= 0 ? "up" : "down"}">{totals.mtm}</td>
+            <td class="num mono {Number(totals.pnl) >= 0 ? "up" : "down"}">{totals.pnl}</td>
             <td class="num mono">{view.totals.buy_value}</td>
             <td class="num mono">{view.totals.sell_value}</td>
           </tr>

@@ -469,6 +469,18 @@ mod tests {
     }
 
     #[test]
+    fn position_instruments_are_subscribed_for_live_pnl() {
+        let mut md = market();
+        let key = SymbolKey::parse("NFO|158614").unwrap();
+        let plan = md.set_position_keys(vec![key.clone()]);
+        assert_eq!(plan.subscribe, vec!["NFO|158614"]);
+        assert!(md.subscription_keys().contains(&key));
+        assert!(md.status(Instant::now()).subscribed >= 1);
+        let plan = md.set_position_keys(Vec::new());
+        assert_eq!(plan.unsubscribe, vec!["NFO|158614"]);
+    }
+
+    #[test]
     fn pinned_chains_keep_independent_subscriptions() {
         let mut md = market();
         let a = SymbolKey::parse("NFO|100").unwrap();

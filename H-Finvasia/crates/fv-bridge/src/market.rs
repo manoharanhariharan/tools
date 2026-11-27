@@ -78,6 +78,9 @@ pub struct MarketData {
     /// Every instrument stored in any Stocks group. Subscribed in addition to
     /// the active watch list so all group cards stream, not just the active one.
     groups: BTreeSet<SymbolKey>,
+    /// Instruments in the broker position book, subscribed so live LTP can
+    /// recompute MTM/P&L without another REST round-trip.
+    positions: BTreeSet<SymbolKey>,
     /// Option-chain subscriptions keyed by chain tab id, tracked separately
     /// from the watch list. Multiple pinned chains can coexist.
     chains: BTreeMap<String, BTreeSet<SymbolKey>>,
@@ -101,6 +104,7 @@ impl MarketData {
             coalescer: Coalescer::new(30, DEFAULT_MAX_PER_FRAME),
             watch: WatchSet::new(DEFAULT_WATCH_LIMIT),
             groups: BTreeSet::new(),
+            positions: BTreeSet::new(),
             chains: BTreeMap::new(),
             chain_limit: DEFAULT_CHAIN_LIMIT,
             master: None,
@@ -428,6 +432,7 @@ impl MarketData {
         self.watch
             .active()
             .union(&self.groups)
+            .chain(self.positions.iter())
             .chain(self.chains.values().flat_map(|group| group.iter()))
             .cloned()
             .collect::<BTreeSet<_>>()
@@ -436,7 +441,45 @@ impl MarketData {
     fn is_live(&self, key: &SymbolKey) -> bool {
         self.watch.active().contains(key)
             || self.groups.contains(key)
+            || self.positions.contains(key)
             || self.chains.values().any(|group| group.contains(key))
+    }
+
+    /// Subscribe the instruments currently held in the broker position book.
+    /// Their live LTP drives MTM/P&L in the UI without re-polling the broker.
+    pub fn set_position_keys(&mut self, keys: Vec<SymbolKey>) -> PlanDto {
+        let before = self.desired_keys();
+        let chain_keys: BTreeSet<SymbolKey> = self
+            .chains
+            .values()
+            .flat_map(|group| group.iter().cloned())
+            .collect();
+        let base = self
+            .watch
+            .active()
+            .union(&self.groups)
+            .chain(chain_keys.iter())
+            .count();
+        let available = MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(base);
+        let mut accepted = BTreeSet::new();
+        let mut rejected = Vec::new();
+        let mut new_keys = 0usize;
+        for key in keys {
+            if self.watch.active().contains(&key)
+                || self.groups.contains(&key)
+                || chain_keys.contains(&key)
+            {
+                accepted.insert(key);
+            } else if new_keys < available {
+                accepted.insert(key);
+                new_keys += 1;
+            } else {
+                rejected.push(key);
+            }
+        }
+        self.positions = accepted;
+        rejected.extend(self.clamp_chains());
+        self.reconcile(before, rejected)
     }
 
     fn chain_key_count(&self) -> usize {
@@ -479,6 +522,7 @@ impl MarketData {
             .watch
             .active()
             .union(&self.groups)
+            .chain(self.positions.iter())
             .chain(chain_keys.iter())
             .count();
         let available = MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(base);
@@ -531,7 +575,12 @@ impl MarketData {
     /// [`MAX_TOTAL_SUBSCRIPTIONS`]. Existing groups keep their first keys; later
     /// groups yield first. Returns the dropped keys.
     fn clamp_chains(&mut self) -> Vec<SymbolKey> {
-        let base = self.watch.active().union(&self.groups).count();
+        let base = self
+            .watch
+            .active()
+            .union(&self.groups)
+            .chain(self.positions.iter())
+            .count();
         let mut available = MAX_TOTAL_SUBSCRIPTIONS.saturating_sub(base);
         let mut dropped: Vec<SymbolKey> = Vec::new();
         for group in self.chains.values_mut() {
@@ -557,6 +606,7 @@ impl MarketData {
         // the global budget.
         let mut free_keys: BTreeSet<SymbolKey> =
             self.watch.active().union(&self.groups).cloned().collect();
+        free_keys.extend(self.positions.iter().cloned());
         for (id, group) in &self.chains {
             if id.as_str() != chain_id {
                 free_keys.extend(group.iter().cloned());
