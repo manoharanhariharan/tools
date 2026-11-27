@@ -8,12 +8,12 @@ covers every executable in this folder.
 
 | File | Kind | Size | SHA-256 |
 | --- | --- | ---: | --- |
-| `h-finvasia-v26.11.27.7.exe` | **desktop app** (double-click) | 23606784 | `236586a3f5a0366ee9f0d4b9b0fb401f5719a0c4b7d205845ebab8520fd82201` |
-| `h-finvasia-cli-v26.11.27.7.exe` | headless CLI | 10588672 | `534754a92bc3feeb9060e25dfd87c6292a77ea9bbe03dfd5bb0ffb527787d186` |
+| `h-finvasia-v26.11.27.8.exe` | **desktop app** (double-click) | 23610880 | `6b5aecc8a2fa85a1c08f105b49a222a7b401de8d6adc191b7e4b4dc532315079` |
+| `h-finvasia-cli-v26.11.27.8.exe` | headless CLI | 10588672 | `9e8bcdcb0b7bc464f54d0060868c78e92fccb172f94f78cc5986d5642d957c01` |
 
 ## Running the desktop app
 
-Double-click `h-finvasia-v26.11.27.7.exe`. It loads the instrument master from the local
+Double-click `h-finvasia-v26.11.27.8.exe`. It loads the instrument master from the local
 MongoDB (`STOCK.FINVASIA_SYMBOL`) and falls back to a bundled sample when Mongo
 is unavailable. It restores the last watch list and connects live when a valid
 stored session exists.
@@ -21,8 +21,8 @@ stored session exists.
 ## Running the CLI
 
 ```powershell
-.\h-finvasia-cli-v26.11.27.7.exe doctor
-.\h-finvasia-cli-v26.11.27.7.exe master stats
+.\h-finvasia-cli-v26.11.27.8.exe doctor
+.\h-finvasia-cli-v26.11.27.8.exe master stats
 ```
 
 `master` needs a local MongoDB (`FV_MONGO_URI`, default
@@ -30,8 +30,8 @@ stored session exists.
 
 ## A note on older files
 
-`h-finvasia-v*.exe` builds **before** `v26.11.27.7` were CLI-only (the UI did not
-exist yet). From `v26.11.27.7` the unqualified name is the desktop app and the CLI
+`h-finvasia-v*.exe` builds **before** `v26.11.27.8` were CLI-only (the UI did not
+exist yet). From `v26.11.27.8` the unqualified name is the desktop app and the CLI
 is suffixed `-cli`.
 
 ## Adding a build
