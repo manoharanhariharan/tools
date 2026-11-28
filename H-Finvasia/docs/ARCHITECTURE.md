@@ -278,7 +278,19 @@ Rules:
 - `NOT_OK` can survive both scopes while REST quote/limit calls still accept the token. That sets
   `feed_auth_failed`; the next **Connect live** clears the cached session and calls
   `session::login_fresh` (forced TOTP) instead of reusing the rejected token. The UI clears the
-  previous summary/positions on an auth rejection and at the IST midnight rollover.
+  previous summary/positions on an auth rejection and at the IST midnight rollover, and shows a
+  Connect live action beside the logged-in badge.
+
+### 5.1b Kite feed groundwork (not connected)
+
+`fv-feed::kite` mirrors the web ticker shape used by the sibling `kite-client`: root
+`wss://ws.zerodha.com/`, URL parameters `api_key=kitefront`, `user_id`, percent-encoded `enctoken`,
+millisecond `uid`, `user-agent=kite3-web`, `version=3.0.0`, plus `X-Kite-Version: 3`. It also provides
+`subscribe_frame`, `mode_full_frame` and `split_for_providers` (primary keeps its budget, overflow is
+returned for the secondary provider). `kite_bootstrap` reads `LATEST_KITE_ENC_KEY`,
+`LATEST_KITE_SESSION_KEY` and `KITE_USERID` from `CONFIGS_GLOBAL` and reports readiness only; it never
+opens a socket and never returns the token. `FV_KITE_FEED=1` marks the provider enabled for the
+future dual-feed wiring.
 
 ### 5.2 Subscription budget (politeness rule)
 

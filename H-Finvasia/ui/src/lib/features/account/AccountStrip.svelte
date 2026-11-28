@@ -8,8 +8,19 @@
     loading: boolean;
     onrefresh: () => void;
     source: SourceKind;
+    stale?: boolean;
+    connecting?: boolean;
+    onconnect?: () => void;
   }
-  let { summary, loading, onrefresh, source }: Props = $props();
+  let {
+    summary,
+    loading,
+    onrefresh,
+    source,
+    stale = false,
+    connecting = false,
+    onconnect = () => {},
+  }: Props = $props();
 
   let collapsed = $state(loadHeaderCollapsed());
 
@@ -55,6 +66,17 @@
       >
         <span class="dot"></span>{feedLabel}
       </span>
+      {#if stale}
+        <button
+          class="stale-connect"
+          type="button"
+          disabled={connecting}
+          title="Refresh the expired broker session and reconnect the live feed"
+          onclick={onconnect}
+        >
+          {connecting ? "Connecting..." : "Connect live"}
+        </button>
+      {/if}
       <span class="acct-line-item">Account <strong class="mono">{session?.actid || "-"}</strong></span>
       <span class="acct-line-item">Cash <strong class="mono">{money(funds?.cash)}</strong></span>
       <span class="acct-line-item">RPNL
@@ -92,6 +114,17 @@
         >
           <span class="dot"></span>{feedLabel}
         </span>
+        {#if stale}
+          <button
+            class="stale-connect"
+            type="button"
+            disabled={connecting}
+            title="Refresh the expired broker session and reconnect the live feed"
+            onclick={onconnect}
+          >
+            {connecting ? "Connecting..." : "Connect live"}
+          </button>
+        {/if}
       </div>
       <div class="acct-value mono">{session?.uid || "-"}</div>
       <div class="acct-sub">

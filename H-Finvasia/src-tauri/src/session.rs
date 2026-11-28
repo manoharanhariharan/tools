@@ -217,6 +217,34 @@ pub async fn persisted_token() -> Option<(String, Option<String>)> {
     Some((token.trim().to_string(), date))
 }
 
+/// Read a few `CONFIGS_GLOBAL` values without writing anything. Used by the
+/// Kite feed bootstrap to detect `LATEST_KITE_ENC_KEY` / `KITE_USERID`.
+pub async fn config_values(keys: &[&str]) -> std::collections::HashMap<String, String> {
+    use bson::doc;
+    use mongodb::Client;
+
+    let mut out = std::collections::HashMap::new();
+    let Ok(client) = Client::with_uri_str(mongo_uri()).await else {
+        return out;
+    };
+    let collection = client
+        .database(&mongo_db())
+        .collection::<bson::Document>("CONFIGS_GLOBAL");
+    for key in keys {
+        let value = collection
+            .find_one(doc! { "configKey": *key })
+            .await
+            .ok()
+            .flatten()
+            .and_then(|doc| doc.get_str("configValue").ok().map(str::to_string));
+        if let Some(value) = value {
+            out.insert((*key).to_string(), value);
+        }
+    }
+    client.shutdown().await;
+    out
+}
+
 /// Persist a freshly logged-in token in the same `CONFIGS_GLOBAL` documents the
 /// fv-client uses, so the next launch (and the other tools) can adopt it.
 pub async fn persist_token(token: &str) -> Result<(), String> {

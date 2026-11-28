@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import Badge from "../../components/Badge.svelte";
-  import type { AppInfo, SessionInfo, StatusDto } from "../../api";
+  import { api, type AppInfo, type KiteBootstrapDto, type SessionInfo, type StatusDto } from "../../api";
 
   interface Props {
     status: StatusDto | null;
@@ -10,6 +11,19 @@
     onlive: () => void;
   }
   let { status, info, session, busy, onlive }: Props = $props();
+
+  let kite = $state<KiteBootstrapDto | null>(null);
+
+  onMount(() => {
+    void api
+      .kiteBootstrap()
+      .then((value) => {
+        kite = value;
+      })
+      .catch(() => {
+        kite = null;
+      });
+  });
 
   const connected = $derived(status?.connected ?? false);
   const sessionReady = $derived(
@@ -76,6 +90,24 @@
       Uses the session persisted in <code>STOCK.CONFIGS_GLOBAL</code> when it still validates.
       Otherwise it runs the fv-client TOTP login with <code>fv-cred.json</code> and writes the fresh
       token and date back to <code>CONFIGS_GLOBAL</code>.
+    </p>
+  </div>
+
+  <div class="section">
+    <h3>Kite feed (prepared)</h3>
+    <div class="row" style="margin-bottom: 10px">
+      <Badge
+        label={kite?.status ?? "checking?"}
+        tone={kite?.configured ? "ok" : kite?.enabled ? "warn" : "neutral"}
+        dot
+      />
+      <Badge label={kite?.ws_host ?? "wss://ws.zerodha.com/"} />
+      <Badge label={`overflow ${kite?.secondary_capacity?.toLocaleString() ?? 0}`} />
+    </div>
+    <p class="hint">{kite?.note ?? "Reading the persisted Kite session keys."}</p>
+    <p class="hint">
+      This is groundwork only: no Kite broker or websocket connection is opened. When enabled, the
+      plan is to keep Shoonya as the primary feed and route overflow instruments to Kite.
     </p>
   </div>
 

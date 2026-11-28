@@ -215,10 +215,18 @@ back to `CONFIGS_GLOBAL` so the next launch can reuse it. Gateway/transport drop
 UI and the websocket reconnects with backoff; if the gateway is unreachable the banner says so
 instead of failing silently. A `NOT_OK` websocket handshake while REST still answers means the cached
 token is no longer accepted for streaming: the app marks the account figures stale, clears the
-previous day's RPNL/positions, and the next **Connect live** forces a fresh TOTP login. The account
-header also clears itself at the IST midnight rollover and reloads from the new day book.
+previous day's RPNL/positions, and a **Connect live** button appears next to the logged-in badge (it
+disappears after a successful reconnect). That button forces a fresh TOTP login. The account header
+also clears itself at the IST midnight rollover and reloads from the new day book.
 `FV_NO_AUTOCONNECT=1` disables startup adoption/login and every broker-backed probe/account/order
 path. Verified against the live venue (NTPC/ACC streaming).
+
+**Kite feed groundwork:** the app can read the sibling `kite-client` session keys
+(`LATEST_KITE_ENC_KEY`, `LATEST_KITE_SESSION_KEY`, `KITE_USERID`) and reports whether a Kite web
+ticker *could* be opened in **Settings -> Diagnostics**. Nothing connects to Kite yet. The prepared
+pieces are the web-ticker URL/header builders, subscribe/full-mode frames, and
+`split_for_providers` (primary keeps its 100-instrument budget, overflow goes to the secondary).
+`FV_KITE_FEED=1` marks the provider enabled; it still does not open a socket.
 
 ### Operating limits (deliberately gentle on the broker)
 
@@ -292,6 +300,8 @@ Measured against `STOCK.FINVASIA_SYMBOL` on this machine:
 | `FV_MONGO_DB` | `STOCK` | Database name |
 | `FV_MONGO_MASTER_COLLECTION` | `FINVASIA_SYMBOL` | Master collection |
 | `FV_AUTOSTART_DEMO` | — | `1` starts the bundled replay at launch (kiosk / CI smoke test) |
+| `FV_KITE_FEED` | — | `1` marks the prepared Kite provider enabled; it does not connect yet |
+| `KITE_USERID` | `CONFIGS_GLOBAL.KITE_USERID` | Kite web ticker user id for the prepared overflow feed |
 | `RUST_LOG` | `info` plus DEBUG for the desktop crate | `tracing` filter; set `RUST_LOG=info` to quieten broker diagnostics |
 
 **Credentials are never written back** to Mongo or to disk. `report_schoonya` in the existing

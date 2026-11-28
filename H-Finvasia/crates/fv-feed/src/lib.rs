@@ -17,6 +17,7 @@
 
 pub mod book;
 pub mod frame;
+pub mod kite;
 pub mod replay;
 pub mod subscription;
 #[cfg(feature = "ws")]

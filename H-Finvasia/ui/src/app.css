@@ -3826,3 +3826,31 @@ table.grid.column-table thead th + th {
 .chain-views {
   scrollbar-gutter: stable;
 }
+
+/* ---- stale session call-to-action ---- */
+
+button.stale-connect {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border: 1px solid var(--danger);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-3) 82%, var(--danger));
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+button.stale-connect:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
+}
+
+button.stale-connect:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+.acct-head {
+  flex-wrap: wrap;
+}

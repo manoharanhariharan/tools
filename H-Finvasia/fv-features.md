@@ -1378,6 +1378,12 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
 - A `NOT_OK` web-socket handshake marks the feed/session stale, clears the previous day's RPNL and
   positions from the header, and the next Connect live calls `login_fresh` (forced TOTP) instead of
   reusing the rejected token. Account figures also reset at the IST day boundary.
+- When the session is stale, a **Connect live** button appears next to the logged-in badge and hides
+  after a successful reconnect.
+- Kite feed groundwork (no connection): `fv-feed::kite` builds the web ticker URL/headers,
+  subscribe/full-mode frames and `split_for_providers`; `kite_bootstrap` reports whether
+  `LATEST_KITE_ENC_KEY` / `KITE_USERID` are present, without exposing the token. `FV_KITE_FEED=1`
+  only marks the provider enabled.
 
 ---
 

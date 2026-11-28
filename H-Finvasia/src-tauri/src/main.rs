@@ -28,6 +28,7 @@ use tauri::async_runtime::JoinHandle;
 mod account;
 mod broker_log;
 mod groups;
+mod kite;
 mod orders;
 mod session;
 
@@ -368,6 +369,13 @@ async fn begin_feed(
 #[tauri::command]
 async fn session_info() -> session::SessionInfo {
     session::peek().await
+}
+
+/// Prepared Kite feed status. Read-only: this command never opens a broker
+/// socket or returns the enctoken.
+#[tauri::command]
+async fn kite_bootstrap() -> kite::KiteBootstrapDto {
+    kite::bootstrap().await
 }
 
 // ---------------------------------------------------------------------------
@@ -2177,6 +2185,7 @@ fn main() {
             start_replay,
             start_live,
             session_info,
+            kite_bootstrap,
             chain_underlyings,
             chain_expiries,
             chain_load,

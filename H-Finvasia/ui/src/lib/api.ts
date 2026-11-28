@@ -199,6 +199,16 @@ export interface ContainerCardDto {
   custom_order: string[];
 }
 
+export interface KiteBootstrapDto {
+  enabled: boolean;
+  configured: boolean;
+  user_id: string | null;
+  ws_host: string;
+  status: string;
+  note: string;
+  secondary_capacity: number;
+}
+
 export interface OrderTargetDto {
   key: string;
   trading_symbol: string;
@@ -320,6 +330,7 @@ export const api = {
     invoke<string[]>("start_replay", { path, hz }),
   startLive: () => invoke<string[]>("start_live"),
   sessionInfo: () => invoke<SessionInfo>("session_info"),
+  kiteBootstrap: () => invoke<KiteBootstrapDto>("kite_bootstrap"),
   chainUnderlyings: (query = "", limit = 40) =>
     invoke<string[]>("chain_underlyings", { query, limit }),
   chainExpiries: (underlying: string) => invoke<string[]>("chain_expiries", { underlying }),

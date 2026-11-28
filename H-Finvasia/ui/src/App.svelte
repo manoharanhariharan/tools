@@ -45,6 +45,7 @@
   let session = $state<SessionInfo | null>(null);
   let summary = $state<AccountSummaryDto | null>(null);
   let summaryLoading = $state(false);
+  let sessionStale = $state(false);
   let positions = $state<PositionDto[]>([]);
   let liveQuotes = $state<Map<string, QuoteDto>>(new Map());
   let selected = $state<string | null>(null);
@@ -390,6 +391,7 @@
     const nowConnected = status?.connected ?? false;
     if (nowConnected && !wasConnected) {
       wasConnected = true;
+      sessionStale = false;
       void refreshSummary();
     } else if (!nowConnected) {
       wasConnected = false;
@@ -470,6 +472,7 @@
                 if (/session rejected|handshake rejected|NOT_OK/i.test(message)) {
                   // Do not keep yesterday's RPNL/cash on screen when the token
                   // is no longer accepted.
+                  sessionStale = true;
                   summary = null;
                   positions = [];
                   liveQuotes = new Map();
@@ -551,6 +554,9 @@
     loading={summaryLoading}
     onrefresh={refreshSummary}
     source={status?.source ?? "idle"}
+    stale={sessionStale}
+    connecting={busy}
+    onconnect={startLive}
   />
 
   <div class="workspace-tabs" role="tablist" aria-label="Workspace">
