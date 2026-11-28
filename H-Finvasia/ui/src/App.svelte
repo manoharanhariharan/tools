@@ -251,6 +251,16 @@
     activeKey = null;
   }
 
+  /** IST trading date; the broker rolls positions/RPNL at this boundary. */
+  function tradingDay(): string {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  }
+
   function rememberActive(key: string, _label: string) {
     activeKey = key;
     // Picking a row is the action the warning asked for; clear it immediately.
@@ -457,6 +467,13 @@
                 if (notice?.startsWith("Live feed:")) notice = null;
               } else {
                 notice = `Live feed: ${message}`;
+                if (/session rejected|handshake rejected|NOT_OK/i.test(message)) {
+                  // Do not keep yesterday's RPNL/cash on screen when the token
+                  // is no longer accepted.
+                  summary = null;
+                  positions = [];
+                  liveQuotes = new Map();
+                }
               }
             }),
         ],
@@ -481,6 +498,24 @@
       }
     }
 
+    let currentDay = tradingDay();
+    const dayTimer = setInterval(() => {
+      const next = tradingDay();
+      if (next === currentDay) return;
+      currentDay = next;
+      // The broker resets the day book at midnight IST. Drop the previous
+      // day's RPNL/positions immediately, then reload from the new session.
+      summary = null;
+      positions = [];
+      liveQuotes = new Map();
+      ordersSeen.clear();
+      ordersSeeded = false;
+      void hydrate();
+      void refreshSummary();
+      void refreshPositions();
+      void syncOrderNotices();
+    }, 30_000);
+
     (async () => {
       try {
         await subscribeAll();
@@ -501,6 +536,7 @@
 
     return () => {
       disposed = true;
+      clearInterval(dayTimer);
       if (orderToastTimer !== undefined) clearTimeout(orderToastTimer);
       for (const unlisten of unlisteners) unlisten();
     };

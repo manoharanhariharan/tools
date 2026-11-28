@@ -132,9 +132,9 @@
     <button class="dock-toggle ghost" onclick={toggle} aria-expanded={open}>
       <span class="dock-chevron" aria-hidden="true">
         {#if open}
-          <svg viewBox="0 0 16 16"><path d="M4 10l4-4 4 4" /></svg>
-        {:else}
           <svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" /></svg>
+        {:else}
+          <svg viewBox="0 0 16 16"><path d="M4 10l4-4 4 4" /></svg>
         {/if}
       </span>
       <span class="dock-title">Positions &amp; order book</span>

@@ -213,8 +213,12 @@ automatically**; the public API OAuth handshake is not used. If the stored token
 the app runs the same TOTP `QuickAuth` login as the fv-client, then writes the fresh token and date
 back to `CONFIGS_GLOBAL` so the next launch can reuse it. Gateway/transport drops are surfaced in the
 UI and the websocket reconnects with backoff; if the gateway is unreachable the banner says so
-instead of failing silently. `FV_NO_AUTOCONNECT=1` disables startup adoption/login and every
-broker-backed probe/account/order path. Verified against the live venue (NTPC/ACC streaming).
+instead of failing silently. A `NOT_OK` websocket handshake while REST still answers means the cached
+token is no longer accepted for streaming: the app marks the account figures stale, clears the
+previous day's RPNL/positions, and the next **Connect live** forces a fresh TOTP login. The account
+header also clears itself at the IST midnight rollover and reloads from the new day book.
+`FV_NO_AUTOCONNECT=1` disables startup adoption/login and every broker-backed probe/account/order
+path. Verified against the live venue (NTPC/ACC streaming).
 
 ### Operating limits (deliberately gentle on the broker)
 

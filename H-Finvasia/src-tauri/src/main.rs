@@ -17,6 +17,7 @@ use fv_core::{Price, SymbolKey};
 use fv_feed::Frame;
 use serde::Serialize;
 use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -56,6 +57,9 @@ pub struct AppState {
     rest: account::RestClient,
     /// Trailing stop-loss orders watched by the background modifier.
     trailing: Mutex<Vec<TrailingStop>>,
+    /// Set when the exchange rejects the WebSocket handshake. The next explicit
+    /// Connect live forces a fresh TOTP login instead of reusing the token.
+    feed_auth_failed: AtomicBool,
 }
 
 #[derive(Debug, Clone)]
@@ -1589,7 +1593,22 @@ async fn start_live(
         return Err("add at least one instrument to the watch list first".into());
     }
 
-    let resolved = session::resolve_session().await?;
+    let refresh = state.feed_auth_failed.swap(false, Ordering::Relaxed);
+    if refresh {
+        *state.session.lock().unwrap() = None;
+    }
+    let resolved = if refresh {
+        tracing::warn!("refreshing the session after a WebSocket auth rejection");
+        match session::login_fresh().await {
+            Ok(session) => session,
+            Err(err) => {
+                state.feed_auth_failed.store(true, Ordering::Relaxed);
+                return Err(err);
+            }
+        }
+    } else {
+        session::resolve_session().await?
+    };
     tracing::info!(
         uid = %resolved.uid,
         actid = %resolved.actid,
@@ -1674,20 +1693,31 @@ fn apply_feed_state(state: &Arc<AppState>, app: &AppHandle, event: fv_feed::ws::
                 market.set_source(SourceKind::Live);
                 market.set_connected(true);
                 market.clear_error();
+                state.feed_auth_failed.store(false, Ordering::Relaxed);
                 tracing::info!(%source, "live feed connected");
                 // Clear any "Live feed: ..." banner once the socket is back.
                 Some(String::new())
             }
             FeedState::Rejected { source } => {
-                let message = format!("session rejected for source '{source}'");
+                state.feed_auth_failed.store(true, Ordering::Relaxed);
+                let message = format!(
+                    "session rejected by the exchange for source '{source}'. Use Connect live to refresh the session."
+                );
                 market.set_connected(false);
                 market.set_error(message.clone());
                 Some(message)
             }
             FeedState::Error { message } => {
                 market.set_connected(false);
-                market.set_error(message.clone());
-                Some(message)
+                if message.contains("handshake rejected") || message.contains("NOT_OK") {
+                    state.feed_auth_failed.store(true, Ordering::Relaxed);
+                    let actionable = "session rejected by the exchange. Use Connect live to refresh the session.";
+                    market.set_error(actionable.to_string());
+                    Some(actionable.to_string())
+                } else {
+                    market.set_error(message.clone());
+                    Some(message)
+                }
             }
             FeedState::Reconnecting { attempt } => {
                 market.set_connected(false);
@@ -1989,6 +2019,7 @@ fn main() {
         session: Mutex::new(None),
         rest: account::RestClient::new().expect("rest client"),
         trailing: Mutex::new(Vec::new()),
+        feed_auth_failed: AtomicBool::new(false),
     });
 
     let rx_slot = Arc::new(Mutex::new(Some(rx)));

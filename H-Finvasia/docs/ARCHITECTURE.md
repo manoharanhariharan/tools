@@ -275,6 +275,10 @@ Rules:
   with backoff; a successful reconnect clears the banner.
 - Web-minted sessions need `source:"WEB"`; the client retries once with `"API"` on `NOT_OK` and then
   surfaces `Rejected` to the UI instead of pretending to be live.
+- `NOT_OK` can survive both scopes while REST quote/limit calls still accept the token. That sets
+  `feed_auth_failed`; the next **Connect live** clears the cached session and calls
+  `session::login_fresh` (forced TOTP) instead of reusing the rejected token. The UI clears the
+  previous summary/positions on an auth rejection and at the IST midnight rollover.
 
 ### 5.2 Subscription budget (politeness rule)
 

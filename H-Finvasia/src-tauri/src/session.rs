@@ -499,6 +499,26 @@ pub async fn resolve_session() -> Result<Session, String> {
     })
 }
 
+/// Force a fresh TOTP login. Used when the exchange rejects a cached token for
+/// the WebSocket even though REST quote validation still accepts it.
+pub async fn login_fresh() -> Result<Session, String> {
+    let client = build_client()?;
+    let credentials = load_credentials()
+        .map_err(|_| "no credential file to refresh the live session".to_string())?;
+    let uid = credentials.userid.clone();
+    let (token, actid) = quick_auth(&client, &credentials).await?;
+    if let Err(err) = persist_token(&token).await {
+        tracing::warn!(error = %err, "could not persist the refreshed login token");
+    }
+    tracing::info!("refreshed the live session with TOTP");
+    Ok(Session {
+        token,
+        uid,
+        actid,
+        source: TokenSource::Login,
+    })
+}
+
 /// Resolve a session **without ever logging in**.
 ///
 /// Used at startup so the app can connect automatically when a usable token

@@ -1373,6 +1373,11 @@ refreshed and hit `Limits`/`PositionBook` on every probe run. `positions_load`, 
   contain` and a proper flex scroll container, so trackpad/wheel scrolling works consistently.
 - Escape closes any dialog from inside its body, including the order ticket with focus in the
   quantity field.
+- Bottom-dock chevron direction now matches the action: down when open (collapse), up when closed
+  (expand). Account money fields show `-` when the broker has not supplied a value.
+- A `NOT_OK` web-socket handshake marks the feed/session stale, clears the previous day's RPNL and
+  positions from the header, and the next Connect live calls `login_fresh` (forced TOTP) instead of
+  reusing the rejected token. Account figures also reset at the IST day boundary.
 
 ---
 

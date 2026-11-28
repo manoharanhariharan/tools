@@ -32,10 +32,12 @@
   }
 
   function signed(value: string | null | undefined): string {
+    if (value === null || value === undefined || value.trim() === "") return "-";
     return formatIndianAmount(value, { signed: true });
   }
 
   function money(value: string | null | undefined): string {
+    if (value === null || value === undefined || value.trim() === "") return "-";
     return formatIndianAmount(value);
   }
 
